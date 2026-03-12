@@ -1,0 +1,387 @@
+:root {
+  /* Blue color theme */
+  --primary: #3b82f6;
+  --primary-light: #60a5fa;
+  --primary-dark: #2563eb;
+
+  /* Semantic colors */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #06b6d4;
+
+  /* Dark mode */
+  --bg-dark: #0a0a0f;
+  --bg-dark-card: rgba(255, 255, 255, 0.03);
+  --bg-dark-hover: rgba(255, 255, 255, 0.06);
+  --border-dark: rgba(255, 255, 255, 0.08);
+  --text-dark: #f1f5f9;
+  --text-dark-secondary: #94a3b8;
+
+  /* Light mode */
+  --bg-light: #f8fafc;
+  --bg-light-card: rgba(255, 255, 255, 0.9);
+  --bg-light-hover: rgba(0, 0, 0, 0.02);
+  --border-light: rgba(0, 0, 0, 0.08);
+  --text-light: #1e293b;
+  --text-light-secondary: #64748b;
+
+  /* Default to dark mode */
+  --bg: var(--bg-dark);
+  --bg-card: var(--bg-dark-card);
+  --bg-hover: var(--bg-dark-hover);
+  --border: var(--border-dark);
+  --text: var(--text-dark);
+  --text-secondary: var(--text-dark-secondary);
+
+  /* Sizing */
+  --radius: 12px;
+  --radius-lg: 16px;
+  --sidebar-width: 240px;
+
+  /* Transitions */
+  --transition: all 0.2s ease;
+  --transition-slow: all 0.3s ease;
+
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+
+/* Light mode */
+.light {
+  --bg: var(--bg-light);
+  --bg-card: var(--bg-light-card);
+  --bg-hover: var(--bg-light-hover);
+  --border: var(--border-light);
+  --text: var(--text-light);
+  --text-secondary: var(--text-light-secondary);
+  color-scheme: light;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: var(--transition-slow);
+}
+
+/* Frosted-glass card */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: var(--transition);
+}
+
+.glass-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--primary);
+}
+
+/* Stats card */
+.stat-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  opacity: 0;
+  transition: var(--transition);
+}
+
+.stat-card:hover::before {
+  opacity: 1;
+}
+
+.stat-card .stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+}
+
+.stat-card .stat-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.stat-card .stat-icon {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 3rem;
+  opacity: 0.1;
+  color: var(--primary);
+}
+
+/* Danger stats (e.g. dropped PPS) */
+.stat-card.danger .stat-value {
+  background: linear-gradient(135deg, var(--danger), #f87171);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-card.danger::before {
+  background: linear-gradient(90deg, var(--danger), #f87171);
+}
+
+/* Success stats (e.g. passed PPS) */
+.stat-card.success .stat-value {
+  background: linear-gradient(135deg, #22c55e, #4ade80);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-card.success::before {
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+}
+
+.stat-card.success .stat-icon {
+  color: #22c55e;
+}
+
+/* Button style overrides */
+.el-button--primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark)) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+}
+
+.el-button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+
+/* Element Plus dark theme overrides */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-header-bg-color: var(--bg-card);
+  --el-table-tr-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--bg-hover);
+  --el-table-border-color: var(--border);
+  --el-table-text-color: var(--text);
+  --el-table-header-text-color: var(--text-secondary);
+}
+
+.el-card {
+  --el-card-bg-color: var(--bg-card);
+  --el-card-border-color: var(--border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.el-dialog {
+  --el-dialog-bg-color: var(--bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.el-input__wrapper {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: none !important;
+}
+
+.el-input__wrapper:focus-within {
+  border-color: var(--primary) !important;
+}
+
+.el-select__wrapper {
+  background-color: var(--bg-card) !important;
+}
+
+.el-tag {
+  border-radius: 6px;
+}
+
+.el-tag--success {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.el-tag--danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+.el-tag--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Number animation */
+.number-animate {
+  transition: all 0.3s ease;
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border);
+}
+
+/* Menu overrides */
+.el-menu {
+  background: transparent !important;
+  border-right: none !important;
+}
+
+.el-menu-item {
+  color: var(--text-secondary) !important;
+  border-radius: var(--radius) !important;
+  margin: 4px 8px !important;
+  height: 48px !important;
+  transition: var(--transition) !important;
+}
+
+.el-menu-item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text) !important;
+}
+
+.el-menu-item.is-active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05)) !important;
+  color: var(--primary) !important;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: var(--transition);
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+}
+
+/* Light mode adjustments */
+.light .el-table {
+  --el-table-header-bg-color: rgba(0, 0, 0, 0.02);
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-bg-color: #ffffff;
+}
+
+.light .sidebar {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.light .el-button--primary {
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
+}
+
+.light .glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.light .glass-card:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.light .stat-card {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.light .el-dialog {
+  background: #ffffff;
+}
+
+.light .el-input__wrapper {
+  background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.light .el-select__wrapper {
+  background-color: #ffffff !important;
+}
+
+.light .el-select-dropdown {
+  background-color: #ffffff;
+}
+
+.light .el-popper.is-light {
+  background-color: #ffffff;
+}
+
+/* Table text color in light mode */
+.light .el-table__row {
+  color: var(--text-light);
+}
+
+.light .el-table__header th {
+  color: var(--text-light-secondary);
+}

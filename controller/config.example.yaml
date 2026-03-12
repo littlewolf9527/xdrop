@@ -1,0 +1,60 @@
+# XDrop Controller - Example Configuration
+# Copy this file to config.yaml and adjust the values for your environment.
+
+server:
+  host: "0.0.0.0"   # Bind address. Use "0.0.0.0" to listen on all interfaces.
+  port: 8000
+
+database:
+  driver: sqlite
+  dsn: ./data/controller.db   # SQLite database file path. Created automatically on first run.
+
+# Authentication
+auth:
+  enabled: true
+
+  # API key for external callers (scripts, integrations, Prometheus scrapers).
+  # Node agents also use this key when pushing sync reports to the controller.
+  # Must be a long random string — treat it like a password.
+  external_api_key: "CHANGE_ME_RANDOM_32_CHARS"
+
+  # Secret used to sign Web UI session cookies (HMAC-SHA256).
+  # Generate with: openssl rand -hex 32
+  session_secret: "CHANGE_ME_RANDOM_64_CHARS"
+
+  # Web UI login credentials.
+  web_username: "admin"
+  web_password: "CHANGE_ME"
+
+# Pre-registered nodes (registered at startup, before any API calls).
+# You can also register nodes dynamically via POST /api/v1/nodes.
+nodes:
+  # - name: "node-01"
+  #   endpoint: "http://10.0.1.10:8080"   # Node agent HTTP address
+  #   api_key: "node-01-api-key"           # Key the controller uses when calling this node
+
+# Sync settings — used when pushing rule/whitelist updates to nodes.
+sync:
+  retry_count: 3          # Number of retries on failure
+  retry_interval: 5s      # Wait between retries
+  timeout: 10s            # Per-request timeout
+  concurrent: 10          # Max concurrent sync goroutines
+
+# Health check — controller periodically polls each node's /health endpoint.
+healthcheck:
+  interval: 30s
+  timeout: 5s
+
+# Sync checker — periodically compares controller state with each node and
+# triggers a full sync if they diverge.
+synccheck:
+  enabled: true
+  interval: 1m    # How often to check. Recommended: 1m–5m.
+
+# Rule lifecycle settings.
+rules:
+  default_expire: 24h       # Default TTL for rules that don't specify an expiry
+  cleanup_interval: 10m     # How often expired rules are purged from the database
+
+logging:
+  level: info   # One of: debug, info, warn, error

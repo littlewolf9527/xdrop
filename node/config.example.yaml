@@ -1,0 +1,101 @@
+# XDrop Node Agent - Example Configuration
+# Copy this file to config.yaml and adjust the values for your environment.
+#
+# XDrop supports two operating modes — pick one:
+#
+#   Traditional mode  — Single-interface XDP filter. Dropped packets are discarded;
+#                       clean traffic is passed to the kernel network stack via XDP_PASS.
+#                       Use this for protecting a server directly.
+#
+#   Fast Forward mode — Dual-interface transparent L2 bridge. Traffic is forwarded
+#                       between two NICs via XDP_REDIRECT, bypassing the kernel stack.
+#                       Use this when XDrop sits inline between a router and a server.
+
+server:
+  port: 8080
+  # Interface to attach XDP to (traditional mode only).
+  # Ignored when fast_forward.enabled is true.
+  interface: "eth0"   # e.g. eth0, ens3, enp3s0
+
+bpf:
+  # Path to the compiled BPF ELF file, relative to the working directory.
+  path: bpf/xdrop.elf
+
+auth:
+  # API key that the controller must present when calling this node.
+  # Must match the api_key entry for this node in the controller's config.
+  node_api_key: "CHANGE_ME_NODE_KEY"
+
+  # Key this node uses when pushing sync reports to the controller.
+  # Must match the controller's external_api_key.
+  controller_sync_key: "CHANGE_ME_SYNC_KEY"
+
+  # Controller base URL. Leave empty to disable outbound sync (pull-only mode).
+  # Example: http://10.0.0.1:8000
+  controller_url: ""
+
+# ------------------------------------------------------------
+# Fast Forward mode (optional)
+# ------------------------------------------------------------
+# When enabled, XDrop acts as a transparent bump-in-the-wire device.
+# The agent automatically brings interfaces up, enables promiscuous mode,
+# and disables GRO/LRO/TSO offloads. Settings are restored on clean exit.
+#
+# Only one interface pair is supported per agent instance.
+# When fast_forward is enabled, server.interface above is ignored.
+
+# fast_forward:
+#   enabled: true
+#   pairs:
+#     - inbound: "ens1f0"      # WAN-facing NIC (receives external traffic)
+#       outbound: "ens1f1"     # LAN-facing NIC (connects to internal network)
+#       filter_on: "inbound"   # Where to apply drop rules:
+#                              #   inbound  — filter on the WAN side only (recommended)
+#                              #   outbound — filter on the LAN side only
+#                              #   both     — filter in both directions
+
+# ------------------------------------------------------------
+# Examples
+# ------------------------------------------------------------
+#
+# Example 1: Traditional mode — protect a single server
+#
+#   server:
+#     port: 8080
+#     interface: "eth0"
+#   bpf:
+#     path: bpf/xdrop.elf
+#   auth:
+#     node_api_key: "your-node-key"
+#     controller_sync_key: "your-sync-key"
+#     controller_url: "http://10.0.0.1:8000"
+#
+# --
+#
+# Example 2: Fast Forward — transparent scrubbing device (one-directional filter)
+#
+#   server:
+#     port: 8080
+#   bpf:
+#     path: bpf/xdrop.elf
+#   auth:
+#     node_api_key: "your-node-key"
+#     controller_sync_key: "your-sync-key"
+#     controller_url: "http://10.0.0.1:8000"
+#   fast_forward:
+#     enabled: true
+#     pairs:
+#       - inbound: "ens1f0"
+#         outbound: "ens1f1"
+#         filter_on: "inbound"
+#
+# --
+#
+# Example 3: Fast Forward — bidirectional filter
+#
+#   fast_forward:
+#     enabled: true
+#     pairs:
+#       - inbound: "ens1f0"
+#         outbound: "ens1f1"
+#         filter_on: "both"

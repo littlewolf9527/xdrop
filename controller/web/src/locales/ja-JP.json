@@ -1,0 +1,203 @@
+{
+  "common": {
+    "add": "追加",
+    "delete": "削除",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "search": "検索",
+    "refresh": "更新",
+    "loading": "読み込み中...",
+    "success": "成功",
+    "error": "エラー",
+    "warning": "警告",
+    "any": "*",
+    "operations": "操作"
+  },
+  "nav": {
+    "dashboard": "ダッシュボード",
+    "rules": "ブラックリスト",
+    "whitelist": "ホワイトリスト",
+    "nodes": "ノード",
+    "settings": "設定",
+    "logout": "ログアウト"
+  },
+  "dashboard": {
+    "stats": {
+      "rules": "ルール",
+      "whitelist": "ホワイトリスト",
+      "nodes": "オンラインノード",
+      "passedPPS": "通過 PPS",
+      "droppedPPS": "ドロップ PPS"
+    },
+    "nodeStatus": "ノード状態",
+    "topRules": "トップ5クリーニングルール",
+    "topRulesChart": "トップルール (ドロップPPS順)",
+    "trafficChart": "リアルタイムトラフィック",
+    "dropRate": "ドロップ率",
+    "trafficStats": "トラフィック",
+    "systemStats": "システム",
+    "agentState": "エージェント状態",
+    "memory": "メモリ",
+    "noNodes": "ノードなし",
+    "noDropData": "ドロップデータなし",
+    "autoRefresh": "{n}秒ごとに自動更新",
+    "dropPPS": "ドロップ率",
+    "totalDropped": "総ドロップ"
+  },
+  "rules": {
+    "title": "ブラックリストルール",
+    "addRule": "追加",
+    "batchAdd": "一括追加",
+    "deleteSelected": "削除 ({n})",
+    "searchPlaceholder": "IPアドレスを検索...",
+    "form": {
+      "srcIp": "送信元IP",
+      "dstIp": "宛先IP",
+      "srcPort": "送信元ポート",
+      "dstPort": "宛先ポート",
+      "protocol": "プロトコル",
+      "action": "アクション",
+      "rateLimit": "レート制限 (pps)",
+      "pktLen": "パケット長 (バイト)",
+      "pktLenRange": "パケット長範囲 (バイト)",
+      "comment": "コメント",
+      "ipType": "タイプ"
+    },
+    "actions": {
+      "drop": "ドロップ",
+      "rateLimit": "レート制限"
+    },
+    "protocols": {
+      "all": "すべて",
+      "tcp": "TCP",
+      "udp": "UDP",
+      "icmp": "ICMP",
+      "icmpv6": "ICMPv6"
+    },
+    "ipType": {
+      "src": "送信元IPとして",
+      "dst": "宛先IPとして"
+    },
+    "batchHint": "1行に1つのIPまたはCIDR（自動検出）、例: 192.168.1.0/24 または 10.0.0.1",
+    "ipList": "IPリスト",
+    "addrMode": {
+      "ip": "IP",
+      "cidr": "CIDR"
+    },
+    "totalRules": "合計: {n} ルール",
+    "perPage": "/ ページ"
+  },
+  "whitelist": {
+    "title": "ホワイトリスト",
+    "addEntry": "追加",
+    "batchAdd": "一括追加",
+    "deleteSelected": "削除 ({n})",
+    "searchPlaceholder": "IPアドレスを検索..."
+  },
+  "nodes": {
+    "title": "ノード管理",
+    "description": "ノードはconfig.yamlで設定されます。このページは読み取り専用です",
+    "readOnlyMode": "読み取り専用モード",
+    "name": "名前",
+    "address": "アドレス",
+    "status": {
+      "online": "オンライン",
+      "offline": "オフライン"
+    },
+    "syncRules": "ルール同期",
+    "statusLabel": "ステータス",
+    "rulesCount": "ルール",
+    "sync": "同期",
+    "detail": "詳細",
+    "lastSeen": "最終確認",
+    "lastHeartbeat": "最終ハートビート",
+    "endpoint": "エンドポイント",
+    "justNow": "たった今",
+    "secondsAgo": "{n}秒前",
+    "minutesAgo": "{n}分前"
+  },
+  "settings": {
+    "title": "設定",
+    "language": {
+      "title": "言語",
+      "description": "お好みの表示言語を選択してください"
+    },
+    "theme": {
+      "title": "外観",
+      "description": "お好みのテーマを選択してください",
+      "light": "ライト",
+      "dark": "ダーク"
+    },
+    "apiKey": {
+      "title": "API キー設定",
+      "description": "XDropは外部アクセスと内部通信を分離するためにデュアルAPIキーアーキテクチャを使用しています:",
+      "externalKey": "外部APIキー",
+      "externalKeyDesc": "外部システム（例：Wanguard）がController APIを呼び出すために使用されます。Controllerのconfig.yamlでauth.external_api_keyとして設定してください",
+      "internalKey": "内部同期キー",
+      "internalKeyDesc": "Controllerがノードにルールをプッシュするために使用されます。Controllerのconfig.yamlでauth.node_api_keyとして設定してください",
+      "nodeKey": "ノード別キー",
+      "nodeKeyDesc": "各ノードはオプションで独自のAPIキーを持つことができ、Controllerのconfig.yamlでnodes[].api_keyとして設定されます"
+    },
+    "about": {
+      "title": "バージョン情報",
+      "version": "バージョン",
+      "name": "XDrop",
+      "description": "高性能分散型XDPファイアウォール"
+    }
+  },
+  "table": {
+    "id": "ID",
+    "source": "送信元",
+    "destination": "宛先",
+    "protocol": "プロトコル",
+    "pktLen": "パケット長",
+    "action": "アクション",
+    "matchCount": "マッチ数",
+    "dropPPS": "ドロップPPS",
+    "totalDropped": "総ドロップ",
+    "comment": "コメント",
+    "operations": "操作"
+  },
+  "messages": {
+    "confirmDelete": "本当に削除しますか？",
+    "confirmBatchDelete": "{n}件のアイテムを削除しますか？",
+    "addSuccess": "追加しました",
+    "deleteSuccess": "削除しました",
+    "syncSuccess": "同期完了",
+    "loadFailed": "読み込み失敗",
+    "addFailed": "追加失敗",
+    "deleteFailed": "削除失敗",
+    "syncFailed": "同期失敗",
+    "batchDeleteFailed": "一括削除失敗",
+    "atLeastOneIP": "少なくとも1つのIPを入力してください",
+    "batchResult": "完了: {success}件成功、{fail}件失敗",
+    "batchSuccess": "{n}件のエントリが追加されました",
+    "pktLenHint": "L3（IP層）パケット長（バイト）。0は制限なし",
+    "pktLenOnlyNotAllowed": "長さのみのルールは許可されていません：少なくとも1つの5タプルフィールド（IP/ポート/プロトコル）を指定してください",
+    "invalidLenRange": "無効な長さ範囲：最小値は最大値より大きくできません",
+    "invalidCIDR": "CIDRフォーマットが無効です。例: 10.0.0.0/8"
+  },
+  "dialog": {
+    "addRule": "ルール追加",
+    "addWhitelist": "ホワイトリスト追加",
+    "batchAddRule": "ルール一括追加",
+    "batchAddWhitelist": "ホワイトリスト一括追加",
+    "confirmDelete": "削除確認",
+    "batchDelete": "一括削除"
+  },
+  "placeholder": {
+    "optional": "任意",
+    "leaveEmptyForAny": "空欄の場合はすべて許可",
+    "searchIP": "IPアドレスを検索...",
+    "ipListHint": "1行に1つのIPまたはCIDR\n192.168.1.0/24\n10.0.0.1",
+    "cidrExample": "例: 10.0.0.0/8"
+  },
+  "login": {
+    "title": "ログイン",
+    "username": "ユーザー名",
+    "password": "パスワード",
+    "submit": "ログイン",
+    "error": "ユーザー名またはパスワードが正しくありません",
+    "welcome": "XDrop コントローラーへようこそ"
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "common": {
+    "add": "추가",
+    "delete": "삭제",
+    "cancel": "취소",
+    "confirm": "확인",
+    "search": "검색",
+    "refresh": "새로고침",
+    "loading": "로딩 중...",
+    "success": "성공",
+    "error": "오류",
+    "warning": "경고",
+    "any": "*",
+    "operations": "작업"
+  },
+  "nav": {
+    "dashboard": "대시보드",
+    "rules": "블랙리스트",
+    "whitelist": "화이트리스트",
+    "nodes": "노드",
+    "settings": "설정",
+    "logout": "로그아웃"
+  },
+  "dashboard": {
+    "stats": {
+      "rules": "규칙",
+      "whitelist": "화이트리스트",
+      "nodes": "온라인 노드",
+      "passedPPS": "통과 PPS",
+      "droppedPPS": "드롭 PPS"
+    },
+    "nodeStatus": "노드 상태",
+    "topRules": "상위 5개 클리닝 규칙",
+    "topRulesChart": "상위 규칙 (드롭 PPS 기준)",
+    "trafficChart": "실시간 트래픽",
+    "dropRate": "드롭 비율",
+    "trafficStats": "트래픽",
+    "systemStats": "시스템",
+    "agentState": "에이전트 상태",
+    "memory": "메모리",
+    "noNodes": "노드 없음",
+    "noDropData": "드롭 데이터 없음",
+    "autoRefresh": "{n}초마다 자동 새로고침",
+    "dropPPS": "드롭 속도",
+    "totalDropped": "총 드롭"
+  },
+  "rules": {
+    "title": "블랙리스트 규칙",
+    "addRule": "추가",
+    "batchAdd": "일괄 추가",
+    "deleteSelected": "삭제 ({n})",
+    "searchPlaceholder": "IP 주소 검색...",
+    "form": {
+      "srcIp": "소스 IP",
+      "dstIp": "대상 IP",
+      "srcPort": "소스 포트",
+      "dstPort": "대상 포트",
+      "protocol": "프로토콜",
+      "action": "동작",
+      "rateLimit": "속도 제한 (pps)",
+      "pktLen": "패킷 길이 (바이트)",
+      "pktLenRange": "패킷 길이 범위 (바이트)",
+      "comment": "설명",
+      "ipType": "유형"
+    },
+    "actions": {
+      "drop": "드롭",
+      "rateLimit": "속도 제한"
+    },
+    "protocols": {
+      "all": "전체",
+      "tcp": "TCP",
+      "udp": "UDP",
+      "icmp": "ICMP",
+      "icmpv6": "ICMPv6"
+    },
+    "ipType": {
+      "src": "소스 IP로",
+      "dst": "대상 IP로"
+    },
+    "batchHint": "줄당 하나의 IP 또는 CIDR(자동 감지), 예: 192.168.1.0/24 또는 10.0.0.1",
+    "ipList": "IP 목록",
+    "addrMode": {
+      "ip": "IP",
+      "cidr": "CIDR"
+    },
+    "totalRules": "총 {n}개 규칙",
+    "perPage": "/ 페이지"
+  },
+  "whitelist": {
+    "title": "화이트리스트",
+    "addEntry": "추가",
+    "batchAdd": "일괄 추가",
+    "deleteSelected": "삭제 ({n})",
+    "searchPlaceholder": "IP 주소 검색..."
+  },
+  "nodes": {
+    "title": "노드 관리",
+    "description": "노드는 config.yaml을 통해 구성됩니다. 이 페이지는 읽기 전용입니다",
+    "readOnlyMode": "읽기 전용 모드",
+    "name": "이름",
+    "address": "주소",
+    "status": {
+      "online": "온라인",
+      "offline": "오프라인"
+    },
+    "statusLabel": "상태",
+    "rulesCount": "규칙",
+    "sync": "동기화",
+    "syncRules": "규칙 동기화",
+    "detail": "상세",
+    "lastSeen": "마지막 확인",
+    "lastHeartbeat": "마지막 하트비트",
+    "endpoint": "엔드포인트",
+    "justNow": "방금",
+    "secondsAgo": "{n}초 전",
+    "minutesAgo": "{n}분 전"
+  },
+  "settings": {
+    "title": "설정",
+    "language": {
+      "title": "언어",
+      "description": "선호하는 표시 언어를 선택하세요"
+    },
+    "theme": {
+      "title": "외관",
+      "description": "선호하는 테마를 선택하세요",
+      "light": "라이트",
+      "dark": "다크"
+    },
+    "apiKey": {
+      "title": "API 키 구성",
+      "description": "XDrop은 외부 액세스와 내부 통신을 분리하기 위해 이중 API 키 아키텍처를 사용합니다:",
+      "externalKey": "외부 API 키",
+      "externalKeyDesc": "외부 시스템(예: Wanguard)이 Controller API를 호출하는 데 사용됩니다. Controller의 config.yaml에서 auth.external_api_key로 구성하세요",
+      "internalKey": "내부 동기화 키",
+      "internalKeyDesc": "Controller가 노드에 규칙을 푸시하는 데 사용됩니다. Controller의 config.yaml에서 auth.node_api_key로 구성하세요",
+      "nodeKey": "노드별 키",
+      "nodeKeyDesc": "각 노드는 선택적으로 자체 API 키를 가질 수 있으며, Controller의 config.yaml에서 nodes[].api_key로 구성됩니다"
+    },
+    "about": {
+      "title": "정보",
+      "version": "버전",
+      "name": "XDrop",
+      "description": "고성능 분산 XDP 방화벽"
+    }
+  },
+  "table": {
+    "id": "ID",
+    "source": "소스",
+    "destination": "대상",
+    "protocol": "프로토콜",
+    "pktLen": "패킷 길이",
+    "action": "동작",
+    "matchCount": "일치 수",
+    "dropPPS": "드롭 PPS",
+    "totalDropped": "총 드롭",
+    "comment": "설명",
+    "operations": "작업"
+  },
+  "messages": {
+    "confirmDelete": "정말 삭제하시겠습니까?",
+    "confirmBatchDelete": "{n}개 항목을 삭제하시겠습니까?",
+    "addSuccess": "추가되었습니다",
+    "deleteSuccess": "삭제되었습니다",
+    "syncSuccess": "동기화 완료",
+    "loadFailed": "로드 실패",
+    "addFailed": "추가 실패",
+    "deleteFailed": "삭제 실패",
+    "syncFailed": "동기화 실패",
+    "batchDeleteFailed": "일괄 삭제 실패",
+    "atLeastOneIP": "최소 하나의 IP를 입력하세요",
+    "batchResult": "완료: {success}개 성공, {fail}개 실패",
+    "batchSuccess": "{n}개 항목이 추가되었습니다",
+    "pktLenHint": "L3 (IP 계층) 패킷 길이 (바이트). 0은 제한 없음",
+    "pktLenOnlyNotAllowed": "길이 전용 규칙은 허용되지 않습니다: 최소 하나의 5-튜플 필드 (IP/포트/프로토콜)를 지정하세요",
+    "invalidLenRange": "잘못된 길이 범위: 최소값이 최대값보다 클 수 없습니다",
+    "invalidCIDR": "잘못된 CIDR 형식입니다. 예: 10.0.0.0/8"
+  },
+  "dialog": {
+    "addRule": "규칙 추가",
+    "addWhitelist": "화이트리스트 추가",
+    "batchAddRule": "규칙 일괄 추가",
+    "batchAddWhitelist": "화이트리스트 일괄 추가",
+    "confirmDelete": "삭제 확인",
+    "batchDelete": "일괄 삭제"
+  },
+  "placeholder": {
+    "optional": "선택 사항",
+    "leaveEmptyForAny": "비워두면 모두 허용",
+    "searchIP": "IP 주소 검색...",
+    "ipListHint": "한 줄에 하나의 IP 또는 CIDR\n192.168.1.0/24\n10.0.0.1",
+    "cidrExample": "예: 10.0.0.0/8"
+  },
+  "login": {
+    "title": "로그인",
+    "username": "사용자 이름",
+    "password": "비밀번호",
+    "submit": "로그인",
+    "error": "사용자 이름 또는 비밀번호가 올바르지 않습니다",
+    "welcome": "XDrop 컨트롤러에 오신 것을 환영합니다"
+  }
+}

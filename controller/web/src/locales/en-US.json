@@ -1,0 +1,203 @@
+{
+  "common": {
+    "add": "Add",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "search": "Search",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "any": "*",
+    "operations": "Operations"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "rules": "Blacklist",
+    "whitelist": "Whitelist",
+    "nodes": "Nodes",
+    "settings": "Settings",
+    "logout": "Sign Out"
+  },
+  "dashboard": {
+    "stats": {
+      "rules": "Rules",
+      "whitelist": "Whitelist",
+      "nodes": "Online Nodes",
+      "passedPPS": "Passed PPS",
+      "droppedPPS": "Dropped PPS"
+    },
+    "nodeStatus": "Node Status",
+    "topRules": "Top 5 Cleaning Rules",
+    "topRulesChart": "Top Rules (by Drop PPS)",
+    "trafficChart": "Real-time Traffic",
+    "dropRate": "Drop Rate",
+    "trafficStats": "Traffic",
+    "systemStats": "System",
+    "agentState": "Agent State",
+    "memory": "Memory",
+    "noNodes": "No nodes",
+    "noDropData": "No drop data",
+    "autoRefresh": "Auto refresh every {n}s",
+    "dropPPS": "Drop Rate",
+    "totalDropped": "Total Dropped"
+  },
+  "rules": {
+    "title": "Blacklist Rules",
+    "addRule": "Add",
+    "batchAdd": "Batch Add",
+    "deleteSelected": "Delete ({n})",
+    "searchPlaceholder": "Search IP address...",
+    "form": {
+      "srcIp": "Source IP",
+      "dstIp": "Destination IP",
+      "srcPort": "Source Port",
+      "dstPort": "Destination Port",
+      "protocol": "Protocol",
+      "action": "Action",
+      "rateLimit": "Rate Limit (pps)",
+      "pktLen": "Packet Length (bytes)",
+      "pktLenRange": "Packet Length Range (bytes)",
+      "comment": "Comment",
+      "ipType": "Type"
+    },
+    "actions": {
+      "drop": "Drop",
+      "rateLimit": "Rate Limit"
+    },
+    "protocols": {
+      "all": "All",
+      "tcp": "TCP",
+      "udp": "UDP",
+      "icmp": "ICMP",
+      "icmpv6": "ICMPv6"
+    },
+    "ipType": {
+      "src": "As Source IP",
+      "dst": "As Destination IP"
+    },
+    "batchHint": "One IP or CIDR per line (auto-detected), e.g.: 192.168.1.0/24 or 10.0.0.1",
+    "ipList": "IP List",
+    "addrMode": {
+      "ip": "IP",
+      "cidr": "CIDR"
+    },
+    "totalRules": "Total: {n} rules",
+    "perPage": "/ page"
+  },
+  "whitelist": {
+    "title": "Whitelist",
+    "addEntry": "Add",
+    "batchAdd": "Batch Add",
+    "deleteSelected": "Delete ({n})",
+    "searchPlaceholder": "Search IP address..."
+  },
+  "nodes": {
+    "title": "Node Management",
+    "description": "Nodes are configured via config.yaml, this page is read-only",
+    "readOnlyMode": "Read-only Mode",
+    "name": "Name",
+    "address": "Address",
+    "status": {
+      "online": "Online",
+      "offline": "Offline"
+    },
+    "statusLabel": "Status",
+    "rulesCount": "Rules",
+    "sync": "Sync",
+    "syncRules": "Sync Rules",
+    "detail": "Detail",
+    "lastSeen": "Last Seen",
+    "lastHeartbeat": "Last Heartbeat",
+    "endpoint": "Endpoint",
+    "justNow": "Just now",
+    "secondsAgo": "{n}s ago",
+    "minutesAgo": "{n}m ago"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "title": "Language",
+      "description": "Select your preferred display language"
+    },
+    "theme": {
+      "title": "Appearance",
+      "description": "Choose your preferred theme",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "apiKey": {
+      "title": "API Key Configuration",
+      "description": "XDrop uses a dual API Key architecture to separate external access from internal communication:",
+      "externalKey": "External API Key",
+      "externalKeyDesc": "Used by external systems (e.g., Wanguard) to call Controller API. Configure in Controller's config.yaml under auth.external_api_key",
+      "internalKey": "Internal Sync Key",
+      "internalKeyDesc": "Used by Controller to push rules to Nodes. Configure in Controller's config.yaml under auth.node_api_key",
+      "nodeKey": "Per-Node Key",
+      "nodeKeyDesc": "Each Node can optionally have its own API Key, configured in Controller's config.yaml under nodes[].api_key"
+    },
+    "about": {
+      "title": "About",
+      "version": "Version",
+      "name": "XDrop",
+      "description": "High-performance distributed XDP firewall"
+    }
+  },
+  "table": {
+    "id": "ID",
+    "source": "Source",
+    "destination": "Destination",
+    "protocol": "Proto",
+    "pktLen": "Pkt Len",
+    "action": "Action",
+    "matchCount": "Matched",
+    "dropPPS": "Drop PPS",
+    "totalDropped": "Total Dropped",
+    "comment": "Comment",
+    "operations": "Operations"
+  },
+  "messages": {
+    "confirmDelete": "Are you sure you want to delete?",
+    "confirmBatchDelete": "Are you sure you want to delete {n} items?",
+    "addSuccess": "Added successfully",
+    "deleteSuccess": "Deleted successfully",
+    "syncSuccess": "Sync completed",
+    "loadFailed": "Failed to load",
+    "addFailed": "Failed to add",
+    "deleteFailed": "Failed to delete",
+    "syncFailed": "Sync failed",
+    "batchDeleteFailed": "Batch delete failed",
+    "atLeastOneIP": "Please enter at least one IP",
+    "batchResult": "Completed: {success} succeeded, {fail} failed",
+    "batchSuccess": "Successfully added {n} entries",
+    "pktLenHint": "L3 (IP layer) packet length in bytes. 0 means no limit",
+    "pktLenOnlyNotAllowed": "Length-only rules not allowed: please specify at least one 5-tuple field (IP/Port/Protocol)",
+    "invalidLenRange": "Invalid length range: minimum cannot be greater than maximum",
+    "invalidCIDR": "Invalid CIDR format, use e.g.: 10.0.0.0/8"
+  },
+  "dialog": {
+    "addRule": "Add Rule",
+    "addWhitelist": "Add Whitelist Entry",
+    "batchAddRule": "Batch Add Rules",
+    "batchAddWhitelist": "Batch Add Whitelist",
+    "confirmDelete": "Confirm Delete",
+    "batchDelete": "Batch Delete"
+  },
+  "placeholder": {
+    "optional": "Optional",
+    "leaveEmptyForAny": "Leave empty for any",
+    "searchIP": "Search IP address...",
+    "ipListHint": "One IP or CIDR per line\n192.168.1.0/24\n10.0.0.1",
+    "cidrExample": "e.g. 10.0.0.0/8"
+  },
+  "login": {
+    "title": "Login",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign In",
+    "error": "Invalid username or password",
+    "welcome": "Welcome to XDrop Controller"
+  }
+}

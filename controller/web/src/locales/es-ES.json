@@ -1,0 +1,203 @@
+{
+  "common": {
+    "add": "Agregar",
+    "delete": "Eliminar",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "search": "Buscar",
+    "refresh": "Actualizar",
+    "loading": "Cargando...",
+    "success": "Éxito",
+    "error": "Error",
+    "warning": "Advertencia",
+    "any": "*",
+    "operations": "Operaciones"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "rules": "Lista Negra",
+    "whitelist": "Lista Blanca",
+    "nodes": "Nodos",
+    "settings": "Configuración",
+    "logout": "Cerrar Sesión"
+  },
+  "dashboard": {
+    "stats": {
+      "rules": "Reglas",
+      "whitelist": "Lista Blanca",
+      "nodes": "Nodos en Línea",
+      "passedPPS": "PPS Pasados",
+      "droppedPPS": "PPS Descartados"
+    },
+    "nodeStatus": "Estado de Nodos",
+    "topRules": "Top 5 Reglas de Limpieza",
+    "topRulesChart": "Top Reglas (por PPS Descartados)",
+    "trafficChart": "Tráfico en Tiempo Real",
+    "dropRate": "Tasa de Descarte",
+    "trafficStats": "Tráfico",
+    "systemStats": "Sistema",
+    "agentState": "Estado del Agente",
+    "memory": "Memoria",
+    "noNodes": "Sin nodos",
+    "noDropData": "Sin datos de descarte",
+    "autoRefresh": "Actualización automática cada {n}s",
+    "dropPPS": "Tasa de Descarte",
+    "totalDropped": "Total Descartados"
+  },
+  "rules": {
+    "title": "Reglas de Lista Negra",
+    "addRule": "Agregar",
+    "batchAdd": "Agregar Lote",
+    "deleteSelected": "Eliminar ({n})",
+    "searchPlaceholder": "Buscar dirección IP...",
+    "form": {
+      "srcIp": "IP Origen",
+      "dstIp": "IP Destino",
+      "srcPort": "Puerto Origen",
+      "dstPort": "Puerto Destino",
+      "protocol": "Protocolo",
+      "action": "Acción",
+      "rateLimit": "Límite (pps)",
+      "pktLen": "Longitud Paquete (bytes)",
+      "pktLenRange": "Rango Longitud Paquete (bytes)",
+      "comment": "Comentario",
+      "ipType": "Tipo"
+    },
+    "actions": {
+      "drop": "Descartar",
+      "rateLimit": "Limitar"
+    },
+    "protocols": {
+      "all": "Todos",
+      "tcp": "TCP",
+      "udp": "UDP",
+      "icmp": "ICMP",
+      "icmpv6": "ICMPv6"
+    },
+    "ipType": {
+      "src": "Como IP Origen",
+      "dst": "Como IP Destino"
+    },
+    "batchHint": "Una IP o CIDR por línea (auto-detectado), ej.: 192.168.1.0/24 o 10.0.0.1",
+    "ipList": "Lista de IPs",
+    "addrMode": {
+      "ip": "IP",
+      "cidr": "CIDR"
+    },
+    "totalRules": "Total: {n} reglas",
+    "perPage": "/ página"
+  },
+  "whitelist": {
+    "title": "Lista Blanca",
+    "addEntry": "Agregar",
+    "batchAdd": "Agregar Lote",
+    "deleteSelected": "Eliminar ({n})",
+    "searchPlaceholder": "Buscar dirección IP..."
+  },
+  "nodes": {
+    "title": "Gestión de Nodos",
+    "description": "Los nodos se configuran via config.yaml, esta página es de solo lectura",
+    "readOnlyMode": "Modo Solo Lectura",
+    "name": "Nombre",
+    "address": "Dirección",
+    "status": {
+      "online": "En Línea",
+      "offline": "Fuera de Línea"
+    },
+    "statusLabel": "Estado",
+    "rulesCount": "Reglas",
+    "sync": "Sincronizar",
+    "syncRules": "Sincronizar Reglas",
+    "detail": "Detalle",
+    "lastSeen": "Última Conexión",
+    "lastHeartbeat": "Último Latido",
+    "endpoint": "Endpoint",
+    "justNow": "Ahora mismo",
+    "secondsAgo": "hace {n}s",
+    "minutesAgo": "hace {n}m"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": {
+      "title": "Idioma",
+      "description": "Seleccione su idioma preferido"
+    },
+    "theme": {
+      "title": "Apariencia",
+      "description": "Elija su tema preferido",
+      "light": "Claro",
+      "dark": "Oscuro"
+    },
+    "apiKey": {
+      "title": "Configuración de API Key",
+      "description": "XDrop utiliza una arquitectura de doble API Key para separar el acceso externo de la comunicación interna:",
+      "externalKey": "API Key Externa",
+      "externalKeyDesc": "Usada por sistemas externos (ej. Wanguard) para llamar al API del Controller. Configure en config.yaml del Controller bajo auth.external_api_key",
+      "internalKey": "Key de Sincronización Interna",
+      "internalKeyDesc": "Usada por el Controller para enviar reglas a los Nodos. Configure en config.yaml del Controller bajo auth.node_api_key",
+      "nodeKey": "Key por Nodo",
+      "nodeKeyDesc": "Cada Nodo puede tener opcionalmente su propia API Key, configurada en config.yaml del Controller bajo nodes[].api_key"
+    },
+    "about": {
+      "title": "Acerca de",
+      "version": "Versión",
+      "name": "XDrop",
+      "description": "Firewall XDP distribuido de alto rendimiento"
+    }
+  },
+  "table": {
+    "id": "ID",
+    "source": "Origen",
+    "destination": "Destino",
+    "protocol": "Protocolo",
+    "pktLen": "Long. Paq.",
+    "action": "Acción",
+    "matchCount": "Coincidencias",
+    "dropPPS": "PPS Descartados",
+    "totalDropped": "Total Descartados",
+    "comment": "Comentario",
+    "operations": "Operaciones"
+  },
+  "messages": {
+    "confirmDelete": "¿Está seguro de que desea eliminar?",
+    "confirmBatchDelete": "¿Está seguro de que desea eliminar {n} elementos?",
+    "addSuccess": "Agregado exitosamente",
+    "deleteSuccess": "Eliminado exitosamente",
+    "syncSuccess": "Sincronización completada",
+    "loadFailed": "Error al cargar",
+    "addFailed": "Error al agregar",
+    "deleteFailed": "Error al eliminar",
+    "syncFailed": "Error al sincronizar",
+    "batchDeleteFailed": "Error en eliminación por lotes",
+    "atLeastOneIP": "Por favor ingrese al menos una IP",
+    "batchResult": "Completado: {success} exitosos, {fail} fallidos",
+    "batchSuccess": "Se agregaron {n} entradas exitosamente",
+    "pktLenHint": "Longitud de paquete L3 (capa IP) en bytes. 0 significa sin límite",
+    "pktLenOnlyNotAllowed": "No se permiten reglas solo de longitud: especifique al menos un campo de 5-tupla (IP/Puerto/Protocolo)",
+    "invalidLenRange": "Rango de longitud inválido: el mínimo no puede ser mayor que el máximo",
+    "invalidCIDR": "Formato CIDR inválido, use ej.: 10.0.0.0/8"
+  },
+  "dialog": {
+    "addRule": "Agregar Regla",
+    "addWhitelist": "Agregar a Lista Blanca",
+    "batchAddRule": "Agregar Reglas por Lotes",
+    "batchAddWhitelist": "Agregar Lista Blanca por Lotes",
+    "confirmDelete": "Confirmar Eliminación",
+    "batchDelete": "Eliminación por Lotes"
+  },
+  "placeholder": {
+    "optional": "Opcional",
+    "leaveEmptyForAny": "Deje vacío para cualquiera",
+    "searchIP": "Buscar dirección IP...",
+    "ipListHint": "Una IP o CIDR por línea\n192.168.1.0/24\n10.0.0.1",
+    "cidrExample": "ej. 10.0.0.0/8"
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "submit": "Entrar",
+    "error": "Usuario o contraseña incorrectos",
+    "welcome": "Bienvenido a XDrop Controller"
+  }
+}

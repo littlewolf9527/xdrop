@@ -1,0 +1,86 @@
+# === Build artifacts ===
+## Go binaries
+xdrop-controller
+xdrop-controller-linux
+xdrop-agent
+xdrop-agent-linux
+## BPF object files
+*.o
+*.ll
+*.bc
+## C libraries
+*.a
+*.so
+*.dylib
+*.elf
+
+# === Go ===
+vendor/
+*.exe
+*.test
+coverage.out
+coverage.html
+
+# === Frontend build ===
+controller/web/dist/
+controller/web/node_modules/
+
+# === Database ===
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# === Config files (keep *.example.yaml) ===
+config.yaml
+config.yml
+
+# === Keys / Certificates ===
+*.key
+*.pem
+*.crt
+*.cert
+*.p12
+*.pfx
+*.env
+.env
+.env.*
+credentials*
+secrets*
+*_secret*
+*.token
+
+# === OS ===
+.DS_Store
+**/.DS_Store
+Thumbs.db
+desktop.ini
+.sync-conflict-*
+
+# === IDE / Editors ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# === Claude Code ===
+.claude/
+
+# === Logs ===
+*.log
+logs/
+
+# === Temporary files ===
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# === Local project docs (excluded from public repo) ===
+docs/

@@ -1,0 +1,203 @@
+{
+  "common": {
+    "add": "添加",
+    "delete": "删除",
+    "cancel": "取消",
+    "confirm": "确定",
+    "search": "搜索",
+    "refresh": "刷新",
+    "loading": "加载中...",
+    "success": "成功",
+    "error": "错误",
+    "warning": "警告",
+    "any": "*",
+    "operations": "操作"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "rules": "黑名单",
+    "whitelist": "白名单",
+    "nodes": "节点管理",
+    "settings": "设置",
+    "logout": "退出登录"
+  },
+  "dashboard": {
+    "stats": {
+      "rules": "规则数",
+      "whitelist": "白名单",
+      "nodes": "在线节点",
+      "passedPPS": "通过 PPS",
+      "droppedPPS": "总丢包 PPS"
+    },
+    "nodeStatus": "节点状态",
+    "topRules": "Top 5 清洗规则",
+    "topRulesChart": "Top 规则 (按丢包速率)",
+    "trafficChart": "实时流量",
+    "dropRate": "丢包率",
+    "trafficStats": "流量统计",
+    "systemStats": "系统信息",
+    "agentState": "Agent 状态",
+    "memory": "内存",
+    "noNodes": "暂无节点",
+    "noDropData": "暂无丢包数据",
+    "autoRefresh": "每 {n}s 自动刷新",
+    "dropPPS": "丢包速率",
+    "totalDropped": "总丢包"
+  },
+  "rules": {
+    "title": "黑名单规则",
+    "addRule": "添加",
+    "batchAdd": "批量添加",
+    "deleteSelected": "删除 ({n})",
+    "searchPlaceholder": "搜索 IP 地址...",
+    "form": {
+      "srcIp": "源 IP",
+      "dstIp": "目标 IP",
+      "srcPort": "源端口",
+      "dstPort": "目标端口",
+      "protocol": "协议",
+      "action": "动作",
+      "rateLimit": "限速 (pps)",
+      "pktLen": "包长度 (字节)",
+      "pktLenRange": "包长度范围 (字节)",
+      "comment": "备注",
+      "ipType": "类型"
+    },
+    "actions": {
+      "drop": "丢弃",
+      "rateLimit": "限速"
+    },
+    "protocols": {
+      "all": "全部",
+      "tcp": "TCP",
+      "udp": "UDP",
+      "icmp": "ICMP",
+      "icmpv6": "ICMPv6"
+    },
+    "ipType": {
+      "src": "作为源 IP",
+      "dst": "作为目标 IP"
+    },
+    "batchHint": "每行一个 IP 或 CIDR（自动识别），格式示例：192.168.1.0/24 或 10.0.0.1",
+    "ipList": "IP 列表",
+    "addrMode": {
+      "ip": "IP",
+      "cidr": "CIDR 网段"
+    },
+    "totalRules": "共 {n} 条规则",
+    "perPage": "条/页"
+  },
+  "whitelist": {
+    "title": "白名单",
+    "addEntry": "添加",
+    "batchAdd": "批量添加",
+    "deleteSelected": "删除 ({n})",
+    "searchPlaceholder": "搜索 IP 地址..."
+  },
+  "nodes": {
+    "title": "节点管理",
+    "description": "节点通过 config.yaml 配置，此页面为只读模式",
+    "readOnlyMode": "只读模式",
+    "name": "名称",
+    "address": "地址",
+    "status": {
+      "online": "在线",
+      "offline": "离线"
+    },
+    "statusLabel": "状态",
+    "rulesCount": "规则数",
+    "sync": "同步",
+    "syncRules": "同步规则",
+    "detail": "详情",
+    "lastSeen": "最后在线",
+    "lastHeartbeat": "最后心跳",
+    "endpoint": "端点",
+    "justNow": "刚刚",
+    "secondsAgo": "{n}秒前",
+    "minutesAgo": "{n}分钟前"
+  },
+  "settings": {
+    "title": "设置",
+    "language": {
+      "title": "语言",
+      "description": "选择您偏好的显示语言"
+    },
+    "theme": {
+      "title": "外观",
+      "description": "选择您偏好的主题",
+      "light": "亮色",
+      "dark": "暗色"
+    },
+    "apiKey": {
+      "title": "API Key 配置",
+      "description": "XDrop 采用双 API Key 架构，分离外部访问和内部通信：",
+      "externalKey": "外部 API Key",
+      "externalKeyDesc": "供外部系统（如 Wanguard）调用 Controller API。在 Controller 的 config.yaml 中配置 auth.external_api_key",
+      "internalKey": "内部同步 Key",
+      "internalKeyDesc": "供 Controller 向 Node 推送规则。在 Controller 的 config.yaml 中配置 auth.node_api_key",
+      "nodeKey": "节点独立 Key",
+      "nodeKeyDesc": "每个 Node 可选配置独立的 API Key，在 Controller 的 config.yaml 中配置 nodes[].api_key"
+    },
+    "about": {
+      "title": "关于",
+      "version": "版本",
+      "name": "XDrop",
+      "description": "高性能分布式 XDP 防火墙"
+    }
+  },
+  "table": {
+    "id": "ID",
+    "source": "源",
+    "destination": "目标",
+    "protocol": "协议",
+    "pktLen": "包长度",
+    "action": "动作",
+    "matchCount": "匹配数",
+    "dropPPS": "丢包速率",
+    "totalDropped": "总丢包",
+    "comment": "备注",
+    "operations": "操作"
+  },
+  "messages": {
+    "confirmDelete": "确定删除?",
+    "confirmBatchDelete": "确定删除 {n} 条记录?",
+    "addSuccess": "添加成功",
+    "deleteSuccess": "删除成功",
+    "syncSuccess": "同步完成",
+    "loadFailed": "加载失败",
+    "addFailed": "添加失败",
+    "deleteFailed": "删除失败",
+    "syncFailed": "同步失败",
+    "batchDeleteFailed": "批量删除失败",
+    "atLeastOneIP": "请输入至少一个 IP",
+    "batchResult": "添加完成: {success} 成功, {fail} 失败",
+    "batchSuccess": "成功添加 {n} 条",
+    "pktLenHint": "L3 (IP层) 包长度，单位字节。0 表示不限制",
+    "pktLenOnlyNotAllowed": "纯长度规则不允许：请至少指定一个五元组字段（IP/端口/协议）",
+    "invalidLenRange": "长度范围无效：最小值不能大于最大值",
+    "invalidCIDR": "CIDR 格式无效，请使用如: 10.0.0.0/8"
+  },
+  "dialog": {
+    "addRule": "添加规则",
+    "addWhitelist": "添加白名单",
+    "batchAddRule": "批量添加规则",
+    "batchAddWhitelist": "批量添加白名单",
+    "confirmDelete": "确认删除",
+    "batchDelete": "批量删除"
+  },
+  "placeholder": {
+    "optional": "可选",
+    "leaveEmptyForAny": "留空表示任意",
+    "searchIP": "搜索 IP 地址...",
+    "ipListHint": "每行一个 IP 或 CIDR\n192.168.1.0/24\n10.0.0.1",
+    "cidrExample": "如: 10.0.0.0/8"
+  },
+  "login": {
+    "title": "登录",
+    "username": "用户名",
+    "password": "密码",
+    "submit": "登录",
+    "error": "用户名或密码错误",
+    "welcome": "欢迎使用 XDrop 控制面板"
+  }
+}
