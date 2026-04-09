@@ -5,9 +5,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import VChart from 'vue-echarts'
 import '../charts/setup'
+import { themeKey } from '../composables/useTheme'
+
+const { theme } = inject(themeKey)
 
 const props = defineProps({
   droppedPPS: { type: Number, default: 0 },
@@ -15,16 +18,15 @@ const props = defineProps({
 })
 
 const dropRate = computed(() => {
-  return props.totalPPS > 0
-    ? (props.droppedPPS / props.totalPPS * 100)
-    : 0
+  return props.totalPPS > 0 ? (props.droppedPPS / props.totalPPS * 100) : 0
 })
 
 const gaugeColor = computed(() => {
+  const isAmber = theme.value === 'amber'
   const rate = dropRate.value
-  if (rate > 50) return '#ef4444'
-  if (rate > 10) return '#f59e0b'
-  return '#22c55e'
+  if (rate > 50) return isAmber ? '#d63031' : '#ef4444'
+  if (rate > 10) return isAmber ? '#e6a23c' : '#f59e0b'
+  return isAmber ? '#2ecc40' : '#15be53'
 })
 
 const gaugeOption = computed(() => ({
@@ -46,7 +48,7 @@ const gaugeOption = computed(() => ({
       axisLine: {
         lineStyle: {
           width: 14,
-          color: [[1, 'rgba(200,200,200,0.15)']]
+          color: [[1, theme.value === 'amber' ? 'rgba(216,210,192,0.2)' : 'rgba(200,200,200,0.15)']]
         }
       },
       axisTick: { show: false },
@@ -55,7 +57,7 @@ const gaugeOption = computed(() => ({
       title: {
         offsetCenter: [0, '70%'],
         fontSize: 13,
-        color: '#999'
+        color: theme.value === 'amber' ? '#7a7560' : '#999'
       },
       detail: {
         valueAnimation: true,

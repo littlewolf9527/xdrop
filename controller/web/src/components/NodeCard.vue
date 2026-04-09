@@ -1,5 +1,5 @@
 <template>
-  <div class="node-card glass-card" @click="$emit('click', node)">
+  <div class="node-card xs-card" @click="$emit('click', node)">
     <div class="card-header">
       <div class="node-name-row">
         <span class="status-dot" :class="node.status"></span>
@@ -124,19 +124,19 @@ function progressColor(percent) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--xs-danger);
   flex-shrink: 0;
 }
 
 .status-dot.online {
-  background: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  background: var(--xs-success);
+  box-shadow: 0 0 8px var(--xs-success);
 }
 
 .node-name {
   font-weight: 600;
   font-size: 1rem;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .card-metrics {
@@ -154,13 +154,13 @@ function progressColor(percent) {
 
 .metric-label {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .metric-value {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .metric-value.success {
@@ -168,7 +168,7 @@ function progressColor(percent) {
 }
 
 .metric-value.danger {
-  color: var(--danger);
+  color: var(--xs-danger);
 }
 
 .card-system {
@@ -186,7 +186,7 @@ function progressColor(percent) {
 
 .sys-label {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   width: 32px;
   flex-shrink: 0;
 }
@@ -201,7 +201,7 @@ function progressColor(percent) {
 
 .no-data {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   opacity: 0.5;
 }
 
@@ -212,6 +212,6 @@ function progressColor(percent) {
 
 .last-seen {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 </style>

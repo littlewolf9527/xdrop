@@ -20,7 +20,13 @@
     "nodes": "노드",
     "settings": "설정",
     "logout": "로그아웃"
+  ,
+    "groupFirewall": "FIREWALL",
+    "groupSystem": "SYSTEM"
   },
+  "theme": {
+    "classic": "Classic",
+    "amber": "Amber"},
   "dashboard": {
     "stats": {
       "rules": "규칙",

@@ -1,7 +1,7 @@
 <template>
   <div class="rules-page">
     <!-- Toolbar -->
-    <div class="toolbar glass-card fade-in">
+    <div class="toolbar xs-card fade-in">
       <div class="toolbar-left">
         <el-input
           v-model="search"
@@ -35,7 +35,7 @@
     </div>
 
     <!-- Rule list -->
-    <div class="table-container glass-card fade-in" style="animation-delay: 0.1s">
+    <div class="table-container xs-card fade-in" style="animation-delay: 0.1s">
       <el-table
         :data="rules"
         v-loading="loading"
@@ -214,7 +214,7 @@
             <el-col :span="10">
               <el-input-number v-model="form.pkt_len_min" :min="0" :max="65535" placeholder="Min" controls-position="right" style="width: 100%" />
             </el-col>
-            <el-col :span="4" style="text-align: center; color: var(--text-secondary);">-</el-col>
+            <el-col :span="4" style="text-align: center; color: var(--xs-text-secondary);">-</el-col>
             <el-col :span="10">
               <el-input-number v-model="form.pkt_len_max" :min="0" :max="65535" placeholder="Max" controls-position="right" style="width: 100%" />
             </el-col>
@@ -624,7 +624,7 @@ onUnmounted(() => {
 
 .refresh-hint {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   opacity: 0.7;
 }
 
@@ -636,7 +636,7 @@ onUnmounted(() => {
 .rule-id {
   font-family: 'SF Mono', monospace;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .ip-cell {
@@ -649,7 +649,7 @@ onUnmounted(() => {
 }
 
 .ip-cell .port {
-  color: var(--primary);
+  color: var(--xs-accent);
   font-size: 0.9rem;
 }
 
@@ -657,7 +657,7 @@ onUnmounted(() => {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .stats-cell {
@@ -667,36 +667,36 @@ onUnmounted(() => {
 }
 
 .stats-cell .pps {
-  color: var(--danger);
+  color: var(--xs-danger);
   font-weight: 600;
 }
 
 .stats-cell .total {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.8rem;
 }
 
 .stats-cell.match-stats .match-count {
-  color: var(--primary);
+  color: var(--xs-accent);
   font-weight: 600;
   font-size: 0.95rem;
 }
 
 .no-stats,
 .no-filter {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   opacity: 0.5;
 }
 
 .pkt-len {
   font-family: 'SF Mono', monospace;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .form-hint {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   margin-top: 4px;
   opacity: 0.7;
 }
@@ -727,7 +727,7 @@ onUnmounted(() => {
 }
 
 .comment-text {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.9rem;
 }
 
@@ -741,6 +741,6 @@ onUnmounted(() => {
 
 .pagination-total {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 </style>

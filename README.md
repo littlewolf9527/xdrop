@@ -24,7 +24,9 @@ The system has two components:
 - **Node Agent** — runs on each filtering host, manages the BPF data plane, and exposes a REST API
 - **Controller** — central management plane with a Web UI, stores rules in SQLite, and pushes them to all registered nodes
 
-![XDrop Dashboard](.github/assets/dashboard_screenshot.png)
+| Classic Theme | Amber Theme |
+|:---:|:---:|
+| ![Classic](.github/assets/dashboard_classic.png) | ![Amber](.github/assets/dashboard_amber.png) |
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -185,6 +187,17 @@ Node API requires `X-API-Key` header. Controller API key is optional (configurab
 MIT — see [LICENSE](LICENSE).
 
 BPF/C kernel programs (`node/bpf/`) are licensed under GPL-2.0 as required by the Linux kernel BPF subsystem.
+
+---
+
+## Sponsor
+
+This project is made possible by [Hytron](https://www.hytron.io/), who generously sponsors the development tooling.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/sponsor-hytron-dark.png">
+  <img src=".github/assets/sponsor-hytron.png" alt="Hytron" height="60">
+</picture>
 
 ---
 

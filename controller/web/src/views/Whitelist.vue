@@ -1,7 +1,7 @@
 <template>
   <div class="whitelist-page">
     <!-- Toolbar -->
-    <div class="toolbar glass-card fade-in">
+    <div class="toolbar xs-card fade-in">
       <div class="toolbar-left">
         <el-input
           v-model="search"
@@ -34,7 +34,7 @@
       </div>
     </div>
 
-    <div class="table-container glass-card fade-in" style="animation-delay: 0.1s">
+    <div class="table-container xs-card fade-in" style="animation-delay: 0.1s">
       <el-table :data="filteredEntries" v-loading="loading" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="50" />
         <el-table-column prop="id" :label="$t('table.id')" width="140">
@@ -377,7 +377,7 @@ onUnmounted(() => {
 
 .refresh-hint {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   opacity: 0.7;
 }
 
@@ -389,7 +389,7 @@ onUnmounted(() => {
 .entry-id {
   font-family: 'SF Mono', monospace;
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .ip-cell {
@@ -399,11 +399,11 @@ onUnmounted(() => {
 
 .ip-cell .ip {
   font-weight: 500;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .ip-cell .port {
-  color: var(--primary);
+  color: var(--xs-accent);
   font-size: 0.9rem;
 }
 
@@ -411,6 +411,6 @@ onUnmounted(() => {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 </style>

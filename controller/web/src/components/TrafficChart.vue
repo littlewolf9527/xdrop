@@ -5,19 +5,32 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import VChart from 'vue-echarts'
 import '../charts/setup'
+import { themeKey } from '../composables/useTheme'
+
+const { theme } = inject(themeKey)
 
 const props = defineProps({
-  // Array of { passedPPS, droppedPPS } — max 60 points (3 min at 3s interval)
-  history: {
-    type: Array,
-    default: () => []
+  history: { type: Array, default: () => [] }
+})
+
+const colors = computed(() => {
+  const isAmber = theme.value === 'amber'
+  return {
+    passed: isAmber ? '#2ecc40' : '#15be53',
+    passedArea: isAmber ? 'rgba(46,204,64,0.2)' : 'rgba(21,190,83,0.2)',
+    dropped: isAmber ? '#d63031' : '#ef4444',
+    droppedArea: isAmber ? 'rgba(214,48,49,0.2)' : 'rgba(239,68,68,0.2)',
+    axis: isAmber ? '#d8d2c0' : '#e2e8f0',
+    split: isAmber ? 'rgba(216,210,192,0.3)' : 'rgba(200,200,200,0.2)',
+    text: isAmber ? '#7a7560' : '#64748d'
   }
 })
 
 const chartOption = computed(() => {
+  const c = colors.value
   const labels = props.history.map((_, i) => {
     const secsAgo = (props.history.length - 1 - i) * 3
     return secsAgo === 0 ? 'now' : `-${secsAgo}s`
@@ -41,31 +54,20 @@ const chartOption = computed(() => {
       data: ['Passed', 'Dropped'],
       right: 16,
       top: 4,
-      textStyle: { fontSize: 12 }
+      textStyle: { fontSize: 12, color: c.text }
     },
-    grid: {
-      left: 50,
-      right: 16,
-      top: 36,
-      bottom: 24
-    },
+    grid: { left: 50, right: 16, top: 36, bottom: 24 },
     xAxis: {
       type: 'category',
       data: labels,
       boundaryGap: false,
-      axisLabel: {
-        fontSize: 10,
-        interval: Math.max(Math.floor(labels.length / 6) - 1, 0)
-      },
-      axisLine: { lineStyle: { color: '#ddd' } }
+      axisLabel: { fontSize: 10, color: c.text, interval: Math.max(Math.floor(labels.length / 6) - 1, 0) },
+      axisLine: { lineStyle: { color: c.axis } }
     },
     yAxis: {
       type: 'value',
-      axisLabel: {
-        fontSize: 10,
-        formatter: (v) => formatPPS(v)
-      },
-      splitLine: { lineStyle: { color: 'rgba(200,200,200,0.2)' } }
+      axisLabel: { fontSize: 10, color: c.text, formatter: (v) => formatPPS(v) },
+      splitLine: { lineStyle: { color: c.split } }
     },
     series: [
       {
@@ -74,18 +76,14 @@ const chartOption = computed(() => {
         data: props.history.map(h => h.passedPPS),
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 2, color: '#22c55e' },
+        lineStyle: { width: 2, color: c.passed },
         areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(34,197,94,0.25)' },
-              { offset: 1, color: 'rgba(34,197,94,0.02)' }
-            ]
-          }
+          color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
+            { offset: 0, color: c.passedArea },
+            { offset: 1, color: 'rgba(0,0,0,0)' }
+          ]}
         },
-        itemStyle: { color: '#22c55e' }
+        itemStyle: { color: c.passed }
       },
       {
         name: 'Dropped',
@@ -93,18 +91,14 @@ const chartOption = computed(() => {
         data: props.history.map(h => h.droppedPPS),
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 2, color: '#ef4444' },
+        lineStyle: { width: 2, color: c.dropped },
         areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(239,68,68,0.25)' },
-              { offset: 1, color: 'rgba(239,68,68,0.02)' }
-            ]
-          }
+          color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
+            { offset: 0, color: c.droppedArea },
+            { offset: 1, color: 'rgba(0,0,0,0)' }
+          ]}
         },
-        itemStyle: { color: '#ef4444' }
+        itemStyle: { color: c.dropped }
       }
     ]
   }
@@ -119,7 +113,5 @@ function formatPPS(pps) {
 </script>
 
 <style scoped>
-.traffic-chart {
-  width: 100%;
-}
+.traffic-chart { width: 100%; }
 </style>

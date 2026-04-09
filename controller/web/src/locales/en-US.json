@@ -15,11 +15,18 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "blacklist": "Blacklist",
     "rules": "Blacklist",
     "whitelist": "Whitelist",
     "nodes": "Nodes",
     "settings": "Settings",
-    "logout": "Sign Out"
+    "logout": "Sign Out",
+    "groupFirewall": "FIREWALL",
+    "groupSystem": "SYSTEM"
+  },
+  "theme": {
+    "classic": "Classic",
+    "amber": "Amber"
   },
   "dashboard": {
     "stats": {

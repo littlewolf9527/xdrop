@@ -2,48 +2,48 @@
   <div class="dashboard">
     <!-- Stats cards -->
     <div class="stats-grid">
-      <div class="stat-card fade-in" style="animation-delay: 0s">
-        <div class="stat-icon"><el-icon><List /></el-icon></div>
-        <div class="stat-value number-animate">{{ animatedStats.rulesCount }}</div>
-        <div class="stat-label">{{ $t('dashboard.stats.rules') }}</div>
+      <div class="xs-stat-card fade-in" style="animation-delay: 0s">
+        <div class="xs-stat-icon"><el-icon><List /></el-icon></div>
+        <div class="xs-stat-value number-animate">{{ animatedStats.rulesCount }}</div>
+        <div class="xs-stat-label">{{ $t('dashboard.stats.rules') }}</div>
       </div>
 
-      <div class="stat-card fade-in" style="animation-delay: 0.1s">
-        <div class="stat-icon"><el-icon><CircleCheck /></el-icon></div>
-        <div class="stat-value number-animate">{{ animatedStats.whitelistCount }}</div>
-        <div class="stat-label">{{ $t('dashboard.stats.whitelist') }}</div>
+      <div class="xs-stat-card fade-in" style="animation-delay: 0.1s">
+        <div class="xs-stat-icon"><el-icon><CircleCheck /></el-icon></div>
+        <div class="xs-stat-value number-animate">{{ animatedStats.whitelistCount }}</div>
+        <div class="xs-stat-label">{{ $t('dashboard.stats.whitelist') }}</div>
       </div>
 
-      <div class="stat-card fade-in" style="animation-delay: 0.2s">
-        <div class="stat-icon"><el-icon><Monitor /></el-icon></div>
-        <div class="stat-value number-animate">
+      <div class="xs-stat-card fade-in" style="animation-delay: 0.2s">
+        <div class="xs-stat-icon"><el-icon><Monitor /></el-icon></div>
+        <div class="xs-stat-value number-animate">
           {{ animatedStats.nodesOnline }}<span class="divider">/</span>{{ animatedStats.nodesTotal }}
         </div>
-        <div class="stat-label">{{ $t('dashboard.stats.nodes') }}</div>
+        <div class="xs-stat-label">{{ $t('dashboard.stats.nodes') }}</div>
       </div>
 
-      <div class="stat-card success fade-in" style="animation-delay: 0.3s">
-        <div class="stat-icon"><el-icon><Promotion /></el-icon></div>
-        <div class="stat-value number-animate">{{ formatPPS(animatedStats.totalPassedPPS) }}</div>
-        <div class="stat-label">{{ $t('dashboard.stats.passedPPS') }}</div>
+      <div class="xs-stat-card xs-stat-success fade-in" style="animation-delay: 0.3s">
+        <div class="xs-stat-icon"><el-icon><Promotion /></el-icon></div>
+        <div class="xs-stat-value number-animate">{{ formatPPS(animatedStats.totalPassedPPS) }}</div>
+        <div class="xs-stat-label">{{ $t('dashboard.stats.passedPPS') }}</div>
       </div>
 
-      <div class="stat-card danger fade-in" style="animation-delay: 0.4s">
-        <div class="stat-icon"><el-icon><CircleCloseFilled /></el-icon></div>
-        <div class="stat-value number-animate">{{ formatPPS(animatedStats.totalDroppedPPS) }}</div>
-        <div class="stat-label">{{ $t('dashboard.stats.droppedPPS') }}</div>
+      <div class="xs-stat-card xs-stat-danger fade-in" style="animation-delay: 0.4s">
+        <div class="xs-stat-icon"><el-icon><CircleCloseFilled /></el-icon></div>
+        <div class="xs-stat-value number-animate">{{ formatPPS(animatedStats.totalDroppedPPS) }}</div>
+        <div class="xs-stat-label">{{ $t('dashboard.stats.droppedPPS') }}</div>
       </div>
     </div>
 
     <!-- Traffic chart area -->
     <div class="charts-row fade-in" style="animation-delay: 0.5s">
-      <div class="chart-left glass-card">
+      <div class="xs-card">
         <div class="section-header">
           <h2 class="section-title">{{ $t('dashboard.trafficChart') }}</h2>
         </div>
         <TrafficChart :history="trafficHistory" />
       </div>
-      <div class="chart-right glass-card">
+      <div class="xs-card">
         <div class="section-header">
           <h2 class="section-title">{{ $t('dashboard.dropRate') }}</h2>
         </div>
@@ -65,7 +65,6 @@
             size="small"
             @click="refresh"
             :loading="loading"
-            round
           >
             <el-icon><Refresh /></el-icon>
             {{ $t('common.refresh') }}
@@ -81,7 +80,7 @@
           @click="showNodeDetail"
         />
       </div>
-      <div class="no-nodes glass-card" v-else>
+      <div class="xs-card no-nodes" v-else>
         <span>{{ $t('dashboard.noNodes') || 'No nodes' }}</span>
       </div>
     </div>
@@ -91,7 +90,7 @@
       <div class="section-header">
         <h2 class="section-title">{{ $t('dashboard.topRulesChart') }}</h2>
       </div>
-      <div class="glass-card chart-container">
+      <div class="xs-card chart-container">
         <TopRulesChart :rules="topRules" />
       </div>
     </div>
@@ -179,7 +178,7 @@ watch(() => stats.nodesOnline, (val) => animateNumber('nodesOnline', val))
 watch(() => stats.totalPassedPPS, (val) => animateNumber('totalPassedPPS', val))
 watch(() => stats.totalDroppedPPS, (val) => animateNumber('totalDroppedPPS', val))
 
-// Independent fetch functions — each updates on arrival without blocking the others
+// Independent fetch functions
 const fetchStats = async () => {
   try {
     const data = await statsApi.getGlobal()
@@ -189,7 +188,6 @@ const fetchStats = async () => {
     stats.nodesOnline = data.online_nodes || 0
     stats.totalPassedPPS = data.total_passed_pps || 0
     stats.totalDroppedPPS = data.total_dropped_pps || 0
-    // Push to traffic history ring buffer
     const point = { passedPPS: stats.totalPassedPPS, droppedPPS: stats.totalDroppedPPS }
     const history = [...trafficHistory.value, point]
     if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY)
@@ -218,7 +216,6 @@ const fetchTopRules = async () => {
 }
 
 const doRefresh = (includeTopRules = false) => {
-  // Stats + nodes always refresh; top-rules only on demand (initial load / manual)
   fetchStats()
   fetchNodes()
   if (includeTopRules) fetchTopRules()
@@ -226,8 +223,7 @@ const doRefresh = (includeTopRules = false) => {
 
 const refresh = async () => {
   loading.value = true
-  doRefresh(true) // include rules on manual refresh
-  // Wait only for stats (fastest) so the loading button clears quickly
+  doRefresh(true)
   try {
     await statsApi.getGlobal()
   } catch (_) {}
@@ -235,7 +231,7 @@ const refresh = async () => {
 }
 
 const softRefresh = () => {
-  doRefresh(false) // skip rules on auto-refresh to reduce load
+  doRefresh(false)
 }
 
 const formatPPS = (pps) => {
@@ -246,7 +242,7 @@ const formatPPS = (pps) => {
 }
 
 onMounted(() => {
-  doRefresh(true) // initial load includes rules
+  doRefresh(true)
   refreshTimer = setInterval(softRefresh, refreshInterval)
 })
 
@@ -259,102 +255,98 @@ onUnmounted(() => {
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 28px;
 }
 
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 @media (max-width: 1400px) {
-  .stats-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
 }
-
 @media (max-width: 1000px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
-
 @media (max-width: 600px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
+  .stats-grid { grid-template-columns: 1fr; }
 }
 
-.stat-card {
+/* Stat cards — xSight unified style */
+.xs-stat-card {
+  background: var(--xs-card-bg);
+  border: 1px solid var(--xs-card-border);
+  border-radius: var(--xs-radius-lg);
+  padding: 20px 24px;
   position: relative;
-  padding: 28px;
+  cursor: default;
+  transition: all 0.2s;
+  box-shadow: var(--xs-shadow);
+}
+.xs-stat-card:hover {
+  border-color: var(--xs-card-hover-border);
+  box-shadow: var(--xs-shadow-lg);
+  transform: translateY(-1px);
 }
 
-.stat-value {
-  font-size: 2.75rem;
+.xs-stat-value {
+  font-size: 32px;
   font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--xs-stat-color);
   line-height: 1.1;
 }
-
-.stat-value .divider {
-  color: var(--text-secondary);
-  opacity: 0.7;
-  margin: 0;
+.xs-stat-value .divider {
+  color: var(--xs-text-secondary);
+  opacity: 0.5;
   font-weight: 400;
-  -webkit-text-fill-color: var(--text-secondary);
-  background: none;
+  margin: 0 1px;
 }
 
-.stat-label {
-  margin-top: 12px;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  font-weight: 500;
+.xs-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--xs-text-secondary);
+  margin-top: 8px;
 }
 
-.stat-icon {
+.xs-stat-icon {
   position: absolute;
-  right: 24px;
+  right: 20px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 3.5rem;
-  opacity: 0.08;
-  color: var(--primary);
+  font-size: 3rem;
+  opacity: 0.06;
+  color: var(--xs-accent);
 }
 
-.stat-card.success .stat-value {
-  color: #22c55e !important;
-}
+.xs-stat-success .xs-stat-value { color: var(--xs-success); }
+.xs-stat-success .xs-stat-icon { color: var(--xs-success); }
+.xs-stat-danger .xs-stat-value { color: var(--xs-danger); }
+.xs-stat-danger .xs-stat-icon { color: var(--xs-danger); }
 
-.stat-card.success .stat-icon {
-  color: #22c55e !important;
-}
-
-.stat-card.danger .stat-value {
-  color: var(--danger) !important;
-}
-
-.stat-card.danger .stat-icon {
-  color: var(--danger) !important;
+/* Generic card */
+.xs-card {
+  background: var(--xs-card-bg);
+  border: 1px solid var(--xs-card-border);
+  border-radius: var(--xs-radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--xs-shadow);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 /* Charts row */
 .charts-row {
   display: grid;
   grid-template-columns: 3fr 2fr;
-  gap: 24px;
+  gap: 20px;
 }
-
 @media (max-width: 1000px) {
-  .charts-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-.chart-left,
-.chart-right {
-  padding: 20px;
+  .charts-row { grid-template-columns: 1fr; }
 }
 
 /* Nodes section */
@@ -363,44 +355,38 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
 }
-
 .nodes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
-
 .no-nodes {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px;
-  color: var(--text-secondary);
-  opacity: 0.5;
+  color: var(--xs-text-secondary);
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 4px;
 }
-
 .section-title {
-  font-size: 1.25rem;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
-
 .section-actions {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-
 .refresh-hint {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  opacity: 0.7;
+  font-size: 12px;
+  color: var(--xs-text-secondary);
 }
 
 /* Top rules section */
@@ -409,7 +395,6 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
 }
-
 .chart-container {
   padding: 20px;
 }

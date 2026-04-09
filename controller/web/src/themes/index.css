@@ -1,0 +1,532 @@
+/* === XDrop Theme System ===
+   Unified with xSight design language.
+   Classic: Stripe-inspired light (purple accent, blue-tinted shadows)
+   Amber: Retro terminal (14-segment LCD numbers, green phosphor glow)
+*/
+
+/* DSEG14 — 14-segment LCD font for stat numbers (Amber theme) */
+@font-face {
+  font-family: 'DSEG14';
+  src: url('/fonts/DSEG14Classic-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-display: swap;
+}
+
+/* ── Classic Theme (default) — Stripe-inspired premium light ── */
+:root,
+[data-theme="classic"] {
+  --xs-bg-primary: #f8f9fb;
+  --xs-bg-secondary: #ffffff;
+  --xs-bg-sidebar: #0d1117;
+  --xs-bg-sidebar-active: #533afd;
+  --xs-text-primary: #061b31;
+  --xs-text-secondary: #64748d;
+  --xs-text-sidebar: rgba(255, 255, 255, 0.65);
+  --xs-text-sidebar-active: #ffffff;
+  --xs-border: #e2e8f0;
+  --xs-accent: #533afd;
+  --xs-accent-hover: #4434d4;
+  --xs-accent-subtle: rgba(83, 58, 253, 0.08);
+  --xs-success: #15be53;
+  --xs-warning: #f59e0b;
+  --xs-danger: #ef4444;
+  --xs-info: #64748d;
+  --xs-shadow: 0 2px 5px rgba(50, 50, 93, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --xs-shadow-lg: 0 6px 12px rgba(50, 50, 93, 0.12), 0 3px 7px rgba(0, 0, 0, 0.08);
+  --xs-header-bg: #ffffff;
+  --xs-header-border: #e2e8f0;
+  --xs-card-bg: #ffffff;
+  --xs-card-border: #e2e8f0;
+  --xs-card-hover-border: #c7d2fe;
+  --xs-table-header-bg: #f8fafc;
+  --xs-table-stripe-bg: #f8f9fb;
+  --xs-table-hover-bg: rgba(83, 58, 253, 0.04);
+  --xs-input-bg: #ffffff;
+  --xs-input-border: #d1d5db;
+  --xs-input-focus-border: #533afd;
+  --xs-input-focus-shadow: 0 0 0 3px rgba(83, 58, 253, 0.12);
+  --xs-radius: 6px;
+  --xs-radius-lg: 10px;
+  --xs-stat-color: #061b31;
+}
+
+/* ── Amber Theme — Retro terminal, light warm base + green LCD digits ── */
+[data-theme="amber"] {
+  --xs-bg-primary: #f0ede4;
+  --xs-bg-secondary: #f7f5ee;
+  --xs-bg-sidebar: #1a1a14;
+  --xs-bg-sidebar-active: #2ecc40;
+  --xs-text-primary: #2a2a20;
+  --xs-text-secondary: #7a7560;
+  --xs-text-sidebar: rgba(255, 255, 255, 0.45);
+  --xs-text-sidebar-active: #1a1a14;
+  --xs-border: #d8d2c0;
+  --xs-accent: #2ecc40;
+  --xs-accent-hover: #27ae36;
+  --xs-accent-subtle: rgba(46, 204, 64, 0.08);
+  --xs-success: #2ecc40;
+  --xs-warning: #e6a23c;
+  --xs-danger: #d63031;
+  --xs-info: #7a7560;
+  --xs-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --xs-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --xs-header-bg: #f7f5ee;
+  --xs-header-border: #d8d2c0;
+  --xs-card-bg: #f7f5ee;
+  --xs-card-border: #d8d2c0;
+  --xs-card-hover-border: #b8b2a0;
+  --xs-table-header-bg: #eeebdf;
+  --xs-table-stripe-bg: #f0ede4;
+  --xs-table-hover-bg: rgba(46, 204, 64, 0.05);
+  --xs-input-bg: #ffffff;
+  --xs-input-border: #d8d2c0;
+  --xs-input-focus-border: #2ecc40;
+  --xs-input-focus-shadow: 0 0 0 3px rgba(46, 204, 64, 0.12);
+  --xs-radius: 4px;
+  --xs-radius-lg: 6px;
+  --xs-stat-color: #1a8a28;
+  --xs-stat-font: 'DSEG14', monospace;
+  --xs-scanline: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.015) 2px,
+    rgba(0, 0, 0, 0.015) 4px
+  );
+}
+
+/* ── Amber: Scanline — scoped to main content area only (AUD-FE-002) ── */
+[data-theme="amber"] .xs-main::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--xs-scanline);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Amber: Sidebar ── */
+[data-theme="amber"] .el-menu-item.is-active {
+  background: rgba(46, 204, 64, 0.15) !important;
+  border-right: 2px solid #2ecc40 !important;
+  color: #2ecc40 !important;
+}
+[data-theme="amber"] .el-menu-item:hover {
+  background: rgba(46, 204, 64, 0.06) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* ── Amber: Tables ── */
+[data-theme="amber"] .el-table th.el-table__cell {
+  letter-spacing: 0.08em !important;
+  color: #7a7560 !important;
+  border-bottom: 1px dashed #d8d2c0 !important;
+}
+[data-theme="amber"] .el-table td.el-table__cell {
+  border-bottom: 1px dashed #e0dbd0 !important;
+}
+
+/* ── Amber: Buttons ── */
+[data-theme="amber"] .el-button--primary {
+  background: #2ecc40 !important;
+  border-color: #2ecc40 !important;
+  color: #ffffff !important;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+[data-theme="amber"] .el-button--primary:hover {
+  background: #27ae36 !important;
+  border-color: #27ae36 !important;
+}
+[data-theme="amber"] .el-button--success {
+  background: #2ecc40 !important;
+  border-color: #2ecc40 !important;
+  color: #fff !important;
+}
+[data-theme="amber"] .el-button--danger {
+  background: transparent !important;
+  border-color: #d63031 !important;
+  color: #d63031 !important;
+}
+[data-theme="amber"] .el-button--danger:hover {
+  background: rgba(214, 48, 49, 0.08) !important;
+}
+[data-theme="amber"] .el-button--warning {
+  background: transparent !important;
+  border-color: #b7791f !important;
+  color: #b7791f !important;
+}
+[data-theme="amber"] .el-button--default,
+[data-theme="amber"] .el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--danger):not(.el-button--warning) {
+  background: #f7f5ee !important;
+  border-color: #d8d2c0 !important;
+  color: #2a2a20 !important;
+}
+[data-theme="amber"] .el-button.is-plain {
+  background: #f7f5ee !important;
+  border-color: #d8d2c0 !important;
+  color: #2a2a20 !important;
+}
+[data-theme="amber"] .el-button.is-plain:hover {
+  border-color: #2ecc40 !important;
+  color: #1a8a28 !important;
+}
+[data-theme="amber"] .el-button--danger.is-plain {
+  background: transparent !important;
+  border-color: #d63031 !important;
+  color: #d63031 !important;
+}
+[data-theme="amber"] .el-button--danger.is-plain:hover {
+  background: rgba(214, 48, 49, 0.06) !important;
+}
+
+/* ── Amber: Cards ── */
+[data-theme="amber"] .el-card {
+  background: #f7f5ee !important;
+  border: 1px solid #d8d2c0 !important;
+}
+[data-theme="amber"] .el-card__header {
+  border-bottom: 1px dashed #d8d2c0 !important;
+  color: #7a7560 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+/* ── Amber: Dialog ── */
+[data-theme="amber"] .el-dialog__title { color: #2a2a20 !important; letter-spacing: 0.03em; }
+
+/* ── Amber: h2 section headers ── */
+[data-theme="amber"] h2 {
+  color: #2a2a20;
+  letter-spacing: 0.02em;
+}
+
+/* ── Amber: Table full background ── */
+[data-theme="amber"] .el-table {
+  background: #f7f5ee !important;
+  --el-table-bg-color: #f7f5ee !important;
+  --el-table-header-bg-color: #eeebdf !important;
+  --el-table-row-hover-bg-color: rgba(46, 204, 64, 0.06) !important;
+  --el-table-current-row-bg-color: rgba(46, 204, 64, 0.06) !important;
+  --el-table-border-color: #d8d2c0 !important;
+  --el-table-text-color: #2a2a20 !important;
+}
+[data-theme="amber"] .el-table tr {
+  background: #f7f5ee !important;
+}
+[data-theme="amber"] .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: #f0ede4 !important;
+}
+[data-theme="amber"] .el-table__empty-text {
+  color: #7a7560 !important;
+}
+
+/* ── Amber: Tags ── */
+[data-theme="amber"] .el-tag {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+[data-theme="amber"] .el-tag--primary,
+[data-theme="amber"] .el-tag--info.el-tag--light {
+  background: rgba(46, 204, 64, 0.1) !important;
+  border-color: rgba(46, 204, 64, 0.3) !important;
+  color: #1a8a28 !important;
+}
+[data-theme="amber"] .el-tag--success {
+  background: rgba(46, 204, 64, 0.1) !important;
+  border-color: rgba(46, 204, 64, 0.3) !important;
+  color: #1a8a28 !important;
+}
+[data-theme="amber"] .el-tag--danger {
+  background: rgba(214, 48, 49, 0.1) !important;
+  border-color: rgba(214, 48, 49, 0.3) !important;
+  color: #d63031 !important;
+}
+[data-theme="amber"] .el-tag--warning {
+  background: rgba(230, 162, 60, 0.1) !important;
+  border-color: rgba(230, 162, 60, 0.3) !important;
+  color: #b7791f !important;
+}
+[data-theme="amber"] .el-tag--info {
+  background: rgba(122, 117, 96, 0.1) !important;
+  border-color: rgba(122, 117, 96, 0.25) !important;
+  color: #7a7560 !important;
+}
+
+/* ── Amber: Switch ── */
+[data-theme="amber"] .el-switch.is-checked .el-switch__core {
+  background-color: #2ecc40 !important;
+  border-color: #2ecc40 !important;
+}
+
+/* ── Amber: Radio group / Button group ── */
+[data-theme="amber"] .el-radio-button__inner,
+[data-theme="amber"] .el-button-group .el-button {
+  background: #f7f5ee !important;
+  border-color: #d8d2c0 !important;
+  color: #7a7560 !important;
+}
+[data-theme="amber"] .el-radio-button__original-radio:checked + .el-radio-button__inner,
+[data-theme="amber"] .el-button-group .el-button.is-active,
+[data-theme="amber"] .el-button-group .el-button:focus {
+  background: #2ecc40 !important;
+  border-color: #2ecc40 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* ── Amber: Select dropdown ── */
+[data-theme="amber"] .el-select__wrapper {
+  background: #f7f5ee !important;
+  box-shadow: 0 0 0 1px #d8d2c0 inset !important;
+}
+
+/* ── Amber: Pagination ── */
+[data-theme="amber"] .el-pager li.is-active {
+  color: #1a8a28 !important;
+}
+
+/* ── Amber: Form labels ── */
+[data-theme="amber"] .el-form-item__label {
+  color: #7a7560 !important;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.03em;
+}
+
+/* ── Amber: Input ── */
+[data-theme="amber"] .el-input__wrapper {
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px #d8d2c0 inset !important;
+}
+[data-theme="amber"] .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px #2ecc40 inset, 0 0 6px rgba(46, 204, 64, 0.12) !important;
+}
+[data-theme="amber"] .el-input__inner {
+  color: #2a2a20 !important;
+}
+
+/* ── Amber: Stat values (custom class used in Dashboard) ── */
+[data-theme="amber"] .xs-stat-value {
+  font-family: 'DSEG14', monospace !important;
+  font-size: 36px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.04em !important;
+  color: #1a8a28 !important;
+  text-shadow: 0 0 8px rgba(46, 204, 64, 0.4), 0 0 16px rgba(46, 204, 64, 0.15) !important;
+}
+/* Amber: Danger stat (Dropped PPS) stays red, not LCD green */
+[data-theme="amber"] .xs-stat-danger .xs-stat-value {
+  color: #d63031 !important;
+  text-shadow: 0 0 8px rgba(214, 48, 49, 0.4), 0 0 16px rgba(214, 48, 49, 0.15) !important;
+}
+[data-theme="amber"] .xs-stat-label {
+  font-family: 'Courier New', monospace !important;
+  color: #7a7560 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase;
+}
+
+/* ── Amber: Link colors ── */
+[data-theme="amber"] .el-link--primary {
+  color: #1a8a28 !important;
+}
+[data-theme="amber"] a { color: #1a8a28; }
+
+/* ── Amber: Dropdown ── */
+[data-theme="amber"] .el-dropdown-menu {
+  background: #f7f5ee !important;
+  border: 1px solid #d8d2c0 !important;
+}
+[data-theme="amber"] .el-dropdown-menu__item:hover {
+  background: rgba(46, 204, 64, 0.08) !important;
+  color: #1a8a28 !important;
+}
+
+/* ── Global Base ── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--xs-bg-primary);
+  color: var(--xs-text-primary);
+  transition: background 0.3s, color 0.3s;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--xs-text-primary);
+}
+
+/* ── Cards ── */
+.el-card {
+  background: var(--xs-card-bg) !important;
+  border: 1px solid var(--xs-card-border) !important;
+  border-radius: var(--xs-radius-lg) !important;
+  box-shadow: var(--xs-shadow) !important;
+  color: var(--xs-text-primary) !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.el-card:hover {
+  border-color: var(--xs-card-hover-border) !important;
+  box-shadow: var(--xs-shadow-lg) !important;
+}
+.el-card__header {
+  border-bottom-color: var(--xs-border) !important;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ── Tables ── */
+.el-table {
+  background: var(--xs-card-bg) !important;
+  color: var(--xs-text-primary) !important;
+  --el-table-border-color: var(--xs-border) !important;
+  font-size: 13px;
+}
+.el-table tr {
+  background: var(--xs-card-bg) !important;
+}
+.el-table th.el-table__cell {
+  background: var(--xs-table-header-bg) !important;
+  color: var(--xs-text-secondary) !important;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--xs-border) !important;
+}
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--xs-border) !important;
+}
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--xs-table-stripe-bg) !important;
+}
+.el-table--enable-row-hover .el-table__body tr:hover > td {
+  background: var(--xs-table-hover-bg) !important;
+}
+.el-table__empty-text {
+  color: var(--xs-text-secondary) !important;
+}
+
+/* ── Buttons ── */
+.el-button {
+  border-radius: var(--xs-radius) !important;
+}
+.el-button--primary {
+  background: var(--xs-accent) !important;
+  border-color: var(--xs-accent) !important;
+  border-radius: var(--xs-radius) !important;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.el-button--primary:hover {
+  background: var(--xs-accent-hover) !important;
+  border-color: var(--xs-accent-hover) !important;
+}
+
+/* ── Tags ── */
+.el-tag {
+  border-radius: 4px !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+.el-tag--success {
+  background: rgba(39, 166, 68, 0.1) !important;
+  border-color: rgba(39, 166, 68, 0.25) !important;
+  color: var(--xs-success) !important;
+}
+.el-tag--danger {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+  color: var(--xs-danger) !important;
+}
+.el-tag--warning {
+  background: rgba(245, 158, 11, 0.1) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
+  color: var(--xs-warning) !important;
+}
+.el-tag--info {
+  background: var(--xs-accent-subtle) !important;
+  border-color: rgba(94, 106, 210, 0.2) !important;
+  color: var(--xs-accent) !important;
+}
+
+/* ── Forms & Inputs ── */
+.el-input__wrapper {
+  background: var(--xs-input-bg) !important;
+  box-shadow: 0 0 0 1px var(--xs-input-border) inset !important;
+  border-radius: var(--xs-radius) !important;
+}
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--xs-accent) inset !important;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--xs-input-focus-border) inset, var(--xs-input-focus-shadow) !important;
+}
+.el-input__inner {
+  color: var(--xs-text-primary) !important;
+}
+.el-input__inner::placeholder {
+  color: var(--xs-text-secondary) !important;
+}
+.el-select__wrapper {
+  background: var(--xs-input-bg) !important;
+  box-shadow: 0 0 0 1px var(--xs-input-border) inset !important;
+  border-radius: var(--xs-radius) !important;
+}
+.el-form-item__label {
+  color: var(--xs-text-secondary) !important;
+  font-weight: 500;
+}
+
+/* ── Dialogs ── */
+.el-dialog {
+  background: var(--xs-card-bg) !important;
+  border: 1px solid var(--xs-border) !important;
+  border-radius: var(--xs-radius-lg) !important;
+  box-shadow: var(--xs-shadow-lg) !important;
+}
+.el-dialog__title {
+  color: var(--xs-text-primary) !important;
+  font-weight: 600;
+}
+.el-dialog__headerbtn .el-dialog__close {
+  color: var(--xs-text-secondary) !important;
+}
+
+/* ── Pagination ── */
+.el-pagination {
+  --el-pagination-bg-color: transparent !important;
+  --el-pagination-text-color: var(--xs-text-secondary) !important;
+}
+.el-pager li.is-active {
+  color: var(--xs-accent) !important;
+}
+
+/* ── Sidebar menu ── */
+.el-menu {
+  border-right: none !important;
+}
+
+/* ── Animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.xs-pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--xs-danger);
+  animation: pulse 1.5s infinite;
+}

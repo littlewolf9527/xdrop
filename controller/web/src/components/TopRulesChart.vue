@@ -8,9 +8,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import VChart from 'vue-echarts'
 import '../charts/setup'
+import { themeKey } from '../composables/useTheme'
+
+const { theme } = inject(themeKey)
 
 const props = defineProps({
   // Full rules array — component sorts by drop_pps internally
@@ -72,7 +75,7 @@ const chartOption = computed(() => {
         fontSize: 10,
         formatter: (v) => formatPPS(v)
       },
-      splitLine: { lineStyle: { color: 'rgba(200,200,200,0.15)' } }
+      splitLine: { lineStyle: { color: theme.value === 'amber' ? 'rgba(216,210,192,0.3)' : 'rgba(200,200,200,0.15)' } }
     },
     yAxis: {
       type: 'category',
@@ -93,10 +96,9 @@ const chartOption = computed(() => {
           color: {
             type: 'linear',
             x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: 'rgba(239,68,68,0.7)' },
-              { offset: 1, color: 'rgba(239,68,68,1)' }
-            ]
+            colorStops: theme.value === 'amber'
+              ? [{ offset: 0, color: 'rgba(214,48,49,0.7)' }, { offset: 1, color: 'rgba(214,48,49,1)' }]
+              : [{ offset: 0, color: 'rgba(239,68,68,0.7)' }, { offset: 1, color: 'rgba(239,68,68,1)' }]
           },
           borderRadius: [0, 4, 4, 0]
         }
@@ -130,7 +132,7 @@ function formatCount(count) {
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   opacity: 0.5;
   font-size: 0.9rem;
 }

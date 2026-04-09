@@ -15,11 +15,18 @@
   },
   "nav": {
     "dashboard": "仪表盘",
+    "blacklist": "黑名单",
     "rules": "黑名单",
     "whitelist": "白名单",
     "nodes": "节点管理",
     "settings": "设置",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "groupFirewall": "防火墙",
+    "groupSystem": "系统"
+  },
+  "theme": {
+    "classic": "经典",
+    "amber": "复古终端"
   },
   "dashboard": {
     "stats": {

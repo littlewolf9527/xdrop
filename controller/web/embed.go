@@ -33,7 +33,10 @@ func SetupStatic(engine *gin.Engine) {
 
 	// favicon
 	engine.GET("/favicon.ico", func(c *gin.Context) {
-		c.FileFromFS("vite.svg", httpFS)
+		c.FileFromFS("favicon.svg", httpFS)
+	})
+	engine.GET("/favicon.svg", func(c *gin.Context) {
+		c.FileFromFS("favicon.svg", httpFS)
 	})
 
 	// SPA fallback - return index.html for all non-API paths

@@ -102,14 +102,14 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: var(--xs-bg-primary);
 }
 
 .login-card {
   width: 400px;
   padding: 48px 40px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--xs-card-bg);
+  border: 1px solid var(--xs-border);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -129,7 +129,7 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(135deg, var(--xs-accent), var(--primary-dark));
   border-radius: 12px;
   color: white;
 }
@@ -137,7 +137,7 @@ const handleLogin = async () => {
 .logo-text {
   font-size: 2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  background: linear-gradient(135deg, var(--xs-accent), var(--primary-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -145,7 +145,7 @@ const handleLogin = async () => {
 
 .login-subtitle {
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.9rem;
   margin-bottom: 32px;
 }
@@ -161,6 +161,6 @@ const handleLogin = async () => {
   height: 44px;
   font-size: 1rem;
   font-weight: 600;
-  border-radius: var(--radius);
+  border-radius: var(--xs-radius);
 }
 </style>

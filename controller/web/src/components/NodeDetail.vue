@@ -184,7 +184,7 @@ function formatUptime(seconds) {
   margin: 0 0 12px 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--xs-text-primary);
   border-bottom: 1px solid rgba(200, 200, 200, 0.15);
   padding-bottom: 8px;
 }
@@ -203,13 +203,13 @@ function formatUptime(seconds) {
 
 .detail-label {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .detail-value {
   font-size: 0.9rem;
   font-weight: 500;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .detail-value.mono {
@@ -221,6 +221,6 @@ function formatUptime(seconds) {
 }
 
 .detail-value.danger {
-  color: var(--danger);
+  color: var(--xs-danger);
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
   <div class="settings-page">
     <!-- API Key Configuration -->
-    <div class="setting-section glass-card fade-in">
+    <div class="setting-section xs-card fade-in">
       <div class="section-icon">
         <el-icon size="24"><Key /></el-icon>
       </div>
@@ -27,7 +27,7 @@
     </div>
 
     <!-- Language Settings -->
-    <div class="setting-section glass-card fade-in" style="animation-delay: 0.1s">
+    <div class="setting-section xs-card fade-in" style="animation-delay: 0.1s">
       <div class="section-icon">
         <el-icon size="24"><ChatLineSquare /></el-icon>
       </div>
@@ -47,7 +47,7 @@
     </div>
 
     <!-- Appearance Settings -->
-    <div class="setting-section glass-card fade-in" style="animation-delay: 0.2s">
+    <div class="setting-section xs-card fade-in" style="animation-delay: 0.2s">
       <div class="section-icon">
         <el-icon size="24"><Brush /></el-icon>
       </div>
@@ -81,7 +81,7 @@
     </div>
 
     <!-- About -->
-    <div class="setting-section glass-card fade-in" style="animation-delay: 0.3s">
+    <div class="setting-section xs-card fade-in" style="animation-delay: 0.3s">
       <div class="section-icon">
         <el-icon size="24"><InfoFilled /></el-icon>
       </div>
@@ -147,7 +147,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(135deg, var(--xs-accent), var(--primary-dark));
   border-radius: 12px;
   color: white;
   flex-shrink: 0;
@@ -160,13 +160,13 @@ onMounted(() => {
 .section-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--xs-text-primary);
   margin-bottom: 4px;
 }
 
 .section-desc {
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   margin-bottom: 20px;
 }
 
@@ -195,7 +195,7 @@ onMounted(() => {
 }
 
 .theme-option.active .theme-preview {
-  border-color: var(--primary);
+  border-color: var(--xs-accent);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
@@ -206,7 +206,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--border);
+  border: 2px solid var(--xs-border);
   transition: var(--transition);
   font-size: 1.5rem;
 }
@@ -223,11 +223,11 @@ onMounted(() => {
 
 .theme-option span {
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
 }
 
 .theme-option.active span {
-  color: var(--primary);
+  color: var(--xs-accent);
   font-weight: 500;
 }
 
@@ -244,12 +244,12 @@ onMounted(() => {
 
 .info-label {
   min-width: 80px;
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.875rem;
 }
 
 .info-value {
-  color: var(--text);
+  color: var(--xs-text-primary);
   font-size: 0.875rem;
 }
 
@@ -270,12 +270,12 @@ onMounted(() => {
 
 .api-key-info .info-label {
   font-weight: 600;
-  color: var(--primary);
+  color: var(--xs-accent);
   font-size: 0.875rem;
 }
 
 .api-key-info .info-value {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.8rem;
 }
 </style>

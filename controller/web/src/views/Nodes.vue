@@ -11,7 +11,7 @@
       {{ $t('nodes.description') }}
     </el-alert>
 
-    <div class="toolbar glass-card fade-in">
+    <div class="toolbar xs-card fade-in">
       <div class="toolbar-left">
         <h3 class="page-subtitle">{{ $t('nodes.title') }}</h3>
       </div>
@@ -24,7 +24,7 @@
       </div>
     </div>
 
-    <div class="table-container glass-card fade-in" style="animation-delay: 0.1s">
+    <div class="table-container xs-card fade-in" style="animation-delay: 0.1s">
       <el-table :data="nodes" v-loading="loading">
         <el-table-column prop="name" :label="$t('nodes.name')" min-width="150">
           <template #default="{ row }">
@@ -223,7 +223,7 @@ onMounted(refresh)
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .toolbar-right {
@@ -240,35 +240,35 @@ onMounted(refresh)
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--text);
+  color: var(--xs-text-primary);
 }
 
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--xs-danger);
   flex-shrink: 0;
 }
 
 .status-dot.online {
-  background: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  background: var(--xs-success);
+  box-shadow: 0 0 8px var(--xs-success);
 }
 
 .endpoint-text {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-family: 'SF Mono', monospace;
   font-size: 0.875rem;
 }
 
 .count-text {
-  color: var(--text);
+  color: var(--xs-text-primary);
   font-weight: 500;
 }
 
 .time-text {
-  color: var(--text-secondary);
+  color: var(--xs-text-secondary);
   font-size: 0.875rem;
 }
 </style>
