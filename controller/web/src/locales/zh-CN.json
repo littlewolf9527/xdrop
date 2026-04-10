@@ -67,6 +67,7 @@
       "rateLimit": "限速 (pps)",
       "pktLen": "包长度 (字节)",
       "pktLenRange": "包长度范围 (字节)",
+    "tcpFlags": "TCP 标志",
       "comment": "备注",
       "ipType": "类型"
     },
@@ -158,6 +159,7 @@
     "destination": "目标",
     "protocol": "协议",
     "pktLen": "包长度",
+    "tcpFlags": "TCP 标志",
     "action": "动作",
     "matchCount": "匹配数",
     "dropPPS": "丢包速率",
@@ -180,6 +182,7 @@
     "batchResult": "添加完成: {success} 成功, {fail} 失败",
     "batchSuccess": "成功添加 {n} 条",
     "pktLenHint": "L3 (IP层) 包长度，单位字节。0 表示不限制",
+    "tcpFlagsHint": "例如 SYN,!ACK（匹配不含 ACK 的 SYN 包）。支持: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "纯长度规则不允许：请至少指定一个五元组字段（IP/端口/协议）",
     "invalidLenRange": "长度范围无效：最小值不能大于最大值",
     "invalidCIDR": "CIDR 格式无效，请使用如: 10.0.0.0/8"

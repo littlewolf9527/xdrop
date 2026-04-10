@@ -191,6 +191,7 @@ nodes:
 | `rate_limit` | int | PPS 限速值（action 为 rate_limit 时必填） |
 | `pkt_len_min` | int | L3 最小包长（0 = 不限） |
 | `pkt_len_max` | int | L3 最大包长（0 = 不限） |
+| `tcp_flags` | string | TCP 标志过滤，如 `SYN`、`SYN,ACK`、`RST`（需 `protocol=tcp`） |
 | `name` | string | 规则名称 |
 | `comment` | string | 备注 |
 | `expires_at` | string | RFC3339 格式的过期时间（可选） |

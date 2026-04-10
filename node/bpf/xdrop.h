@@ -86,10 +86,15 @@ struct ip6hdr {
   __u8 daddr[16];    // Destination address
 } __attribute__((packed));
 
-// TCP header (only first 4 bytes for ports)
+// TCP header (ports + flags for TCP flags matching)
 struct tcphdr {
   __u16 source;
   __u16 dest;
+  __u32 seq;
+  __u32 ack_seq;
+  __u8  doff_res;   // data offset (4 bits) + reserved (4 bits)
+  __u8  flags;      // CWR ECE URG ACK PSH RST SYN FIN
+  __u16 window;
 } __attribute__((packed));
 
 // UDP header
@@ -130,14 +135,16 @@ struct rule_key {
 
 // Rule value (32 bytes, aligned)
 struct rule_value {
-  __u8 action; // 0=pass, 1=drop, 2=rate_limit
-  __u8 pad[3];
-  __u32 rate_limit;  // PPS limit (when action=2)
-  __u64 match_count; // Match counter
-  __u64 drop_count;  // Drop counter
-  __u16 pkt_len_min; // Minimum packet length (L3), 0=no limit
-  __u16 pkt_len_max; // Maximum packet length (L3), 0=no limit
-  __u8 pad2[4];      // Padding for 32-byte alignment
+  __u8 action;          // 0=pass, 1=drop, 2=rate_limit
+  __u8 tcp_flags_mask;  // TCP flags mask (0=don't check)
+  __u8 tcp_flags_value; // TCP flags expected value
+  __u8 pad;
+  __u32 rate_limit;     // PPS limit (when action=2)
+  __u64 match_count;    // Match counter
+  __u64 drop_count;     // Drop counter
+  __u16 pkt_len_min;    // Minimum packet length (L3), 0=no limit
+  __u16 pkt_len_max;    // Maximum packet length (L3), 0=no limit
+  __u8 pad2[4];         // Padding for 32-byte alignment
 } __attribute__((packed));
 
 // Statistics indices (PERCPU)

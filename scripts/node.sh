@@ -38,6 +38,8 @@ do_start() {
     fi
 
     info "Starting node agent..."
+    # Start from NODE_DIR so relative paths (bpf/xdrop.elf) resolve correctly
+    cd "$NODE_DIR"
     nohup "$AGENT_BIN" --config "$CONFIG" >"$LOG_FILE" 2>&1 &
     sleep 2
 

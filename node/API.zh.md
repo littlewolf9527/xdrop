@@ -78,6 +78,7 @@ X-API-Key: <node_api_key>
 | `rate_limit` | integer | PPS 限速值，action=`rate_limit` 时必填（> 0） |
 | `pkt_len_min` | integer | L3 最小包长（字节），`0` = 不限 |
 | `pkt_len_max` | integer | L3 最大包长（字节），`0` = 不限 |
+| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
 | `comment` | string | 备注 |
 | `stats` | RuleStats | 每条规则的匹配/丢包计数（列表响应中包含） |
 
@@ -188,6 +189,8 @@ X-API-Key: <node_api_key>
 | `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
 | `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
 | `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
+| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`RST`），需 `protocol=tcp` |
+| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
 | `comment` | string | 否 | 备注 |
 
 **响应 `200`：**

@@ -52,14 +52,16 @@ type RuleKey struct {
 
 // RuleValue matches the BPF struct rule_value (32 bytes)
 type RuleValue struct {
-	Action     uint8
-	Pad        [3]uint8
-	RateLimit  uint32
-	MatchCount uint64
-	DropCount  uint64
-	PktLenMin  uint16   // Minimum L3 packet length (0=no limit)
-	PktLenMax  uint16   // Maximum L3 packet length (0=no limit)
-	Pad2       [4]uint8 // Padding for 32-byte alignment
+	Action        uint8
+	TcpFlagsMask  uint8    // TCP flags mask (0=don't check)
+	TcpFlagsValue uint8    // TCP flags expected value
+	Pad           uint8
+	RateLimit     uint32
+	MatchCount    uint64
+	DropCount     uint64
+	PktLenMin     uint16   // Minimum L3 packet length (0=no limit)
+	PktLenMax     uint16   // Maximum L3 packet length (0=no limit)
+	Pad2          [4]uint8 // Padding for 32-byte alignment
 }
 
 // CIDRRuleKey matches the BPF struct cidr_rule_key (16 bytes)
@@ -79,6 +81,7 @@ type StoredRule struct {
 	RateLimit uint32
 	PktLenMin uint16
 	PktLenMax uint16
+	TcpFlags  string // human-readable: "SYN,!ACK" etc
 }
 
 // StoredCIDRRule stores CIDR rule info for API display and deletion
@@ -90,6 +93,7 @@ type StoredCIDRRule struct {
 	RateLimit uint32
 	PktLenMin uint16
 	PktLenMax uint16
+	TcpFlags  string
 }
 
 // Handlers holds the BPF maps and rule storage

@@ -65,6 +65,7 @@
       "action": "アクション",
       "rateLimit": "レート制限 (pps)",
       "pktLen": "パケット長 (バイト)",
+    "tcpFlags": "TCP Flags",
       "pktLenRange": "パケット長範囲 (バイト)",
       "comment": "コメント",
       "ipType": "タイプ"
@@ -157,6 +158,7 @@
     "destination": "宛先",
     "protocol": "プロトコル",
     "pktLen": "パケット長",
+    "tcpFlags": "TCP Flags",
     "action": "アクション",
     "matchCount": "マッチ数",
     "dropPPS": "ドロップPPS",
@@ -179,6 +181,7 @@
     "batchResult": "完了: {success}件成功、{fail}件失敗",
     "batchSuccess": "{n}件のエントリが追加されました",
     "pktLenHint": "L3（IP層）パケット長（バイト）。0は制限なし",
+    "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "長さのみのルールは許可されていません：少なくとも1つの5タプルフィールド（IP/ポート/プロトコル）を指定してください",
     "invalidLenRange": "無効な長さ範囲：最小値は最大値より大きくできません",
     "invalidCIDR": "CIDRフォーマットが無効です。例: 10.0.0.0/8"

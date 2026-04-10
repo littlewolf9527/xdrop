@@ -30,6 +30,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		RateLimit: rule.RateLimit,
 		PktLenMin: rule.PktLenMin,
 		PktLenMax: rule.PktLenMax,
+		TcpFlags:  rule.TcpFlags,
 	}
 
 	// Validation is done at Controller level, but do a sanity check
@@ -52,11 +53,20 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		return fmt.Errorf("rate_limit must be > 0 for rate_limit action")
 	}
 
+	fm, fv, fErr := parseTcpFlags(req.TcpFlags)
+	if fErr != nil {
+		return fmt.Errorf("invalid tcp_flags %q: %w", req.TcpFlags, fErr)
+	}
+	if fm != 0 && parseProtocol(req.Protocol) != ProtoTCP {
+		return fmt.Errorf("tcp_flags requires protocol=tcp")
+	}
 	value := RuleValue{
-		Action:    action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
+		Action:        action,
+		TcpFlagsMask:  fm,
+		TcpFlagsValue: fv,
+		RateLimit:     req.RateLimit,
+		PktLenMin:     req.PktLenMin,
+		PktLenMax:     req.PktLenMax,
 	}
 
 	keyBytes := ruleKeyToBytes(key)
@@ -130,6 +140,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		RateLimit: req.RateLimit,
 		PktLenMin: req.PktLenMin,
 		PktLenMax: req.PktLenMax,
+		TcpFlags:  req.TcpFlags,
 	}
 	h.ruleKeyIndex[key] = id
 
@@ -155,7 +166,8 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 			// Re-insert old BPF entry if it was deleted (best-effort restore)
 			if oldStored.Key != key {
 				oldAction, _ := parseAction(oldStored.Action)
-				oldValue := RuleValue{Action: oldAction, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+				oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
+				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
 				if insErr := bl.Insert(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue)); insErr != nil {
 					log.Printf("[AddRuleFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
@@ -310,11 +322,22 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				Protocol: parseProtocol(r.Protocol),
 			}
 
+			cfm, cfv, cfErr := parseTcpFlags(r.TcpFlags)
+			if cfErr != nil {
+				failed++
+				continue
+			}
+			if cfm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
+				failed++
+				continue
+			}
 			value := RuleValue{
-				Action:    action,
-				RateLimit: r.RateLimit,
-				PktLenMin: r.PktLenMin,
-				PktLenMax: r.PktLenMax,
+				Action:        action,
+				TcpFlagsMask:  cfm,
+				TcpFlagsValue: cfv,
+				RateLimit:     r.RateLimit,
+				PktLenMin:     r.PktLenMin,
+				PktLenMax:     r.PktLenMax,
 			}
 
 			if err := cidrShadow.Insert(cidrRuleKeyToBytes(ck), ruleValueToBytes(value)); err != nil {
@@ -341,6 +364,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				RateLimit: r.RateLimit,
 				PktLenMin: r.PktLenMin,
 				PktLenMax: r.PktLenMax,
+				TcpFlags:  r.TcpFlags,
 			}
 			newCidrRuleKeyIndex[ck] = id
 			added++
@@ -357,11 +381,22 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				continue
 			}
 
+			efm, efv, efErr := parseTcpFlags(r.TcpFlags)
+			if efErr != nil {
+				failed++
+				continue
+			}
+			if efm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
+				failed++
+				continue
+			}
 			value := RuleValue{
-				Action:    action,
-				RateLimit: r.RateLimit,
-				PktLenMin: r.PktLenMin,
-				PktLenMax: r.PktLenMax,
+				Action:        action,
+				TcpFlagsMask:  efm,
+				TcpFlagsValue: efv,
+				RateLimit:     r.RateLimit,
+				PktLenMin:     r.PktLenMin,
+				PktLenMax:     r.PktLenMax,
 			}
 
 			if err := shadow.Insert(ruleKeyToBytes(key), ruleValueToBytes(value)); err != nil {
@@ -380,6 +415,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				RateLimit: r.RateLimit,
 				PktLenMin: r.PktLenMin,
 				PktLenMax: r.PktLenMax,
+				TcpFlags:  r.TcpFlags,
 			}
 			newRuleKeyIndex[key] = id
 			added++

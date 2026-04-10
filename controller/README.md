@@ -191,6 +191,7 @@ All routes are under `/api/v1/`. The controller also exposes `/health` and `/api
 | `rate_limit` | int | PPS limit (required when action is `rate_limit`) |
 | `pkt_len_min` | int | Minimum L3 packet length (0 = disabled) |
 | `pkt_len_max` | int | Maximum L3 packet length (0 = disabled) |
+| `tcp_flags` | string | TCP flags filter, e.g. `SYN`, `SYN,ACK`, `RST` (requires `protocol=tcp`) |
 | `name` | string | Human-readable label |
 | `comment` | string | Notes |
 | `expires_at` | string | RFC3339 expiry time (optional) |

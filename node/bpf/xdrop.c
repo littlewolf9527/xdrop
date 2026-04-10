@@ -261,13 +261,24 @@ static INLINE int pkt_len_matches(struct rule_value *rule, __u16 pkt_len) {
   return 1;
 }
 
+// Helper: check if TCP flags match rule constraints
+// Returns 1 if matches (or no flags check), 0 if mismatch
+static INLINE int tcp_flags_matches(struct rule_value *rule, __u8 proto, __u8 tcp_flags) {
+  if (rule->tcp_flags_mask == 0)
+    return 1;  // no flags filter on this rule
+  if (proto != PROTO_TCP)
+    return 1;  // flags only apply to TCP
+  return (tcp_flags & rule->tcp_flags_mask) == rule->tcp_flags_value;
+}
+
 // Helper: lookup rule with wildcard fallback (bitmap optimized)
-// pkt_len is checked inline: if a rule matches the 5-tuple but fails the
-// length constraint, lookup continues to the next (more wildcard) combo
-// instead of returning NULL and silently passing the packet.
+// pkt_len and tcp_flags are checked inline: if a rule matches the 5-tuple
+// but fails the length or flags constraint, lookup continues to the next
+// (more wildcard) combo instead of returning NULL and silently passing.
 static INLINE struct rule_value *lookup_rule(struct rule_key *key,
                                              struct rule_key *matched_key,
                                              __u16 pkt_len,
+                                             __u8 tcp_flags,
                                              int rule_sel,
                                              __u64 slot) {
 
@@ -297,7 +308,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -312,7 +323,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -327,7 +338,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -342,7 +353,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -357,7 +368,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -372,7 +383,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -387,7 +398,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -402,7 +413,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -417,7 +428,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -432,7 +443,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -447,7 +458,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -462,7 +473,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -477,7 +488,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -492,7 +503,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -507,7 +518,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -522,7 +533,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -537,7 +548,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -552,7 +563,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -567,7 +578,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -584,7 +595,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -599,7 +610,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -614,7 +625,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -629,7 +640,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -644,7 +655,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -659,7 +670,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -674,7 +685,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -689,7 +700,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -704,7 +715,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -719,7 +730,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -734,7 +745,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -749,7 +760,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -764,7 +775,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = key->protocol;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -779,7 +790,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
     lookup.protocol = 0;
     lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
     rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = lookup;
       return rule;
     }
@@ -795,7 +806,7 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
 static INLINE struct rule_value *
 lookup_cidr_rule(struct cidr_rule_key *key,
                  struct cidr_rule_key *matched_key, __u16 pkt_len,
-                 int rule_sel, __u64 slot) {
+                 __u8 tcp_flags, int rule_sel, __u64 slot) {
 
   // Fast-return if no CIDR rules exist
   __u32 cnt_idx = CONFIG_CIDR_RULE_COUNT;
@@ -820,7 +831,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -835,7 +846,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -850,7 +861,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -865,7 +876,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -880,7 +891,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -895,7 +906,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -910,7 +921,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -925,7 +936,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -940,7 +951,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -955,7 +966,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -970,7 +981,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -985,7 +996,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1000,7 +1011,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1015,7 +1026,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1030,7 +1041,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1045,7 +1056,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1060,7 +1071,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1075,7 +1086,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1090,7 +1101,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1107,7 +1118,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1122,7 +1133,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1137,7 +1148,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1152,7 +1163,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1167,7 +1178,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1182,7 +1193,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1197,7 +1208,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1212,7 +1223,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1227,7 +1238,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1242,7 +1253,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1257,7 +1268,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1272,7 +1283,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1287,7 +1298,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = key->protocol;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1302,7 +1313,7 @@ lookup_cidr_rule(struct cidr_rule_key *key,
     k.protocol = 0;
     k.pad[0] = k.pad[1] = k.pad[2] = 0;
     rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len)) {
+    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags)) {
       *matched_key = k;
       return rule;
     }
@@ -1491,10 +1502,11 @@ int xdrop_firewall(struct xdp_md *ctx) {
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }
 
-  // Initialize rule key and packet length (L3)
+  // Initialize rule key, packet length (L3), and TCP flags
   struct rule_key key = {0};
   void *l4_data = NULL;
-  __u16 pkt_len = 0; // L3 (IP layer) packet length
+  __u16 pkt_len = 0;    // L3 (IP layer) packet length
+  __u8 tcp_flags = 0;   // TCP flags byte (0 for non-TCP)
 
   // Process based on EtherType
   if (eth_proto == ETH_P_IP_BE) {
@@ -1563,6 +1575,7 @@ int xdrop_firewall(struct xdp_md *ctx) {
     }
     key.src_port = tcp->source;
     key.dst_port = tcp->dest;
+    tcp_flags = tcp->flags;
   } else if (key.protocol == PROTO_UDP) {
     struct udphdr *udp = l4_data;
     if ((void *)(udp + 1) > data_end) {
@@ -1588,7 +1601,7 @@ int xdrop_firewall(struct xdp_md *ctx) {
 
   // Lookup blacklist with wildcard fallback (pkt_len checked inline per combo)
   struct rule_key matched_key = {0};
-  struct rule_value *rule = lookup_rule(&key, &matched_key, pkt_len, rule_sel, config_slot);
+  struct rule_value *rule = lookup_rule(&key, &matched_key, pkt_len, tcp_flags, rule_sel, config_slot);
 
   if (rule) {
     // Update match counter
@@ -1704,7 +1717,7 @@ int xdrop_firewall(struct xdp_md *ctx) {
 
     struct cidr_rule_key cidr_matched_key = {0};
     struct rule_value *cidr_rule =
-        lookup_cidr_rule(&ck, &cidr_matched_key, pkt_len, rule_sel, config_slot);
+        lookup_cidr_rule(&ck, &cidr_matched_key, pkt_len, tcp_flags, rule_sel, config_slot);
 
     if (cidr_rule) {
       cidr_rule->match_count++;

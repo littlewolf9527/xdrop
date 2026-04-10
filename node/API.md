@@ -78,6 +78,7 @@ All endpoints return JSON. Errors return an appropriate HTTP status code with:
 | `rate_limit` | integer | PPS limit. Required (> 0) when `action` is `rate_limit` |
 | `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
 | `pkt_len_max` | integer | Maximum L3 packet length in bytes. `0` = disabled |
+| `tcp_flags` | string | TCP flags filter (e.g. `SYN`, `SYN,ACK`, `RST`). Requires `protocol=tcp` |
 | `comment` | string | Free-text note |
 | `stats` | RuleStats | Per-rule match/drop counters (included in list responses) |
 
@@ -190,6 +191,7 @@ Add a rule. Triggers AtomicSync (double-buffer config publish).
 | `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
 | `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
 | `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
+| `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
 | `comment` | string | No | Notes |
 
 **Response `200`:**

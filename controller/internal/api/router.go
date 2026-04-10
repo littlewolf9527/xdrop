@@ -34,7 +34,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/api/info", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"name":    "XDrop Controller",
-			"version": "2.1.1",
+			"version": "2.2.0",
 			"status":  "running",
 		})
 	})

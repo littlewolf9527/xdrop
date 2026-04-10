@@ -65,6 +65,7 @@
       "action": "Acción",
       "rateLimit": "Límite (pps)",
       "pktLen": "Longitud Paquete (bytes)",
+    "tcpFlags": "TCP Flags",
       "pktLenRange": "Rango Longitud Paquete (bytes)",
       "comment": "Comentario",
       "ipType": "Tipo"
@@ -157,6 +158,7 @@
     "destination": "Destino",
     "protocol": "Protocolo",
     "pktLen": "Long. Paq.",
+    "tcpFlags": "TCP Flags",
     "action": "Acción",
     "matchCount": "Coincidencias",
     "dropPPS": "PPS Descartados",
@@ -179,6 +181,7 @@
     "batchResult": "Completado: {success} exitosos, {fail} fallidos",
     "batchSuccess": "Se agregaron {n} entradas exitosamente",
     "pktLenHint": "Longitud de paquete L3 (capa IP) en bytes. 0 significa sin límite",
+    "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "No se permiten reglas solo de longitud: especifique al menos un campo de 5-tupla (IP/Puerto/Protocolo)",
     "invalidLenRange": "Rango de longitud inválido: el mínimo no puede ser mayor que el máximo",
     "invalidCIDR": "Formato CIDR inválido, use ej.: 10.0.0.0/8"

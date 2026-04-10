@@ -30,9 +30,22 @@ func (h *Handlers) AddRule(c *gin.Context) {
 		return
 	}
 
+	// Parse and validate tcp_flags (common to both exact and CIDR paths)
+	flagsMask, flagsValue, err := parseTcpFlags(req.TcpFlags)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if flagsMask != 0 && req.Protocol != "tcp" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tcp_flags can only be used with protocol=tcp"})
+		return
+	}
+	// Normalize: store canonical form back
+	req.TcpFlags = tcpFlagsToString(flagsMask, flagsValue)
+
 	// Route to CIDR path if any CIDR field is set
 	if hasCIDR {
-		h.addCIDRRule(c, req)
+		h.addCIDRRule(c, req, flagsMask, flagsValue)
 		return
 	}
 
@@ -63,10 +76,12 @@ func (h *Handlers) AddRule(c *gin.Context) {
 	}
 
 	value := RuleValue{
-		Action:    action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
+		Action:        action,
+		TcpFlagsMask:  flagsMask,
+		TcpFlagsValue: flagsValue,
+		RateLimit:     req.RateLimit,
+		PktLenMin:     req.PktLenMin,
+		PktLenMax:     req.PktLenMax,
 	}
 
 	keyBytes := ruleKeyToBytes(key)
@@ -144,6 +159,7 @@ func (h *Handlers) AddRule(c *gin.Context) {
 		RateLimit: req.RateLimit,
 		PktLenMin: req.PktLenMin,
 		PktLenMax: req.PktLenMax,
+		TcpFlags:  req.TcpFlags,
 	}
 	h.ruleKeyIndex[key] = id
 
@@ -169,7 +185,8 @@ func (h *Handlers) AddRule(c *gin.Context) {
 			// Re-insert old BPF entry (best-effort restore)
 			if oldStored.Key != key {
 				oldAction, _ := parseAction(oldStored.Action)
-				oldValue := RuleValue{Action: oldAction, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+				oldFlagsMask, oldFlagsValue, _ := parseTcpFlags(oldStored.TcpFlags)
+				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFlagsMask, TcpFlagsValue: oldFlagsValue, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
 				if insErr := bl.Insert(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue)); insErr != nil {
 					log.Printf("[AddRule] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
@@ -321,6 +338,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			RateLimit: r.RateLimit,
 			PktLenMin: r.PktLenMin,
 			PktLenMax: r.PktLenMax,
+			TcpFlags:  r.TcpFlags,
 		}
 		if err := h.addCIDRRuleFromSync(syncRule); err != nil {
 			log.Printf("[AddRulesBatch] CIDR rule %s failed: %v", r.ID, err)
@@ -340,6 +358,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 		rateLimit  uint32
 		pktLenMin  uint16
 		pktLenMax  uint16
+		tcpFlags   string
 	}
 	prepared := make([]preparedRule, 0, len(exactRules))
 
@@ -350,6 +369,17 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 	for _, r := range exactRules {
 		// Validate rule (check for pure-length rules and length range)
 		if err := validateRule(r.SrcIP, r.DstIP, r.Protocol, r.SrcPort, r.DstPort, r.PktLenMin, r.PktLenMax); err != nil {
+			failed++
+			continue
+		}
+
+		// Parse tcp_flags
+		bfm, bfv, err := parseTcpFlags(r.TcpFlags)
+		if err != nil {
+			failed++
+			continue
+		}
+		if bfm != 0 && r.Protocol != "tcp" {
 			failed++
 			continue
 		}
@@ -373,10 +403,12 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 		}
 
 		value := RuleValue{
-			Action:    action,
-			RateLimit: r.RateLimit,
-			PktLenMin: r.PktLenMin,
-			PktLenMax: r.PktLenMax,
+			Action:        action,
+			TcpFlagsMask:  bfm,
+			TcpFlagsValue: bfv,
+			RateLimit:     r.RateLimit,
+			PktLenMin:     r.PktLenMin,
+			PktLenMax:     r.PktLenMax,
 		}
 
 		id := r.ID
@@ -384,6 +416,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			id = uuid.New().String()
 		}
 
+		normalizedFlags := tcpFlagsToString(bfm, bfv)
 		p := preparedRule{
 			id:         id,
 			key:        key,
@@ -393,6 +426,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			rateLimit:  r.RateLimit,
 			pktLenMin:  r.PktLenMin,
 			pktLenMax:  r.PktLenMax,
+			tcpFlags:   normalizedFlags,
 		}
 
 		// If same ID already seen in this batch, replace it (keep last occurrence)
@@ -473,6 +507,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			RateLimit: p.rateLimit,
 			PktLenMin: p.pktLenMin,
 			PktLenMax: p.pktLenMax,
+			TcpFlags:  p.tcpFlags,
 		}
 		h.ruleKeyIndex[p.key] = p.id
 		succeeded = append(succeeded, succeededItem{id: p.id, key: p.key, comboType: comboType, keyBytes: p.keyBytes, isReplacement: isReplacement, oldStored: oldStored})

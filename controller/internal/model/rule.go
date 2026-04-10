@@ -19,6 +19,7 @@ type Rule struct {
 	RateLimit int        `json:"rate_limit,omitempty"`
 	PktLenMin int        `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
 	PktLenMax int        `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
+	TcpFlags  string     `json:"tcp_flags,omitempty"`   // TCP flags filter (e.g. "SYN,!ACK")
 	Source    string     `json:"source,omitempty"`
 	Comment   string     `json:"comment,omitempty"`
 	Enabled   bool       `json:"enabled"`
@@ -41,7 +42,8 @@ type RuleRequest struct {
 	RateLimit int    `json:"rate_limit,omitempty"`
 	PktLenMin int    `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
 	PktLenMax int    `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
-	ExpiresIn string `json:"expires_in,omitempty"`  // "1h", "30m", "24h"
+	TcpFlags  *string `json:"tcp_flags,omitempty"`   // TCP flags filter; pointer for tri-state: nil=omit, ""=clear, "SYN"=set
+	ExpiresIn string  `json:"expires_in,omitempty"`  // "1h", "30m", "24h"
 	Source    string `json:"source,omitempty"`
 	Comment   string `json:"comment,omitempty"`
 }
@@ -75,6 +77,9 @@ func (r *Rule) ToNodeRule() map[string]interface{} {
 	}
 	if r.PktLenMax > 0 {
 		rule["pkt_len_max"] = r.PktLenMax
+	}
+	if r.TcpFlags != "" {
+		rule["tcp_flags"] = r.TcpFlags
 	}
 	if r.SrcCIDR != "" {
 		rule["src_cidr"] = r.SrcCIDR

@@ -65,6 +65,7 @@
       "action": "동작",
       "rateLimit": "속도 제한 (pps)",
       "pktLen": "패킷 길이 (바이트)",
+    "tcpFlags": "TCP Flags",
       "pktLenRange": "패킷 길이 범위 (바이트)",
       "comment": "설명",
       "ipType": "유형"
@@ -157,6 +158,7 @@
     "destination": "대상",
     "protocol": "프로토콜",
     "pktLen": "패킷 길이",
+    "tcpFlags": "TCP Flags",
     "action": "동작",
     "matchCount": "일치 수",
     "dropPPS": "드롭 PPS",
@@ -179,6 +181,7 @@
     "batchResult": "완료: {success}개 성공, {fail}개 실패",
     "batchSuccess": "{n}개 항목이 추가되었습니다",
     "pktLenHint": "L3 (IP 계층) 패킷 길이 (바이트). 0은 제한 없음",
+    "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "길이 전용 규칙은 허용되지 않습니다: 최소 하나의 5-튜플 필드 (IP/포트/프로토콜)를 지정하세요",
     "invalidLenRange": "잘못된 길이 범위: 최소값이 최대값보다 클 수 없습니다",
     "invalidCIDR": "잘못된 CIDR 형식입니다. 예: 10.0.0.0/8"

@@ -67,6 +67,7 @@
       "rateLimit": "Rate Limit (pps)",
       "pktLen": "Packet Length (bytes)",
       "pktLenRange": "Packet Length Range (bytes)",
+    "tcpFlags": "TCP Flags",
       "comment": "Comment",
       "ipType": "Type"
     },
@@ -158,6 +159,7 @@
     "destination": "Destination",
     "protocol": "Proto",
     "pktLen": "Pkt Len",
+    "tcpFlags": "TCP Flags",
     "action": "Action",
     "matchCount": "Matched",
     "dropPPS": "Drop PPS",
@@ -180,6 +182,7 @@
     "batchResult": "Completed: {success} succeeded, {fail} failed",
     "batchSuccess": "Successfully added {n} entries",
     "pktLenHint": "L3 (IP layer) packet length in bytes. 0 means no limit",
+    "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid flags: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "Length-only rules not allowed: please specify at least one 5-tuple field (IP/Port/Protocol)",
     "invalidLenRange": "Invalid length range: minimum cannot be greater than maximum",
     "invalidCIDR": "Invalid CIDR format, use e.g.: 10.0.0.0/8"

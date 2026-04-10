@@ -27,10 +27,14 @@ NIC (hardware)
 │     └─ Skip rule types with no active entries          │
 │                                                         │
 │  4. Exact blacklist lookup (hash map)                   │
-│     └─ HIT  → apply action (DROP / RATE_LIMIT)         │
+│     └─ HIT  → check pkt_len + tcp_flags               │
+│              → match → apply action (DROP / RATE_LIMIT)│
+│              → mismatch → continue to next combo       │
 │                                                         │
 │  5. CIDR blacklist lookup (LPM trie — src then dst)    │
-│     └─ HIT  → apply action (DROP / RATE_LIMIT)         │
+│     └─ HIT  → check pkt_len + tcp_flags               │
+│              → match → apply action (DROP / RATE_LIMIT)│
+│              → mismatch → continue to next combo       │
 │                                                         │
 │  6. No match → XDP_PASS                                │
 └─────────────────────────────────────────────────────────┘

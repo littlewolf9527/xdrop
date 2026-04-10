@@ -74,6 +74,7 @@ func (h *Handlers) storedRuleToRule(id string, s StoredRule) Rule {
 		RateLimit: s.RateLimit,
 		PktLenMin: s.PktLenMin,
 		PktLenMax: s.PktLenMax,
+		TcpFlags:  s.TcpFlags,
 	}
 }
 
@@ -93,6 +94,7 @@ func (h *Handlers) storedCIDRRuleToRule(id string, s StoredCIDRRule) Rule {
 		RateLimit: s.RateLimit,
 		PktLenMin: s.PktLenMin,
 		PktLenMax: s.PktLenMax,
+		TcpFlags:  s.TcpFlags,
 	}
 }
 

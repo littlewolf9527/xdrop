@@ -34,8 +34,11 @@ func ruleKeyToBytes(k RuleKey) []byte {
 }
 
 func ruleValueToBytes(v RuleValue) []byte {
-	b := make([]byte, 32) // Updated: 32 bytes (was 24)
+	b := make([]byte, 32)
 	b[0] = v.Action
+	b[1] = v.TcpFlagsMask
+	b[2] = v.TcpFlagsValue
+	// b[3] is pad (zero)
 	binary.LittleEndian.PutUint32(b[4:], v.RateLimit)
 	binary.LittleEndian.PutUint64(b[8:], v.MatchCount)
 	binary.LittleEndian.PutUint64(b[16:], v.DropCount)

@@ -14,7 +14,7 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-func (h *Handlers) addCIDRRule(c *gin.Context, req Rule) {
+func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue uint8) {
 	// Validate action
 	action, err := parseAction(req.Action)
 	if err != nil {
@@ -92,10 +92,12 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule) {
 	}
 
 	value := RuleValue{
-		Action:    action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
+		Action:        action,
+		TcpFlagsMask:  flagsMask,
+		TcpFlagsValue: flagsValue,
+		RateLimit:     req.RateLimit,
+		PktLenMin:     req.PktLenMin,
+		PktLenMax:     req.PktLenMax,
 	}
 
 	keyBytes := cidrRuleKeyToBytes(ck)
@@ -192,6 +194,7 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule) {
 		RateLimit: req.RateLimit,
 		PktLenMin: req.PktLenMin,
 		PktLenMax: req.PktLenMax,
+		TcpFlags:  req.TcpFlags,
 	}
 	h.cidrRuleKeyIndex[ck] = id
 
@@ -215,7 +218,8 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule) {
 		if oldStored != nil {
 			oldKeyBytes := cidrRuleKeyToBytes(oldStored.Key)
 			oldAction, _ := parseAction(oldStored.Action)
-			oldValue := RuleValue{Action: oldAction, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
+			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
 			cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue))
 			oldCombo := getCIDRComboType(oldStored.Key)
 			if oldCombo >= 0 && oldCombo < 64 {
@@ -318,11 +322,20 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		Protocol: parseProtocol(rule.Protocol),
 	}
 
+	sfm, sfv, sfErr := parseTcpFlags(rule.TcpFlags)
+	if sfErr != nil {
+		return fmt.Errorf("invalid tcp_flags %q: %w", rule.TcpFlags, sfErr)
+	}
+	if sfm != 0 && parseProtocol(rule.Protocol) != ProtoTCP {
+		return fmt.Errorf("tcp_flags requires protocol=tcp, got %q", rule.Protocol)
+	}
 	value := RuleValue{
-		Action:    action,
-		RateLimit: rule.RateLimit,
-		PktLenMin: rule.PktLenMin,
-		PktLenMax: rule.PktLenMax,
+		Action:        action,
+		TcpFlagsMask:  sfm,
+		TcpFlagsValue: sfv,
+		RateLimit:     rule.RateLimit,
+		PktLenMin:     rule.PktLenMin,
+		PktLenMax:     rule.PktLenMax,
 	}
 
 	keyBytes := cidrRuleKeyToBytes(ck)
@@ -416,6 +429,7 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		RateLimit: rule.RateLimit,
 		PktLenMin: rule.PktLenMin,
 		PktLenMax: rule.PktLenMax,
+		TcpFlags:  rule.TcpFlags,
 	}
 	h.cidrRuleKeyIndex[ck] = id
 
@@ -439,7 +453,8 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		if oldStored != nil {
 			oldKeyBytes := cidrRuleKeyToBytes(oldStored.Key)
 			oldAction, _ := parseAction(oldStored.Action)
-			oldValue := RuleValue{Action: oldAction, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
+			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
 			cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue))
 			oldCombo := getCIDRComboType(oldStored.Key)
 			if oldCombo >= 0 && oldCombo < 64 {

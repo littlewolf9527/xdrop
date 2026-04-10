@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,6 +109,7 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		RateLimit: req.RateLimit,
 		PktLenMin: req.PktLenMin,
 		PktLenMax: req.PktLenMax,
+		TcpFlags:  derefString(req.TcpFlags),
 		Source:    req.Source,
 		Comment:   req.Comment,
 		Enabled:   true,
@@ -216,6 +218,22 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if req.PktLenMin > 0 || req.PktLenMax > 0 {
 		rule.PktLenMin = req.PktLenMin
 		rule.PktLenMax = req.PktLenMax
+	}
+	// tcp_flags: pointer tri-state — nil=omit (keep existing), ""=clear, "SYN"=set
+	// Validate against the PERSISTED protocol, not the request protocol (AUD-R2-01)
+	if req.TcpFlags != nil {
+		if *req.TcpFlags != "" {
+			if rule.Protocol != "tcp" {
+				return nil, nil, fmt.Errorf("tcp_flags can only be used with protocol=tcp (current rule protocol: %s)", rule.Protocol)
+			}
+			normalized, err := validateAndNormalizeTcpFlags(*req.TcpFlags)
+			if err != nil {
+				return nil, nil, err
+			}
+			rule.TcpFlags = normalized
+		} else {
+			rule.TcpFlags = "" // explicit clear
+		}
 	}
 	if req.Comment != "" {
 		rule.Comment = req.Comment
@@ -378,6 +396,7 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			RateLimit: req.RateLimit,
 			PktLenMin: req.PktLenMin,
 			PktLenMax: req.PktLenMax,
+			TcpFlags:  derefString(req.TcpFlags),
 			Source:    req.Source,
 			Comment:   req.Comment,
 			Enabled:   true,
@@ -546,5 +565,84 @@ func validatePktLenRule(req *model.RuleRequest) error {
 		return fmt.Errorf("invalid length range: min (%d) > max (%d)", req.PktLenMin, req.PktLenMax)
 	}
 
+	// tcp_flags validation: syntax check + protocol=tcp requirement
+	if req.TcpFlags != nil && *req.TcpFlags != "" {
+		if req.Protocol != "tcp" {
+			return fmt.Errorf("tcp_flags can only be used with protocol=tcp")
+		}
+		normalized, err := validateAndNormalizeTcpFlags(*req.TcpFlags)
+		if err != nil {
+			return err
+		}
+		req.TcpFlags = &normalized
+	}
+
 	return nil
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// validateAndNormalizeTcpFlags validates tcp_flags syntax and returns canonical form.
+var validTcpFlags = map[string]bool{
+	"FIN": true, "SYN": true, "RST": true, "PSH": true,
+	"ACK": true, "URG": true, "ECE": true, "CWR": true,
+}
+
+func validateAndNormalizeTcpFlags(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	seen := make(map[string]bool)
+	// Fixed canonical order (matches Node-side tcpFlagsToString)
+	canonicalOrder := []string{"CWR", "ECE", "URG", "ACK", "PSH", "RST", "SYN", "FIN"}
+	setFlags := make(map[string]bool)   // flags that must be 1
+	clearFlags := make(map[string]bool) // flags that must be 0
+
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name := strings.ToUpper(part)
+		negate := false
+		if strings.HasPrefix(name, "!") {
+			negate = true
+			name = name[1:]
+		}
+		if !validTcpFlags[name] {
+			return "", fmt.Errorf("unknown TCP flag %q; valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR", part)
+		}
+		if seen[name] {
+			continue // deduplicate
+		}
+		seen[name] = true
+		if negate {
+			if setFlags[name] {
+				return "", fmt.Errorf("contradictory TCP flags: both %s and !%s specified", name, name)
+			}
+			clearFlags[name] = true
+		} else {
+			if clearFlags[name] {
+				return "", fmt.Errorf("contradictory TCP flags: both %s and !%s specified", name, name)
+			}
+			setFlags[name] = true
+		}
+	}
+
+	// Emit in canonical order
+	var parts []string
+	for _, name := range canonicalOrder {
+		if setFlags[name] {
+			parts = append(parts, name)
+		} else if clearFlags[name] {
+			parts = append(parts, "!"+name)
+		}
+	}
+	return strings.Join(parts, ","), nil
 }

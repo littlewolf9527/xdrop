@@ -85,6 +85,12 @@
             <span v-else class="no-filter">-</span>
           </template>
         </el-table-column>
+        <el-table-column :label="$t('table.tcpFlags')" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.tcp_flags" size="small" type="info">{{ row.tcp_flags }}</el-tag>
+            <span v-else class="no-filter">-</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('table.matchCount')" width="120">
           <template #default="{ row }">
             <div class="stats-cell match-stats" v-if="row.stats">
@@ -221,6 +227,10 @@
           </el-row>
           <div class="form-hint">{{ $t('messages.pktLenHint') }}</div>
         </el-form-item>
+        <el-form-item v-if="form.protocol === 'tcp'" :label="$t('rules.form.tcpFlags')">
+          <el-input v-model="form.tcp_flags" placeholder="e.g. SYN,!ACK" />
+          <div class="form-hint">{{ $t('messages.tcpFlagsHint') }}</div>
+        </el-form-item>
         <el-form-item :label="$t('rules.form.comment')">
           <el-input v-model="form.comment" :placeholder="$t('placeholder.optional')" />
         </el-form-item>
@@ -323,6 +333,7 @@ const form = ref({
   rate_limit: 1000,
   pkt_len_min: 0,
   pkt_len_max: 0,
+  tcp_flags: '',
   comment: ''
 })
 
@@ -423,7 +434,7 @@ const showAddDialog = () => {
     src_mode: 'ip', dst_mode: 'ip',
     src_ip: '', dst_ip: '', src_cidr: '', dst_cidr: '',
     src_port: 0, dst_port: 0, protocol: '', action: 'drop',
-    rate_limit: 1000, pkt_len_min: 0, pkt_len_max: 0, comment: ''
+    rate_limit: 1000, pkt_len_min: 0, pkt_len_max: 0, tcp_flags: '', comment: ''
   }
   dialogVisible.value = true
 }
@@ -482,6 +493,7 @@ const addRule = async () => {
     if (f.action === 'rate_limit') data.rate_limit = f.rate_limit
     if (f.pkt_len_min) data.pkt_len_min = f.pkt_len_min
     if (f.pkt_len_max) data.pkt_len_max = f.pkt_len_max
+    if (f.tcp_flags) data.tcp_flags = f.tcp_flags
     if (f.comment) data.comment = f.comment
 
     await rulesApi.create(data)

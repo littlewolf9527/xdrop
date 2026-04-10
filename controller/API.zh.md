@@ -140,6 +140,7 @@ X-API-Key: <external_api_key>
 | `rate_limit` | integer | PPS 限速值，action=`rate_limit` 时必填（> 0） |
 | `pkt_len_min` | integer | L3 最小包长（字节），`0` = 不限 |
 | `pkt_len_max` | integer | L3 最大包长（字节），`0` = 不限 |
+| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
 | `source` | string | 来源标记（如 `api`、`ui`） |
 | `comment` | string | 备注 |
 | `enabled` | boolean | 规则是否启用 |
@@ -260,6 +261,8 @@ X-API-Key: <external_api_key>
 | `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
 | `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
 | `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
+| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`RST`），需 `protocol=tcp` |
+| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
 | `name` | string | 否 | 规则名称 |
 | `comment` | string | 否 | 备注 |
 | `source` | string | 否 | 来源标记 |

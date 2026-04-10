@@ -140,6 +140,7 @@ All rule endpoints require authentication.
 | `rate_limit` | integer | PPS limit. Required (> 0) when `action` is `rate_limit` |
 | `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
 | `pkt_len_max` | integer | Maximum L3 packet length in bytes. `0` = disabled |
+| `tcp_flags` | string | TCP flags filter (e.g. `SYN`, `SYN,ACK`, `RST`). Requires `protocol=tcp` |
 | `source` | string | Origin label (e.g., `api`, `ui`) |
 | `comment` | string | Free-text note |
 | `enabled` | boolean | Whether the rule is active |
@@ -261,6 +262,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 | `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
 | `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
 | `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
+| `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
 | `name` | string | No | Label |
 | `comment` | string | No | Notes |
 | `source` | string | No | Origin label |

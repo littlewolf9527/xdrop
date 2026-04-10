@@ -63,6 +63,7 @@ The system has two components:
 - **Whitelist** — hash map bypass checked before any blacklist rule
 - **Actions** — `drop`, `rate_limit` (token bucket, configurable PPS), `pass`
 - **Packet length filter** — `pkt_len_min` / `pkt_len_max` (L3 total length)
+- **TCP flags matching** — `tcp_flags` post-match filter (e.g. `SYN`, `SYN,ACK`, `RST`); mismatch continues wildcard fallback
 - **Bitmap optimization** — 64-bit bitmap encodes which of 34 field combinations have active rules; BPF skips combinations with no rules, keeping the hot path O(1)
 - **Per-rule statistics** — per-CPU `match_count` and `drop_count` aggregated by the agent
 

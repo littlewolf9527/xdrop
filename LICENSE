@@ -25,3 +25,7 @@ SOFTWARE.
 Note: The BPF/XDP kernel programs located in node/bpf/ are separately licensed
 under the GNU General Public License v2.0 (GPL-2.0), as required by the Linux
 kernel BPF subsystem. See the SPDX-License-Identifier headers in those files.
+
+The DSEG14 font (controller/web/public/fonts/) is Copyright (c) keshikan
+(https://www.keshikan.net), licensed under the SIL Open Font License 1.1.
+See https://github.com/keshikan/DSEG for details.

@@ -22,6 +22,7 @@ type Rule struct {
 	RateLimit uint32     `json:"rate_limit,omitempty"`
 	PktLenMin uint16     `json:"pkt_len_min,omitempty"`
 	PktLenMax uint16     `json:"pkt_len_max,omitempty"`
+	TcpFlags  string     `json:"tcp_flags,omitempty"`
 	Comment   string     `json:"comment,omitempty"`
 	Stats     *RuleStats `json:"stats,omitempty"`
 }
@@ -80,6 +81,7 @@ type SyncRule struct {
 	RateLimit uint32
 	PktLenMin uint16
 	PktLenMax uint16
+	TcpFlags  string
 }
 
 // SyncWhitelistEntry represents a whitelist entry for sync (matches sync.WhitelistEntry)
