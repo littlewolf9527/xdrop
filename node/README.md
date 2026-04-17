@@ -125,13 +125,9 @@ server:
   interface: eth0          # NIC to attach XDP (traditional mode)
 
 auth:
-  node_api_key: CHANGE_ME_NODE_KEY   # Required for all API requests
-
-sync:
-  enabled: true
-  controller_url: http://controller-host:8000
-  sync_key: CHANGE_ME_SYNC_KEY       # Must match controller node entry
-  interval: 60s
+  node_api_key: CHANGE_ME_NODE_KEY              # Required for all API requests; must be a real value (no placeholders)
+  controller_url: http://controller-host:8000   # Leave empty for pull-only / standalone mode
+  controller_sync_key: CHANGE_ME_SYNC_KEY       # Matches controller auth.external_api_key. Required when controller_url is set.
 ```
 
 ---

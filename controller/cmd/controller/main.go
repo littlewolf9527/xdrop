@@ -107,7 +107,7 @@ func main() {
 	}
 
 	// Create Web UI auth handler
-	authHandler := api.NewAuthHandler(cfg.Auth.WebUsername, cfg.Auth.WebPassword, cfg.Auth.SessionSecret, cfg.Auth.Enabled)
+	authHandler := api.NewAuthHandler(cfg.Auth.WebUsername, cfg.Auth.WebPassword, cfg.Auth.SessionSecret, cfg.Auth.Enabled, cfg.Auth.SecureCookie)
 
 	// Create auth middleware (dual-channel: external API key OR session cookie)
 	authMiddleware := api.AuthMiddleware(cfg.Auth.ExternalAPIKey, cfg.Auth.SessionSecret, cfg.Auth.Enabled)

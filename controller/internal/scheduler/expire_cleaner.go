@@ -65,15 +65,17 @@ func (c *ExpireCleaner) cleanup() {
 
 	slog.Info("Found expired rules", "count", len(expiredRules))
 
-	// Delete each rule and sync the deletion to nodes
+	// Delete from controller DB first, then sync the deletion to nodes.
+	// Rationale: if we sync first and local delete fails, the controller keeps
+	// a stale rule record that no longer exists on the datapath and blocks
+	// recreation via UNIQUE constraint. Deleting locally first means node
+	// convergence is handled by SyncChecker / next sync cycle if SyncDeleteRule fails.
 	for _, rule := range expiredRules {
-		// Sync deletion to nodes first
-		c.syncSvc.SyncDeleteRule(rule.ID)
-
-		// Then remove from the local database
 		if err := c.ruleRepo.Delete(rule.ID); err != nil {
-			slog.Error("Failed to delete expired rule", "id", rule.ID, "error", err)
+			slog.Error("Failed to delete expired rule from DB; skipping node sync", "id", rule.ID, "error", err)
+			continue
 		}
+		c.syncSvc.SyncDeleteRule(rule.ID)
 	}
 
 	slog.Info("Expired rules cleaned and synced", "count", len(expiredRules))

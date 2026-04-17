@@ -26,6 +26,11 @@ auth:
   web_username: "admin"
   web_password: "CHANGE_ME"
 
+  # Set Secure flag on session cookie.
+  # MUST be true when deploying behind HTTPS (recommended for production).
+  # Leave false for HTTP-only dev/lab environments.
+  secure_cookie: false
+
 # Pre-registered nodes (registered at startup, before any API calls).
 # You can also register nodes dynamically via POST /api/v1/nodes.
 nodes:

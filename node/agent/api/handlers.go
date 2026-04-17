@@ -90,7 +90,7 @@ func (h *Handlers) initDynamicConfig(m goebpf.Map) error {
 func (h *Handlers) Welcome(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":     "XDrop Agent",
-		"version":  "2.2.0",
+		"version":  "2.4.0",
 		"status":   "running",
 		"features": []string{"ipv4", "ipv6", "rate_limit"},
 	})

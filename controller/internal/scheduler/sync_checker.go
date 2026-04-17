@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/littlewolf9527/xdrop/controller/internal/client"
@@ -9,6 +11,10 @@ import (
 	"github.com/littlewolf9527/xdrop/controller/internal/repository"
 	"github.com/littlewolf9527/xdrop/controller/internal/service"
 )
+
+// syncCheckerMaxWorkers caps concurrent per-node checks to prevent goroutine
+// pileup when nodes are slow or intervals are short.
+const syncCheckerMaxWorkers = 8
 
 // SyncChecker periodically verifies that controller and node rules are in sync
 type SyncChecker struct {
@@ -19,6 +25,7 @@ type SyncChecker struct {
 	syncService  *service.SyncService
 	interval     time.Duration
 	stopCh       chan struct{}
+	running      atomic.Bool // guards against overlapping rounds
 }
 
 // NewSyncChecker creates a new sync checker
@@ -66,8 +73,16 @@ func (s *SyncChecker) Stop() {
 	close(s.stopCh)
 }
 
-// check inspects the sync state of all online nodes
+// check inspects the sync state of all online nodes with bounded concurrency
+// and overlap protection (a new round is skipped if the previous one is still
+// running, e.g. when nodes are slow or interval is too short).
 func (s *SyncChecker) check() {
+	if !s.running.CompareAndSwap(false, true) {
+		slog.Warn("Sync checker: previous round still running, skipping this tick")
+		return
+	}
+	defer s.running.Store(false)
+
 	nodes, err := s.nodeProvider.List()
 	if err != nil {
 		slog.Error("Sync checker: failed to list nodes", "error", err)
@@ -88,13 +103,24 @@ func (s *SyncChecker) check() {
 		return
 	}
 
+	// Bounded worker pool: at most syncCheckerMaxWorkers per-node checks in flight
+	sem := make(chan struct{}, syncCheckerMaxWorkers)
+	var wg sync.WaitGroup
+
 	for _, node := range nodes {
 		if node.Status == model.NodeStatusOffline {
 			continue
 		}
 
-		go s.checkNode(node, controllerRules, wlEntries, controllerCount, len(wlEntries))
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(n *model.Node) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.checkNode(n, controllerRules, wlEntries, controllerCount, len(wlEntries))
+		}(node)
 	}
+	wg.Wait()
 }
 
 // checkNode inspects the sync state of a single node

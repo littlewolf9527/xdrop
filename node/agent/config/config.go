@@ -3,9 +3,28 @@ package config
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/spf13/viper"
 )
+
+// placeholderPrefixes enumerates known example-config sentinel prefixes.
+// Any credential starting with one of these is rejected at startup to
+// prevent fresh deployments from running with known default credentials.
+var placeholderPrefixes = []string{"CHANGE_ME", "change-me", "changeme", "REPLACE_ME"}
+
+func looksLikePlaceholder(v string) bool {
+	if v == "" {
+		return false
+	}
+	upper := strings.ToUpper(v)
+	for _, p := range placeholderPrefixes {
+		if strings.HasPrefix(upper, strings.ToUpper(p)) {
+			return true
+		}
+	}
+	return false
+}
 
 // Config node configuration
 type Config struct {
@@ -84,6 +103,18 @@ func MustLoad(configPath string) *Config {
 
 // Validate validates configuration
 func (c *Config) Validate() error {
+	// Reject placeholder credentials (CHANGE_ME_* etc.) from example configs.
+	// Prevents fresh deployments from starting with known-to-be-default keys.
+	if looksLikePlaceholder(c.Auth.NodeAPIKey) {
+		return fmt.Errorf("auth.node_api_key still contains a placeholder value (%q); generate a real key before starting", c.Auth.NodeAPIKey)
+	}
+	// controller_sync_key only matters when the Node actively syncs to a Controller.
+	// In pull-only / standalone deployments (no controller_url), the field is unused
+	// and placeholder values should not block startup.
+	if c.Auth.ControllerURL != "" && looksLikePlaceholder(c.Auth.ControllerSyncKey) {
+		return fmt.Errorf("auth.controller_sync_key still contains a placeholder value (%q); generate a real key before starting (or leave controller_url empty for pull-only mode)", c.Auth.ControllerSyncKey)
+	}
+
 	// if fast_forward is enabled, validate fast_forward config
 	if c.FastForward.Enabled {
 		return c.ValidateFastForward()

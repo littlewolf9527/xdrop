@@ -186,6 +186,9 @@ func (h *Handlers) shadowCidrBlacklist() goebpf.Map {
 
 // clearMap removes all entries from a BPF hash map using GetNextKey iteration.
 // BPF hash maps have no bulk clear; we must iterate + delete.
+// Returns a non-nil error containing the count of per-entry delete failures
+// (the first failing error is wrapped). All keys are attempted regardless of
+// individual failures so the map is left as empty as possible.
 func clearMap(m goebpf.Map) error {
 	// Collect all keys first to avoid iterator invalidation
 	var keys [][]byte
@@ -200,8 +203,19 @@ func clearMap(m goebpf.Map) error {
 		keys = append(keys, keyCopy)
 		prevKey = nextKey
 	}
+
+	var firstErr error
+	failed := 0
 	for _, key := range keys {
-		m.Delete(key) // best-effort; ignore errors on individual deletes
+		if err := m.Delete(key); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("clearMap: %d/%d deletes failed, first error: %w", failed, len(keys), firstErr)
 	}
 	return nil
 }

@@ -125,13 +125,9 @@ server:
   interface: eth0          # XDP 挂载的网卡（Traditional 模式）
 
 auth:
-  node_api_key: 请替换为强密钥   # 所有 API 请求均需此 Key
-
-sync:
-  enabled: true
-  controller_url: http://controller-host:8000
-  sync_key: 请替换为同步密钥     # 须与 controller 节点配置中的值一致
-  interval: 60s
+  node_api_key: 请替换为强密钥                  # 所有 API 请求均需此 Key，必须是真实值（不允许 CHANGE_ME 等占位符）
+  controller_url: http://controller-host:8000  # 留空表示 pull-only / 独立模式
+  controller_sync_key: 请替换为同步密钥         # 对应 controller 的 auth.external_api_key；当 controller_url 非空时必填
 ```
 
 ---

@@ -552,9 +552,22 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 
 	// --- Step 6: Cleanup old map (now shadow) synchronously under lock ---
 	// Must be synchronous to prevent race with next DoAtomicSync reusing the same map pair.
-	clearMap(h.shadowBlacklist())
-	clearMap(h.shadowCidrBlacklist())
-	log.Printf("[cleanupOldRuleMap] Old rule maps cleared")
+	// Cleanup failures are logged but do not fail the overall sync (the active side
+	// already holds the new authoritative state). Next DoAtomicSync will retry clearing.
+	cleanupOK := true
+	if err := clearMap(h.shadowBlacklist()); err != nil {
+		log.Printf("[cleanupOldRuleMap] WARN: shadow blacklist cleanup failed: %v", err)
+		cleanupOK = false
+	}
+	if err := clearMap(h.shadowCidrBlacklist()); err != nil {
+		log.Printf("[cleanupOldRuleMap] WARN: shadow CIDR blacklist cleanup failed: %v", err)
+		cleanupOK = false
+	}
+	if cleanupOK {
+		log.Printf("[cleanupOldRuleMap] Old rule maps cleared")
+	} else {
+		log.Printf("[cleanupOldRuleMap] Cleanup completed with errors; next AtomicSync will retry")
+	}
 
 	return AtomicSyncResult{
 		Added:      added,
@@ -712,7 +725,11 @@ func (h *Handlers) ClearAllWhitelistFromSync() error {
 
 	if deleted > 0 {
 		if err := h.publishConfigUpdate(0, -int64(deleted), 0); err != nil {
-			log.Printf("[ClearAllWhitelistFromSync] WARN: publish config failed: %v", err)
+			log.Printf("[ClearAllWhitelistFromSync] ERROR: publish config failed after deleting %d entries: %v", deleted, err)
+			h.wlMu.Unlock()
+			h.publishMu.Unlock()
+			// BPF entries are gone but config count is stale; caller must know convergence failed
+			return fmt.Errorf("whitelist cleared but publishConfigUpdate failed: %w", err)
 		}
 		log.Printf("[ClearAllWhitelistFromSync] Cleared %d whitelist entries", deleted)
 	}

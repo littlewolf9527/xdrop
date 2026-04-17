@@ -27,6 +27,7 @@ type AuthConfig struct {
 	SessionSecret  string `mapstructure:"session_secret"`   // Web UI session signing secret
 	WebUsername    string `mapstructure:"web_username"`     // Web UI login username
 	WebPassword    string `mapstructure:"web_password"`     // Web UI login password
+	SecureCookie   bool   `mapstructure:"secure_cookie"`    // Set Secure flag on session cookie (enable for HTTPS deployments)
 }
 
 // NodeConfig pre-configured node

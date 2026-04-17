@@ -11,6 +11,11 @@ import (
 	"github.com/littlewolf9527/xdrop/controller/internal/service"
 )
 
+// offlineThreshold is the number of consecutive failed pings required
+// before a node is flagged as offline. Prevents flapping on transient
+// network blips while still converging within ~3 ticks.
+const offlineThreshold = 3
+
 // HealthChecker periodically checks node health
 type HealthChecker struct {
 	nodeProvider service.NodeProvider
@@ -19,6 +24,11 @@ type HealthChecker struct {
 	stopCh       chan struct{}
 	running      atomic.Bool // prevents overlapping rounds
 	maxWorkers   int
+
+	// failCounts tracks consecutive ping failures per node ID.
+	// Guarded by failMu. Reset to 0 on successful ping.
+	failMu     sync.Mutex
+	failCounts map[string]int
 }
 
 // NewHealthChecker creates a new health checker
@@ -29,6 +39,7 @@ func NewHealthChecker(nodeProvider service.NodeProvider, nodeClient *client.Node
 		interval:     interval,
 		stopCh:       make(chan struct{}),
 		maxWorkers:   8,
+		failCounts:   make(map[string]int),
 	}
 }
 
@@ -94,11 +105,35 @@ func (h *HealthChecker) checkNode(node *model.Node) {
 	err := h.nodeClient.Ping(node.Endpoint, node.ApiKey)
 
 	if err != nil {
-		if node.Status != model.NodeStatusOffline {
-			slog.Warn("Node offline", "name", node.Name, "endpoint", node.Endpoint, "error", err)
+		// Debounce: only mark offline after N consecutive failures.
+		// Protects against transient network blips causing flapping.
+		h.failMu.Lock()
+		h.failCounts[node.ID]++
+		count := h.failCounts[node.ID]
+		h.failMu.Unlock()
+
+		if count >= offlineThreshold && node.Status != model.NodeStatusOffline {
+			slog.Warn("Node offline",
+				"name", node.Name,
+				"endpoint", node.Endpoint,
+				"consecutive_failures", count,
+				"error", err,
+			)
 			h.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOffline)
+		} else if count < offlineThreshold {
+			slog.Debug("Node ping failed (within threshold)",
+				"name", node.Name,
+				"consecutive_failures", count,
+				"threshold", offlineThreshold,
+				"error", err,
+			)
 		}
 	} else {
+		// Success: reset fail counter + mark online (immediate recovery).
+		h.failMu.Lock()
+		delete(h.failCounts, node.ID)
+		h.failMu.Unlock()
+
 		if node.Status != model.NodeStatusOnline {
 			slog.Info("Node online", "name", node.Name, "endpoint", node.Endpoint)
 			h.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOnline)

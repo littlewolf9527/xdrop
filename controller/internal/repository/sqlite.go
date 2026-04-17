@@ -402,16 +402,31 @@ func (r *SQLiteRuleRepo) ListEnabled() ([]*model.Rule, error) {
 }
 
 func (r *SQLiteRuleRepo) ListExpired() ([]*model.Rule, error) {
+	// Filter expired rules in Go rather than SQL: the stored `expires_at`
+	// format may carry timezone offsets (e.g. "+08:00") that make lexical
+	// comparison against SQLite's CURRENT_TIMESTAMP (UTC, no offset) incorrect.
+	// Scope is small (only rules with expires_at set) so the overhead is fine.
 	rows, err := r.db.Query(`
 		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
 		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
-		FROM rules WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP
+		FROM rules WHERE expires_at IS NOT NULL
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanRules(rows)
+	all, err := scanRules(rows)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	expired := make([]*model.Rule, 0, len(all))
+	for _, rule := range all {
+		if rule.ExpiresAt != nil && now.After(*rule.ExpiresAt) {
+			expired = append(expired, rule)
+		}
+	}
+	return expired, nil
 }
 
 func (r *SQLiteRuleRepo) Update(rule *model.Rule) error {
@@ -459,12 +474,21 @@ func (r *SQLiteRuleRepo) BatchDelete(ids []string) error {
 }
 
 func (r *SQLiteRuleRepo) DeleteExpired() (int, error) {
-	result, err := r.db.Exec("DELETE FROM rules WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP")
+	// Same TZ comparison issue as ListExpired — resolve the set in Go,
+	// then delete by ID. Small set (rules with expires_at), safe to iterate.
+	expired, err := r.ListExpired()
 	if err != nil {
 		return 0, err
 	}
-	n, _ := result.RowsAffected()
-	return int(n), nil
+	count := 0
+	for _, rule := range expired {
+		if _, err := r.db.Exec("DELETE FROM rules WHERE id = ?", rule.ID); err != nil {
+			slog.Warn("DeleteExpired: failed to delete rule", "id", rule.ID, "error", err)
+			continue
+		}
+		count++
+	}
+	return count, nil
 }
 
 func (r *SQLiteRuleRepo) Exists(srcIP, dstIP string, srcPort, dstPort int, protocol string) (bool, error) {

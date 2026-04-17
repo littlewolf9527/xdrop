@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -22,15 +23,20 @@ type AuthHandler struct {
 	password      string
 	sessionSecret string
 	authEnabled   bool
+	secureCookie  bool // set Secure flag on session cookie (HTTPS-only)
 }
 
-// NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(username, password, sessionSecret string, authEnabled bool) *AuthHandler {
+// NewAuthHandler creates a new AuthHandler.
+// secureCookie controls the `Secure` attribute on the session cookie.
+// Production deployments behind HTTPS should set this to true; HTTP dev mode
+// keeps it false.
+func NewAuthHandler(username, password, sessionSecret string, authEnabled, secureCookie bool) *AuthHandler {
 	return &AuthHandler{
 		username:      username,
 		password:      password,
 		sessionSecret: sessionSecret,
 		authEnabled:   authEnabled,
+		secureCookie:  secureCookie,
 	}
 }
 
@@ -51,21 +57,26 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	if req.Username != h.username || req.Password != h.password {
+	// Constant-time comparison to prevent timing side-channels on credential checks.
+	// Evaluate both comparisons unconditionally so total time is independent of
+	// which field mismatches first.
+	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(h.username)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(h.password)) == 1
+	if !userOK || !passOK {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
 	token := generateSessionToken(h.sessionSecret)
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookieName, token, sessionMaxAge, "/", "", false, true)
+	c.SetCookie(sessionCookieName, token, sessionMaxAge, "/", "", h.secureCookie, true)
 	c.JSON(http.StatusOK, gin.H{"message": "ok", "username": req.Username})
 }
 
 // Logout handles POST /api/auth/logout
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookieName, "", -1, "/", "", false, true)
+	c.SetCookie(sessionCookieName, "", -1, "/", "", h.secureCookie, true)
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 

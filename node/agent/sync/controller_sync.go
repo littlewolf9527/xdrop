@@ -76,7 +76,10 @@ type WhitelistEntry struct {
 func (s *ControllerSync) FetchRules() ([]Rule, error) {
 	url := s.config.ControllerURL + "/api/v1/rules"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build rules request (invalid controller_url %q): %w", s.config.ControllerURL, err)
+	}
 	if s.config.APIKey != "" {
 		req.Header.Set("X-API-Key", s.config.APIKey)
 	}
@@ -106,7 +109,10 @@ func (s *ControllerSync) FetchRules() ([]Rule, error) {
 func (s *ControllerSync) FetchWhitelist() ([]WhitelistEntry, error) {
 	url := s.config.ControllerURL + "/api/v1/whitelist"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build whitelist request (invalid controller_url %q): %w", s.config.ControllerURL, err)
+	}
 	if s.config.APIKey != "" {
 		req.Header.Set("X-API-Key", s.config.APIKey)
 	}

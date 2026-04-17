@@ -63,7 +63,7 @@ func (h *NodesHandler) Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"node":    node,
 	})

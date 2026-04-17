@@ -46,7 +46,7 @@ func (h *WhitelistHandler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, syncToResponse(gin.H{
+	c.JSON(http.StatusCreated, syncToResponse(gin.H{
 		"success": true,
 		"entry":   entry,
 	}, sr))

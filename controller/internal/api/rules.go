@@ -12,6 +12,10 @@ import (
 	"github.com/littlewolf9527/xdrop/controller/internal/service"
 )
 
+// MaxBatchSize caps the number of rules/ids accepted in a single batch
+// request to prevent memory pressure and sync-fanout amplification.
+const MaxBatchSize = 1000
+
 // RulesHandler handles rule API requests.
 type RulesHandler struct {
 	svc     *service.RuleService
@@ -236,7 +240,7 @@ func (h *RulesHandler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, syncToResponse(gin.H{
+	c.JSON(http.StatusCreated, syncToResponse(gin.H{
 		"success": true,
 		"rule":    rule,
 	}, sr))
@@ -287,6 +291,10 @@ func (h *RulesHandler) BatchCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if len(req.Rules) > MaxBatchSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("batch size %d exceeds limit %d", len(req.Rules), MaxBatchSize)})
+		return
+	}
 
 	rules, added, failed, sr, err := h.svc.BatchCreate(req.Rules)
 	if err != nil {
@@ -294,7 +302,7 @@ func (h *RulesHandler) BatchCreate(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, syncToResponse(gin.H{
+	c.JSON(http.StatusCreated, syncToResponse(gin.H{
 		"success": true,
 		"added":   added,
 		"failed":  failed,
@@ -309,6 +317,10 @@ func (h *RulesHandler) BatchDelete(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.IDs) > MaxBatchSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("batch size %d exceeds limit %d", len(req.IDs), MaxBatchSize)})
 		return
 	}
 
