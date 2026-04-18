@@ -91,6 +91,17 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 		Protocol: parseProtocol(req.Protocol),
 	}
 
+	if err := validateComboType(getCIDRComboType(ck)); err != nil {
+		if srcCIDR != "" {
+			h.cidrMgr.ReleaseSrcID(srcCIDR)
+		}
+		if dstCIDR != "" {
+			h.cidrMgr.ReleaseDstID(dstCIDR)
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	value := RuleValue{
 		Action:        action,
 		TcpFlagsMask:  flagsMask,
@@ -295,6 +306,16 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		}
 	}
 
+	// Validate tcp_flags + protocol BEFORE CIDR allocation so a rejection here
+	// does not leave freshly-allocated trie IDs leaked (AUD-V240-001).
+	sfm, sfv, sfErr := parseTcpFlags(rule.TcpFlags)
+	if sfErr != nil {
+		return fmt.Errorf("invalid tcp_flags %q: %w", rule.TcpFlags, sfErr)
+	}
+	if sfm != 0 && parseProtocol(rule.Protocol) != ProtoTCP {
+		return fmt.Errorf("tcp_flags requires protocol=tcp, got %q", rule.Protocol)
+	}
+
 	// Allocate CIDR IDs
 	var srcID, dstID uint32
 	if srcCIDR != "" {
@@ -322,12 +343,14 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		Protocol: parseProtocol(rule.Protocol),
 	}
 
-	sfm, sfv, sfErr := parseTcpFlags(rule.TcpFlags)
-	if sfErr != nil {
-		return fmt.Errorf("invalid tcp_flags %q: %w", rule.TcpFlags, sfErr)
-	}
-	if sfm != 0 && parseProtocol(rule.Protocol) != ProtoTCP {
-		return fmt.Errorf("tcp_flags requires protocol=tcp, got %q", rule.Protocol)
+	if err := validateComboType(getCIDRComboType(ck)); err != nil {
+		if srcCIDR != "" {
+			h.cidrMgr.ReleaseSrcID(srcCIDR)
+		}
+		if dstCIDR != "" {
+			h.cidrMgr.ReleaseDstID(dstCIDR)
+		}
+		return fmt.Errorf("invalid CIDR rule: %w", err)
 	}
 	value := RuleValue{
 		Action:        action,

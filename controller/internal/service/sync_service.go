@@ -30,7 +30,6 @@ type SyncService struct {
 	concurrent    int
 	retryCount    int
 	retryInterval time.Duration
-	mu            sync.Mutex
 }
 
 // NewSyncService creates a new SyncService.

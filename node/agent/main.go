@@ -165,6 +165,45 @@ func main() {
 	// only removes XDP from the last-attached interface)
 	var xdpAttachedIfaces []string
 
+	// Initialize API handlers before XDP attach so the signal handler can call
+	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not
+	// depend on XDP being attached. SetXDPInfo is called later, after attach.
+	handlers := api.NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates,
+		cidrBlacklist, cidrRlStates, cidrMgr,
+		blacklistB, cidrBlacklistB)
+
+	// Setup graceful shutdown BEFORE XDP attach and ifmgr config, so Ctrl-C
+	// during startup still runs cleanup. The goroutine captures ifMgr and
+	// xdpAttachedIfaces by reference — both are still zero-value here but will
+	// be populated synchronously below, so they're valid by the time a signal
+	// can actually be delivered after startup completes.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Println("Shutting down...")
+
+		// Stop background samplers started by Handlers
+		handlers.Shutdown()
+
+		// Detach XDP from all attached interfaces (empty if signal fired pre-attach)
+		for _, iface := range xdpAttachedIfaces {
+			if err := detachXDP(iface); err != nil {
+				log.Printf("Warning: failed to detach XDP from %s: %v", iface, err)
+			} else {
+				log.Printf("XDP detached from %s", iface)
+			}
+		}
+
+		// Restore interfaces in fast forward mode (nil if signal fired pre-init)
+		if fastForwardMode && ifMgr != nil {
+			ifMgr.RestoreAll()
+		}
+
+		os.Exit(0)
+	}()
+
 	if fastForwardMode {
 		// === FAST FORWARD MODE ===
 		log.Println("Fast Forward mode enabled")
@@ -204,9 +243,14 @@ func main() {
 			log.Fatalf("Failed to configure fast forward: %v", err)
 		}
 
-		// Pre-detach: clear any stale XDP programs left by a previous crash/kill -9
-		detachXDP(pair.Inbound)
-		detachXDP(pair.Outbound)
+		// Pre-detach: clear any stale XDP programs left by a previous crash/kill -9.
+		// Error is expected when nothing is attached — we log at DEBUG level only.
+		if err := detachXDP(pair.Inbound); err != nil {
+			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", pair.Inbound, err)
+		}
+		if err := detachXDP(pair.Outbound); err != nil {
+			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", pair.Outbound, err)
+		}
 
 		// Attach XDP to inbound interface
 		if err := xdp.Attach(pair.Inbound); err != nil {
@@ -222,7 +266,9 @@ func main() {
 		// We do NOT rely on goebpf Detach(); instead we track interfaces in
 		// xdpAttachedIfaces and use detachXDP() for reliable cleanup.
 		if err := xdp.Attach(pair.Outbound); err != nil {
-			detachXDP(pair.Inbound) // clean up inbound manually
+			if dErr := detachXDP(pair.Inbound); dErr != nil {
+				log.Printf("[main] Warning: failed to detach XDP from %s while rolling back: %v", pair.Inbound, dErr)
+			}
 			ifMgr.RestoreAll()
 			log.Fatalf("Failed to attach XDP to %s: %v", pair.Outbound, err)
 		}
@@ -232,8 +278,11 @@ func main() {
 	} else {
 		// === TRADITIONAL MODE ===
 		log.Println("Traditional mode (single interface)")
-		// Pre-detach: clear any stale XDP program left by a previous crash/kill -9
-		detachXDP(cfg.Server.Interface)
+		// Pre-detach: clear any stale XDP program left by a previous crash/kill -9.
+		// Error is expected when nothing is attached — we only log.
+		if err := detachXDP(cfg.Server.Interface); err != nil {
+			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", cfg.Server.Interface, err)
+		}
 		if err := xdp.Attach(cfg.Server.Interface); err != nil {
 			log.Fatalf("Failed to attach XDP to %s: %v", cfg.Server.Interface, err)
 		}
@@ -241,37 +290,7 @@ func main() {
 		log.Printf("XDP program attached to %s", cfg.Server.Interface)
 	}
 
-	// Setup graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-sigChan
-		log.Println("Shutting down...")
-
-		// Detach XDP from all attached interfaces
-		for _, iface := range xdpAttachedIfaces {
-			if err := detachXDP(iface); err != nil {
-				log.Printf("Warning: failed to detach XDP from %s: %v", iface, err)
-			} else {
-				log.Printf("XDP detached from %s", iface)
-			}
-		}
-
-		// Restore interfaces in fast forward mode
-		if fastForwardMode && ifMgr != nil {
-			ifMgr.RestoreAll()
-		}
-
-		os.Exit(0)
-	}()
-
-	// Initialize API handlers
-	handlers := api.NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates,
-		cidrBlacklist, cidrRlStates, cidrMgr,
-		blacklistB, cidrBlacklistB)
-
-	// Set XDP interface info for stats reporting
+	// Set XDP interface info for stats reporting (after XDP attach completed)
 	if fastForwardMode {
 		pair := cfg.FastForward.Pairs[0]
 		handlers.SetXDPInfo(&api.XDPInfo{

@@ -8,10 +8,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// isMapEntryMissing reports whether a goebpf map Delete returned ENOENT, which
+// happens when the key was never present. For lazily-populated maps such as
+// rl_states (written on first match, not on rule insert), ENOENT is the common
+// case for never-matched rules — not a real error.
+func isMapEntryMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	// goebpf wraps the kernel errno as a plain string; on Linux ENOENT's
+	// strerror is "No such file or directory".
+	return strings.Contains(err.Error(), "No such file or directory")
+}
 
 // AddRule adds a new rule (exact IP or CIDR)
 func (h *Handlers) AddRule(c *gin.Context) {
@@ -59,6 +73,11 @@ func (h *Handlers) AddRule(c *gin.Context) {
 
 	key, err := h.ruleToKey(req)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := validateComboType(getComboType(key)); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -235,7 +254,9 @@ func (h *Handlers) DeleteRule(c *gin.Context) {
 			return
 		}
 		if stored.Action == "rate_limit" && h.rlStates != nil {
-			h.rlStates.Delete(keyBytes)
+			if err := h.rlStates.Delete(keyBytes); err != nil && !isMapEntryMissing(err) {
+				log.Printf("[DeleteRule] WARN: failed to delete rate-limit state for rule %s: %v (stale token bucket may leak into future rule reusing this key)", id, err)
+			}
 		}
 		comboType := getComboType(stored.Key)
 		if comboType >= 0 && comboType < 64 {
@@ -257,7 +278,9 @@ func (h *Handlers) DeleteRule(c *gin.Context) {
 			return
 		}
 		if cidrStored.Action == "rate_limit" && h.cidrRlStates != nil {
-			h.cidrRlStates.Delete(keyBytes)
+			if err := h.cidrRlStates.Delete(keyBytes); err != nil && !isMapEntryMissing(err) {
+				log.Printf("[DeleteRule] WARN: failed to delete CIDR rate-limit state for rule %s: %v", id, err)
+			}
 		}
 		comboType := getCIDRComboType(cidrStored.Key)
 		if comboType >= 0 && comboType < 64 {
@@ -386,6 +409,12 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 
 		key, err := h.ruleToKey(r)
 		if err != nil {
+			failed++
+			continue
+		}
+
+		if err := validateComboType(getComboType(key)); err != nil {
+			log.Printf("[AddRulesBatch] rejecting rule %s: %v", r.ID, err)
 			failed++
 			continue
 		}
@@ -611,7 +640,9 @@ func (h *Handlers) DeleteRulesBatch(c *gin.Context) {
 			}
 
 			if stored.Action == "rate_limit" && h.rlStates != nil {
-				h.rlStates.Delete(keyBytes)
+				if err := h.rlStates.Delete(keyBytes); err != nil && !isMapEntryMissing(err) {
+					log.Printf("[DeleteRulesBatch] WARN: failed to delete rate-limit state for rule %s: %v", id, err)
+				}
 			}
 
 			comboType := getComboType(stored.Key)
@@ -634,7 +665,9 @@ func (h *Handlers) DeleteRulesBatch(c *gin.Context) {
 			}
 
 			if cidrStored.Action == "rate_limit" && h.cidrRlStates != nil {
-				h.cidrRlStates.Delete(keyBytes)
+				if err := h.cidrRlStates.Delete(keyBytes); err != nil && !isMapEntryMissing(err) {
+					log.Printf("[DeleteRulesBatch] WARN: failed to delete CIDR rate-limit state for rule %s: %v", id, err)
+				}
 			}
 
 			comboType := getCIDRComboType(cidrStored.Key)

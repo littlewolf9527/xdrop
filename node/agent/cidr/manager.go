@@ -108,6 +108,9 @@ func (m *Manager) AllocDstID(cidr string) (uint32, error) {
 }
 
 // ReleaseSrcID decrements ref count; deletes trie entry when it reaches zero.
+// Mutation order: when this release would drop the refcount to zero, the trie
+// delete is attempted first. On trie failure no map state is changed, so the
+// caller can safely retry (refs[cidr] stays at its pre-call value).
 func (m *Manager) ReleaseSrcID(cidr string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -120,20 +123,21 @@ func (m *Manager) ReleaseSrcID(cidr string) error {
 		return fmt.Errorf("src CIDR %s not found", cidr)
 	}
 
-	ref--
-	if ref <= 0 {
+	if ref <= 1 {
 		if err := m.deleteTrie(trie, cidr, isV6); err != nil {
 			return fmt.Errorf("failed to delete src trie for %s: %w", cidr, err)
 		}
 		delete(cidrs, cidr)
 		delete(refs, cidr)
-	} else {
-		refs[cidr] = ref
+		return nil
 	}
+	refs[cidr] = ref - 1
 	return nil
 }
 
 // ReleaseDstID decrements ref count; deletes trie entry when it reaches zero.
+// Same mutation-order guarantee as ReleaseSrcID: trie delete happens before
+// any local state change, so a failed release is safely retryable.
 func (m *Manager) ReleaseDstID(cidr string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -146,16 +150,15 @@ func (m *Manager) ReleaseDstID(cidr string) error {
 		return fmt.Errorf("dst CIDR %s not found", cidr)
 	}
 
-	ref--
-	if ref <= 0 {
+	if ref <= 1 {
 		if err := m.deleteTrie(trie, cidr, isV6); err != nil {
 			return fmt.Errorf("failed to delete dst trie for %s: %w", cidr, err)
 		}
 		delete(cidrs, cidr)
 		delete(refs, cidr)
-	} else {
-		refs[cidr] = ref
+		return nil
 	}
+	refs[cidr] = ref - 1
 	return nil
 }
 

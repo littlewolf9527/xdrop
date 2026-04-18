@@ -43,6 +43,10 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		return fmt.Errorf("failed to convert rule: %w", err)
 	}
 
+	if err := validateComboType(getComboType(key)); err != nil {
+		return fmt.Errorf("rule rejected: %w", err)
+	}
+
 	action, err := parseAction(req.Action)
 	if err != nil {
 		return fmt.Errorf("invalid action: %w", err)
@@ -294,6 +298,18 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				}
 			}
 
+			// Validate tcp_flags + protocol BEFORE CIDR allocation so a rejection
+			// here does not leave freshly-allocated trie IDs leaked (AUD-V240-001).
+			cfm, cfv, cfErr := parseTcpFlags(r.TcpFlags)
+			if cfErr != nil {
+				failed++
+				continue
+			}
+			if cfm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
+				failed++
+				continue
+			}
+
 			// Allocate CIDR IDs (overlap check skipped for atomic sync — full replacement)
 			var srcID, dstID uint32
 			if srcCIDR != "" {
@@ -322,12 +338,14 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				Protocol: parseProtocol(r.Protocol),
 			}
 
-			cfm, cfv, cfErr := parseTcpFlags(r.TcpFlags)
-			if cfErr != nil {
-				failed++
-				continue
-			}
-			if cfm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
+			if err := validateComboType(getCIDRComboType(ck)); err != nil {
+				if srcCIDR != "" {
+					h.cidrMgr.ReleaseSrcID(srcCIDR)
+				}
+				if dstCIDR != "" {
+					h.cidrMgr.ReleaseDstID(dstCIDR)
+				}
+				log.Printf("[AtomicSync] CIDR rule %s rejected: %v", id, err)
 				failed++
 				continue
 			}
@@ -377,6 +395,12 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 
 			key, err := h.ruleToKey(r)
 			if err != nil {
+				failed++
+				continue
+			}
+
+			if err := validateComboType(getComboType(key)); err != nil {
+				log.Printf("[AtomicSync] rule %s rejected: %v", id, err)
 				failed++
 				continue
 			}

@@ -20,4 +20,6 @@ type SystemStatsCache struct{}
 
 func startSystemStatsSampler(_ *SystemStatsCache) {}
 
+func stopSystemStatsSampler(_ *SystemStatsCache) {}
+
 func getSystemStats(_ *SystemStatsCache) SystemStats { return SystemStats{} }

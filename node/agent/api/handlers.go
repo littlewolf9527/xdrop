@@ -71,6 +71,12 @@ func (h *Handlers) SetXDPInfo(info *XDPInfo) {
 	h.xdpInfo = info
 }
 
+// Shutdown signals background goroutines owned by this Handlers to exit.
+// Safe to call multiple times.
+func (h *Handlers) Shutdown() {
+	stopSystemStatsSampler(h.sysStatsCache)
+}
+
 // initDynamicConfig initializes dynamic config items in one config map
 // Does not touch FF_ENABLED or FILTER_IFINDEX (written by main.go separately)
 func (h *Handlers) initDynamicConfig(m goebpf.Map) error {
@@ -90,7 +96,7 @@ func (h *Handlers) initDynamicConfig(m goebpf.Map) error {
 func (h *Handlers) Welcome(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":     "XDrop Agent",
-		"version":  "2.4.0",
+		"version":  "2.4.1",
 		"status":   "running",
 		"features": []string{"ipv4", "ipv6", "rate_limit"},
 	})

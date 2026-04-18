@@ -26,23 +26,53 @@ type SystemStats struct {
 }
 
 // SystemStatsCache holds the latest sampled values, protected by sync.RWMutex
-// (SystemStats is a multi-field struct, cannot be atomically replaced)
+// (SystemStats is a multi-field struct, cannot be atomically replaced).
+// The stop channel lets the background sampler exit on shutdown; stopOnce
+// guards against double-close if Shutdown is called more than once.
 type SystemStatsCache struct {
-	mu    sync.RWMutex
-	stats SystemStats
+	mu       sync.RWMutex
+	stats    SystemStats
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
-// startSystemStatsSampler launches a background goroutine that samples every 10s
+// startSystemStatsSampler launches a background goroutine that samples every 10s.
+// Returns when cache.stop is closed.
 func startSystemStatsSampler(cache *SystemStatsCache) {
+	if cache.stop == nil {
+		cache.stop = make(chan struct{})
+	}
 	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		// Sample once immediately so the first request after startup has data.
+		s := sampleSystemStats()
+		cache.mu.Lock()
+		cache.stats = s
+		cache.mu.Unlock()
 		for {
-			s := sampleSystemStats()
-			cache.mu.Lock()
-			cache.stats = s
-			cache.mu.Unlock()
-			time.Sleep(10 * time.Second)
+			select {
+			case <-cache.stop:
+				return
+			case <-ticker.C:
+				s := sampleSystemStats()
+				cache.mu.Lock()
+				cache.stats = s
+				cache.mu.Unlock()
+			}
 		}
 	}()
+}
+
+// stopSystemStatsSampler signals the sampler goroutine to exit. Safe to call
+// multiple times.
+func stopSystemStatsSampler(cache *SystemStatsCache) {
+	if cache == nil || cache.stop == nil {
+		return
+	}
+	cache.stopOnce.Do(func() {
+		close(cache.stop)
+	})
 }
 
 func getSystemStats(cache *SystemStatsCache) SystemStats {

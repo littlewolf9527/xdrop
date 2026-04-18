@@ -61,9 +61,16 @@ func (m *InterfaceManager) ConfigureInterface(name string) error {
 	// Check if interface is up
 	state.WasUp = iface.Flags&net.FlagUp != 0
 
-	// Check promiscuous mode (via ip link show)
-	output, _ := exec.Command("ip", "link", "show", name).Output()
-	state.WasPromisc = strings.Contains(string(output), "PROMISC")
+	// Check promiscuous mode (via ip link show). If the command fails we assume
+	// PROMISC was NOT originally set — RestoreInterface will then disable it,
+	// which is the safer default than leaving an unexpected PROMISC enabled.
+	output, err := exec.Command("ip", "link", "show", name).Output()
+	if err != nil {
+		log.Printf("[IfMgr] Warning: failed to read initial state of %s via 'ip link show': %v (assuming promisc=off)", name, err)
+		state.WasPromisc = false
+	} else {
+		state.WasPromisc = strings.Contains(string(output), "PROMISC")
+	}
 
 	// Check offload states
 	state.GRO = m.getOffloadState(name, "generic-receive-offload")

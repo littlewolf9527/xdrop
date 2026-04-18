@@ -1,6 +1,29 @@
 // XDrop Agent - 34-combo type classification for bitmap optimization
 package api
 
+import "fmt"
+
+// ComboUnknown is returned by getComboType/getCIDRComboType when no defined
+// combo matches the key fields. XDP matches rules by the combo bitmap, so an
+// unknown combo means the rule is inserted into the BPF map but never looked
+// up. Insertion paths MUST reject ComboUnknown via validateComboType.
+const ComboUnknown = -1
+
+// ComboBitmapSize is the bit-width of the combo bitmap on the XDP side.
+const ComboBitmapSize = 64
+
+// validateComboType returns a non-nil error if the combo is unusable, turning
+// a previously-silent ghost-rule bug into a hard failure at the insert site.
+func validateComboType(comboType int) error {
+	if comboType == ComboUnknown {
+		return fmt.Errorf("rule field combination is not recognized; XDP would never match it")
+	}
+	if comboType < 0 || comboType >= ComboBitmapSize {
+		return fmt.Errorf("combo type %d out of bitmap range [0, %d)", comboType, ComboBitmapSize)
+	}
+	return nil
+}
+
 // Combo type constants (must match xdrop.h)
 const (
 	ComboExact5Tuple          = 0  // src_ip + dst_ip + src_port + dst_port + protocol
@@ -126,7 +149,7 @@ func getComboType(key RuleKey) int {
 	case hasSrcIP && hasDstIP && hasSrcPort && hasDstPort && !hasProto:
 		return ComboAllExceptProto
 	default:
-		return -1 // Unknown combination
+		return ComboUnknown
 	}
 }
 
@@ -206,6 +229,6 @@ func getCIDRComboType(key CIDRRuleKey) int {
 	case hasSrcID && hasDstID && hasSrcPort && hasDstPort && !hasProto:
 		return ComboAllExceptProto
 	default:
-		return -1
+		return ComboUnknown
 	}
 }
