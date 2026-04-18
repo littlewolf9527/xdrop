@@ -293,7 +293,10 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 		return fmt.Errorf("failed to snapshot existing rules: %w", err)
 	}
 
-	// Delete existing rules
+	// Delete existing rules. Like the batch-add path, the node reports failure
+	// in two ways: transport error OR HTTP 200 with resp.Failed > 0. Partial
+	// delete must abort the sync — otherwise old rules survive into the new
+	// apply and the node ends in a mixed state (AUD-V242-002).
 	if len(ruleSnapshot) > 0 {
 		ruleIDs := make([]string, 0, len(ruleSnapshot))
 		for _, r := range ruleSnapshot {
@@ -301,10 +304,12 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 				ruleIDs = append(ruleIDs, id)
 			}
 		}
-		if _, err := c.DeleteRulesBatch(endpoint, apiKey, ruleIDs); err != nil {
-			// Delete failed — node state is whatever the partial delete left behind.
-			// No rollback makes sense here (we never had a target state applied).
+		resp, err := c.DeleteRulesBatch(endpoint, apiKey, ruleIDs)
+		if err != nil {
 			return fmt.Errorf("failed to delete existing rules: %w", err)
+		}
+		if resp != nil && resp.Failed > 0 {
+			return fmt.Errorf("partial delete: %d/%d existing rules could not be removed; aborting sync", resp.Failed, len(ruleIDs))
 		}
 	}
 
@@ -326,10 +331,16 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 			}
 			// Before re-inserting the snapshot, clear out any rules the partial
 			// primary add managed to install, so the rolled-back state is the
-			// snapshot and not snapshot∪partial-accept.
+			// snapshot and not snapshot∪partial-accept. Partial pre-clean is
+			// treated as a failure too (AUD-V242-002) — a residue leak would
+			// recreate the exact class of mixed-state bug this path is fixing.
 			if currentIDs, gErr := c.GetRuleIDs(endpoint, apiKey); gErr == nil && len(currentIDs) > 0 {
-				if _, dErr := c.DeleteRulesBatch(endpoint, apiKey, currentIDs); dErr != nil {
+				dResp, dErr := c.DeleteRulesBatch(endpoint, apiKey, currentIDs)
+				switch {
+				case dErr != nil:
 					return fmt.Errorf("add rules failed (%w); rollback pre-clean also failed: %v", primaryErr, dErr)
+				case dResp != nil && dResp.Failed > 0:
+					return fmt.Errorf("add rules failed (%w); rollback pre-clean partially failed: only %d/%d residue rules removed", primaryErr, dResp.Deleted, len(currentIDs))
 				}
 			}
 			rResp, rErr := c.AddRulesBatch(endpoint, apiKey, ruleSnapshot)
@@ -350,7 +361,9 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 		return fmt.Errorf("failed to snapshot existing whitelist: %w", err)
 	}
 
-	// Delete existing whitelist entries in batch
+	// Delete existing whitelist entries in batch. Same dual-failure contract
+	// as the rules delete path (AUD-V242-002): transport error OR HTTP 200
+	// with resp.Failed > 0 both abort the sync.
 	if len(wlSnapshot) > 0 {
 		wlIDs := make([]string, 0, len(wlSnapshot))
 		for _, w := range wlSnapshot {
@@ -358,8 +371,12 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 				wlIDs = append(wlIDs, id)
 			}
 		}
-		if _, err := c.DeleteWhitelistBatch(endpoint, apiKey, wlIDs); err != nil {
+		resp, err := c.DeleteWhitelistBatch(endpoint, apiKey, wlIDs)
+		if err != nil {
 			return fmt.Errorf("failed to delete existing whitelist: %w", err)
+		}
+		if resp != nil && resp.Failed > 0 {
+			return fmt.Errorf("partial delete: %d/%d existing whitelist entries could not be removed; aborting sync", resp.Failed, len(wlIDs))
 		}
 	}
 
@@ -378,9 +395,14 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 				return fmt.Errorf("failed to add whitelist batch: %w", primaryErr)
 			}
 			// Pre-clean any partial-add residue before restoring the snapshot.
+			// Partial pre-clean also counts as a rollback failure (AUD-V242-002).
 			if currentIDs, gErr := c.GetWhitelistIDs(endpoint, apiKey); gErr == nil && len(currentIDs) > 0 {
-				if _, dErr := c.DeleteWhitelistBatch(endpoint, apiKey, currentIDs); dErr != nil {
+				dResp, dErr := c.DeleteWhitelistBatch(endpoint, apiKey, currentIDs)
+				switch {
+				case dErr != nil:
 					return fmt.Errorf("add whitelist failed (%w); rollback pre-clean also failed: %v", primaryErr, dErr)
+				case dResp != nil && dResp.Failed > 0:
+					return fmt.Errorf("add whitelist failed (%w); rollback pre-clean partially failed: only %d/%d residue entries removed", primaryErr, dResp.Deleted, len(currentIDs))
 				}
 			}
 			rResp, rErr := c.AddWhitelistBatch(endpoint, apiKey, wlSnapshot)

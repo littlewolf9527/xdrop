@@ -34,8 +34,17 @@ type fakeNode struct {
 	partialAddWlOnCall           int
 	partialAddWlFailedCount      int
 
-	addRulesCalls     int
-	addWhitelistCalls int
+	// Same pattern for batch-delete partial-failure (AUD-V242-002). The node
+	// returns {"success":true,"deleted":X,"failed":Y}.
+	partialDeleteRulesOnCall    int
+	partialDeleteRulesFailedCnt int
+	partialDeleteWlOnCall       int
+	partialDeleteWlFailedCnt    int
+
+	addRulesCalls        int
+	addWhitelistCalls    int
+	deleteRulesCalls     int
+	deleteWhitelistCalls int
 }
 
 func (f *fakeNode) handler() http.Handler {
@@ -89,11 +98,39 @@ func (f *fakeNode) handler() http.Handler {
 			f.rules = append(f.rules, body.Rules...)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "added": len(body.Rules)})
 		case http.MethodDelete:
+			f.deleteRulesCalls++
 			var body struct {
 				IDs []string `json:"ids"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			// Inject partial-delete: delete only the first (len-N) items and
+			// report the rest as failed. Preserves the leftover in f.rules so
+			// tests can assert residue.
+			if f.partialDeleteRulesOnCall != 0 && f.deleteRulesCalls == f.partialDeleteRulesOnCall {
+				accepted := len(body.IDs) - f.partialDeleteRulesFailedCnt
+				if accepted < 0 {
+					accepted = 0
+				}
+				toDel := make(map[string]bool, accepted)
+				for _, id := range body.IDs[:accepted] {
+					toDel[id] = true
+				}
+				kept := f.rules[:0]
+				for _, r := range f.rules {
+					if id, ok := r["id"].(string); ok && toDel[id] {
+						continue
+					}
+					kept = append(kept, r)
+				}
+				f.rules = kept
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true,
+					"deleted": accepted,
+					"failed":  f.partialDeleteRulesFailedCnt,
+				})
 				return
 			}
 			toDel := make(map[string]bool, len(body.IDs))
@@ -158,11 +195,36 @@ func (f *fakeNode) handler() http.Handler {
 			f.whitelist = append(f.whitelist, body.Entries...)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "added": len(body.Entries)})
 		case http.MethodDelete:
+			f.deleteWhitelistCalls++
 			var body struct {
 				IDs []string `json:"ids"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if f.partialDeleteWlOnCall != 0 && f.deleteWhitelistCalls == f.partialDeleteWlOnCall {
+				accepted := len(body.IDs) - f.partialDeleteWlFailedCnt
+				if accepted < 0 {
+					accepted = 0
+				}
+				toDel := make(map[string]bool, accepted)
+				for _, id := range body.IDs[:accepted] {
+					toDel[id] = true
+				}
+				kept := f.whitelist[:0]
+				for _, e := range f.whitelist {
+					if id, ok := e["id"].(string); ok && toDel[id] {
+						continue
+					}
+					kept = append(kept, e)
+				}
+				f.whitelist = kept
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true,
+					"deleted": accepted,
+					"failed":  f.partialDeleteWlFailedCnt,
+				})
 				return
 			}
 			toDel := make(map[string]bool, len(body.IDs))
@@ -396,5 +458,102 @@ func TestFullSync_RollbackItselfPartiallyFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rollback partially failed") {
 		t.Errorf("error should mention partial rollback, got: %v", err)
+	}
+}
+
+// TestFullSync_AbortsOnPartialInitialDelete verifies AUD-V242-002: a
+// HTTP 200 with failed>0 on the initial DeleteRulesBatch must abort the sync
+// rather than proceeding to AddRulesBatch with partial residue still present.
+func TestFullSync_AbortsOnPartialInitialDelete(t *testing.T) {
+	fake := &fakeNode{
+		rules: []map[string]interface{}{
+			{"id": "rule-stuck-1", "dst_ip": "192.0.2.40", "action": "drop"},
+			{"id": "rule-stuck-2", "dst_ip": "192.0.2.41", "action": "drop"},
+		},
+		// First DeleteRulesBatch returns 200 but rejects 1 of 2 rules
+		partialDeleteRulesOnCall:    1,
+		partialDeleteRulesFailedCnt: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newRules := []map[string]interface{}{
+		{"id": "rule-new-1", "dst_ip": "198.51.100.5", "action": "drop"},
+	}
+	err := cli.FullSync(srv.URL, "", newRules, nil)
+	if err == nil {
+		t.Fatal("FullSync must abort on partial initial delete, got nil")
+	}
+	if !strings.Contains(err.Error(), "partial delete") {
+		t.Errorf("error should mention partial delete, got: %v", err)
+	}
+	// AddRulesBatch must NOT have been called — the sync aborted before add.
+	if fake.addRulesCalls != 0 {
+		t.Errorf("AddRulesBatch should not have been called; got %d calls", fake.addRulesCalls)
+	}
+}
+
+// TestFullSync_AbortsOnPartialRollbackPreClean verifies AUD-V242-002's second
+// scenario: a partial primary add leaves residue on the node; rollback's
+// pre-clean delete then also returns partial failure. Without this check,
+// rollback would proceed to re-insert the snapshot on top of residue,
+// yielding snapshot∪residue — the exact mixed-state bug this patch set is
+// trying to prevent.
+func TestFullSync_AbortsOnPartialRollbackPreClean(t *testing.T) {
+	fake := &fakeNode{
+		rules: []map[string]interface{}{
+			{"id": "rule-snap-1", "dst_ip": "192.0.2.50", "action": "drop"},
+		},
+		// Primary add partial-succeeds: accepts 1 of 2 target rules, leaving
+		// residue on the node.
+		partialAddRulesOnCall:      1,
+		partialAddRulesFailedCount: 1,
+		// Rollback pre-clean (second delete) returns partial failure: can't
+		// remove the residue the partial primary add just created.
+		partialDeleteRulesOnCall:    2,
+		partialDeleteRulesFailedCnt: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newRules := []map[string]interface{}{
+		{"id": "rule-new-1", "dst_ip": "198.51.100.5", "action": "drop"},
+		{"id": "rule-new-2", "dst_ip": "198.51.100.6", "action": "drop"},
+	}
+	err := cli.FullSync(srv.URL, "", newRules, nil)
+	if err == nil {
+		t.Fatal("FullSync must surface partial rollback pre-clean failure")
+	}
+	if !strings.Contains(err.Error(), "rollback pre-clean partially failed") {
+		t.Errorf("error should mention pre-clean partial failure, got: %v", err)
+	}
+}
+
+// TestFullSync_AbortsOnPartialInitialWhitelistDelete is the whitelist
+// analogue of the rules initial-delete partial-failure test.
+func TestFullSync_AbortsOnPartialInitialWhitelistDelete(t *testing.T) {
+	fake := &fakeNode{
+		whitelist: []map[string]interface{}{
+			{"id": "wl-stuck-1", "src_ip": "192.0.2.100"},
+			{"id": "wl-stuck-2", "src_ip": "192.0.2.101"},
+		},
+		partialDeleteWlOnCall:    1,
+		partialDeleteWlFailedCnt: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newWl := []map[string]interface{}{
+		{"id": "wl-new-1", "src_ip": "198.51.100.100"},
+	}
+	err := cli.FullSync(srv.URL, "", nil, newWl)
+	if err == nil {
+		t.Fatal("FullSync must abort on partial initial whitelist delete")
+	}
+	if !strings.Contains(err.Error(), "partial delete") {
+		t.Errorf("error should mention partial delete, got: %v", err)
+	}
+	if fake.addWhitelistCalls != 0 {
+		t.Errorf("AddWhitelistBatch should not have been called; got %d", fake.addWhitelistCalls)
 	}
 }
