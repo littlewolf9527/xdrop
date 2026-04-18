@@ -309,15 +309,38 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 	}
 
 	// Add new rules in batch; rollback to snapshot on failure.
+	// The node's batch API signals failure in two ways:
+	//   (a) transport/HTTP error → err != nil
+	//   (b) business-level rejection → HTTP 200 with resp.Failed > 0
+	// Both must trigger rollback. See AUD-V242-001.
 	if len(rules) > 0 {
-		if _, err := c.AddRulesBatch(endpoint, apiKey, rules); err != nil {
-			if len(ruleSnapshot) > 0 {
-				if _, rErr := c.AddRulesBatch(endpoint, apiKey, ruleSnapshot); rErr != nil {
-					return fmt.Errorf("add rules failed (%w); rollback to snapshot also failed: %v", err, rErr)
-				}
-				return fmt.Errorf("add rules failed, rolled back to snapshot of %d rules: %w", len(ruleSnapshot), err)
+		resp, err := c.AddRulesBatch(endpoint, apiKey, rules)
+		addFailed := err != nil || (resp != nil && resp.Failed > 0)
+		if addFailed {
+			primaryErr := err
+			if primaryErr == nil {
+				primaryErr = fmt.Errorf("partial add: %d/%d rules rejected by node", resp.Failed, len(rules))
 			}
-			return err
+			if len(ruleSnapshot) == 0 {
+				return primaryErr
+			}
+			// Before re-inserting the snapshot, clear out any rules the partial
+			// primary add managed to install, so the rolled-back state is the
+			// snapshot and not snapshot∪partial-accept.
+			if currentIDs, gErr := c.GetRuleIDs(endpoint, apiKey); gErr == nil && len(currentIDs) > 0 {
+				if _, dErr := c.DeleteRulesBatch(endpoint, apiKey, currentIDs); dErr != nil {
+					return fmt.Errorf("add rules failed (%w); rollback pre-clean also failed: %v", primaryErr, dErr)
+				}
+			}
+			rResp, rErr := c.AddRulesBatch(endpoint, apiKey, ruleSnapshot)
+			switch {
+			case rErr != nil:
+				return fmt.Errorf("add rules failed (%w); rollback to snapshot also failed: %v", primaryErr, rErr)
+			case rResp != nil && rResp.Failed > 0:
+				return fmt.Errorf("add rules failed (%w); rollback partially failed: only %d/%d snapshot rules restored", primaryErr, rResp.Added, len(ruleSnapshot))
+			default:
+				return fmt.Errorf("add rules failed, rolled back to snapshot of %d rules: %w", len(ruleSnapshot), primaryErr)
+			}
 		}
 	}
 
@@ -341,22 +364,34 @@ func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interf
 	}
 
 	// Add new whitelist entries in batch; rollback to snapshot on failure.
+	// Same dual-failure model as the rules path (AUD-V242-001):
+	// transport error OR HTTP 200 with resp.Failed > 0 both trigger rollback.
 	if len(whitelist) > 0 {
 		resp, err := c.AddWhitelistBatch(endpoint, apiKey, whitelist)
-		if err != nil {
-			if len(wlSnapshot) > 0 {
-				if _, rErr := c.AddWhitelistBatch(endpoint, apiKey, wlSnapshot); rErr != nil {
-					return fmt.Errorf("add whitelist failed (%w); rollback to snapshot also failed: %v", err, rErr)
-				}
-				return fmt.Errorf("add whitelist failed, rolled back to snapshot of %d entries: %w", len(wlSnapshot), err)
+		addFailed := err != nil || (resp != nil && resp.Failed > 0)
+		if addFailed {
+			primaryErr := err
+			if primaryErr == nil {
+				primaryErr = fmt.Errorf("partial add: %d/%d whitelist entries rejected by node", resp.Failed, len(whitelist))
 			}
-			return fmt.Errorf("failed to add whitelist batch: %w", err)
-		}
-		if resp.Failed > 0 {
-			// Partial add — leave what succeeded in place; do NOT rollback the whole
-			// snapshot since that would overwrite the successful entries. Just surface
-			// the partial-failure count to the caller.
-			return fmt.Errorf("whitelist sync partially failed: %d/%d entries failed", resp.Failed, len(whitelist))
+			if len(wlSnapshot) == 0 {
+				return fmt.Errorf("failed to add whitelist batch: %w", primaryErr)
+			}
+			// Pre-clean any partial-add residue before restoring the snapshot.
+			if currentIDs, gErr := c.GetWhitelistIDs(endpoint, apiKey); gErr == nil && len(currentIDs) > 0 {
+				if _, dErr := c.DeleteWhitelistBatch(endpoint, apiKey, currentIDs); dErr != nil {
+					return fmt.Errorf("add whitelist failed (%w); rollback pre-clean also failed: %v", primaryErr, dErr)
+				}
+			}
+			rResp, rErr := c.AddWhitelistBatch(endpoint, apiKey, wlSnapshot)
+			switch {
+			case rErr != nil:
+				return fmt.Errorf("add whitelist failed (%w); rollback to snapshot also failed: %v", primaryErr, rErr)
+			case rResp != nil && rResp.Failed > 0:
+				return fmt.Errorf("add whitelist failed (%w); rollback partially failed: only %d/%d snapshot entries restored", primaryErr, rResp.Added, len(wlSnapshot))
+			default:
+				return fmt.Errorf("add whitelist failed, rolled back to snapshot of %d entries: %w", len(wlSnapshot), primaryErr)
+			}
 		}
 	}
 

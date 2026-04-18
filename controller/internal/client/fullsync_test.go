@@ -20,11 +20,19 @@ type fakeNode struct {
 	rules     []map[string]interface{}
 	whitelist []map[string]interface{}
 
-	// Inject a transient failure: fail the Nth AddRulesBatch / AddWhitelistBatch
-	// call and succeed thereafter (mimicking a recoverable error that only hits
-	// the primary add, not the rollback re-add).
+	// Inject a transient HTTP failure: fail the Nth AddRulesBatch /
+	// AddWhitelistBatch call with HTTP 500.
 	failAddRulesOnCall     int
 	failAddWhitelistOnCall int
+
+	// Inject a business-level partial failure: return HTTP 200 with
+	// {"success":true,"added":len-N,"failed":N} on the Nth add call. Used to
+	// exercise AUD-V242-001 — the gap where batch APIs can fail per-item
+	// without returning an HTTP error.
+	partialAddRulesOnCall        int
+	partialAddRulesFailedCount   int
+	partialAddWlOnCall           int
+	partialAddWlFailedCount      int
 
 	addRulesCalls     int
 	addWhitelistCalls int
@@ -62,6 +70,20 @@ func (f *fakeNode) handler() http.Handler {
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if f.partialAddRulesOnCall != 0 && f.addRulesCalls == f.partialAddRulesOnCall {
+				// Apply only the non-failing subset, report the rest as failed.
+				accepted := len(body.Rules) - f.partialAddRulesFailedCount
+				if accepted < 0 {
+					accepted = 0
+				}
+				f.rules = append(f.rules, body.Rules[:accepted]...)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true,
+					"added":   accepted,
+					"failed":  f.partialAddRulesFailedCount,
+				})
 				return
 			}
 			f.rules = append(f.rules, body.Rules...)
@@ -118,6 +140,19 @@ func (f *fakeNode) handler() http.Handler {
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if f.partialAddWlOnCall != 0 && f.addWhitelistCalls == f.partialAddWlOnCall {
+				accepted := len(body.Entries) - f.partialAddWlFailedCount
+				if accepted < 0 {
+					accepted = 0
+				}
+				f.whitelist = append(f.whitelist, body.Entries[:accepted]...)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true,
+					"added":   accepted,
+					"failed":  f.partialAddWlFailedCount,
+				})
 				return
 			}
 			f.whitelist = append(f.whitelist, body.Entries...)
@@ -247,5 +282,119 @@ func TestFullSync_SuccessLeavesNoSpuriousRollbacks(t *testing.T) {
 	}
 	if fake.addRulesCalls != 1 {
 		t.Errorf("expected exactly 1 AddRulesBatch call, got %d (spurious rollback?)", fake.addRulesCalls)
+	}
+}
+
+// TestFullSync_RollsBackOnPartialRulesFailure verifies AUD-V242-001:
+// a business-level partial failure (HTTP 200 with `failed > 0` in the body)
+// must be treated as a failure — triggering snapshot rollback — just like
+// a transport-level error. Previously, FullSync ignored resp.Failed on the
+// rules path and returned success with a partially-applied ruleset.
+func TestFullSync_RollsBackOnPartialRulesFailure(t *testing.T) {
+	fake := &fakeNode{
+		rules: []map[string]interface{}{
+			{"id": "rule-snap-1", "dst_ip": "192.0.2.20", "action": "drop"},
+			{"id": "rule-snap-2", "dst_ip": "192.0.2.21", "action": "drop"},
+		},
+		// First AddRulesBatch returns 200 but rejects 1 of 2 target rules.
+		partialAddRulesOnCall:      1,
+		partialAddRulesFailedCount: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newRules := []map[string]interface{}{
+		{"id": "rule-new-1", "dst_ip": "198.51.100.5", "action": "drop"},
+		{"id": "rule-new-2", "dst_ip": "198.51.100.6", "action": "drop"},
+	}
+
+	err := cli.FullSync(srv.URL, "", newRules, nil)
+	if err == nil {
+		t.Fatal("FullSync must return error on partial add failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "rolled back to snapshot") {
+		t.Errorf("error should mention rollback, got: %v", err)
+	}
+
+	// After rollback, node must hold the full snapshot (2 original rules),
+	// NOT a mix of snapshot + the 1 partial-accept.
+	if got := len(fake.rules); got != 2 {
+		t.Errorf("after rollback: node has %d rules, want 2 (snapshot only)", got)
+	}
+	// Verify the rules are actually the snapshot IDs, not the new partial set.
+	ids := make(map[string]bool)
+	for _, r := range fake.rules {
+		if id, ok := r["id"].(string); ok {
+			ids[id] = true
+		}
+	}
+	if !ids["rule-snap-1"] || !ids["rule-snap-2"] {
+		t.Errorf("after rollback: expected snapshot IDs, got %v", ids)
+	}
+}
+
+// TestFullSync_RollsBackOnPartialWhitelistFailure is the whitelist analogue
+// of the AUD-V242-001 partial-add regression test.
+func TestFullSync_RollsBackOnPartialWhitelistFailure(t *testing.T) {
+	fake := &fakeNode{
+		whitelist: []map[string]interface{}{
+			{"id": "wl-snap-1", "src_ip": "192.0.2.100"},
+		},
+		partialAddWlOnCall:      1,
+		partialAddWlFailedCount: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newWl := []map[string]interface{}{
+		{"id": "wl-new-1", "src_ip": "198.51.100.100"},
+	}
+
+	err := cli.FullSync(srv.URL, "", nil, newWl)
+	if err == nil {
+		t.Fatal("FullSync must return error on partial whitelist-add failure")
+	}
+	if !strings.Contains(err.Error(), "rolled back to snapshot") {
+		t.Errorf("error should mention rollback, got: %v", err)
+	}
+	if got := len(fake.whitelist); got != 1 {
+		t.Errorf("after rollback: node has %d whitelist entries, want 1", got)
+	}
+	ids := make(map[string]bool)
+	for _, w := range fake.whitelist {
+		if id, ok := w["id"].(string); ok {
+			ids[id] = true
+		}
+	}
+	if !ids["wl-snap-1"] {
+		t.Errorf("after rollback: expected snapshot entry, got %v", ids)
+	}
+}
+
+// TestFullSync_RollbackItselfPartiallyFails verifies the combined-error path
+// for when the rollback add ALSO returns partial failure.
+func TestFullSync_RollbackItselfPartiallyFails(t *testing.T) {
+	fake := &fakeNode{
+		rules: []map[string]interface{}{
+			{"id": "rule-snap-1", "dst_ip": "192.0.2.30", "action": "drop"},
+			{"id": "rule-snap-2", "dst_ip": "192.0.2.31", "action": "drop"},
+		},
+		failAddRulesOnCall:         1, // primary add: HTTP 500
+		partialAddRulesOnCall:      2, // rollback: partial (1 of 2 snapshot rules rejected)
+		partialAddRulesFailedCount: 1,
+	}
+	srv := startFakeNode(t, fake)
+	cli := NewNodeClient(5 * time.Second)
+
+	newRules := []map[string]interface{}{
+		{"id": "rule-new-1", "dst_ip": "198.51.100.5", "action": "drop"},
+	}
+
+	err := cli.FullSync(srv.URL, "", newRules, nil)
+	if err == nil {
+		t.Fatal("FullSync must return error when rollback is partial")
+	}
+	if !strings.Contains(err.Error(), "rollback partially failed") {
+		t.Errorf("error should mention partial rollback, got: %v", err)
 	}
 }
