@@ -144,21 +144,23 @@ func runMigrations(db *sql.DB) {
 	rebuildUniqueConstraint(db)
 }
 
-// rebuildUniqueConstraint rebuilds the rules table to update the UNIQUE constraint
+// rebuildUniqueConstraint rebuilds the rules table to update the UNIQUE constraint.
+// All DDL + the schema_version row creation/update are performed inside a single
+// transaction so a crash between steps leaves the DB in a consistent state.
 func rebuildUniqueConstraint(db *sql.DB) {
 	// Check whether src_cidr is already included in the UNIQUE constraint.
 	// SQLite has no simple way to inspect constraints; checking via schema version
 	// flag is simpler than trying a probe insert.
 	var version int
 	err := db.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&version)
-	if err != nil {
-		// schema_version table does not exist; create it and start at version 0
-		db.Exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)")
-		db.Exec("INSERT INTO schema_version (version) VALUES (0)")
-		version = 0
-	}
+	schemaTableMissing := err != nil
+	// NOTE: we do not create/insert schema_version here (outside tx). A crash
+	// between CREATE and INSERT previously left the table without a row so
+	// MAX(...) returned NULL → COALESCE → 0, causing the migration to re-run
+	// forever without marking done. Both creation and row-seed now happen
+	// inside the migration tx below.
 
-	if version >= 1 {
+	if !schemaTableMissing && version >= 1 {
 		return // already migrated
 	}
 
@@ -170,6 +172,20 @@ func rebuildUniqueConstraint(db *sql.DB) {
 		return
 	}
 	defer tx.Rollback()
+
+	// Ensure schema_version table + seed row exist inside the tx, so a crash
+	// between these two statements rolls back cleanly.
+	if _, err := tx.Exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)"); err != nil {
+		slog.Error("Failed to create schema_version in migration tx", "error", err)
+		return
+	}
+	// Seed a row if none exists. Use INSERT...WHERE NOT EXISTS to keep this idempotent.
+	if _, err := tx.Exec(
+		"INSERT INTO schema_version (version) SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+	); err != nil {
+		slog.Error("Failed to seed schema_version row in migration tx", "error", err)
+		return
+	}
 
 	steps := []string{
 		`CREATE TABLE rules_new (

@@ -215,6 +215,57 @@ func (c *NodeClient) GetWhitelistIDs(endpoint, apiKey string) ([]string, error) 
 	return ids, nil
 }
 
+// GetRulesRaw retrieves the node's current rule list as raw maps, suitable
+// for use as a rollback snapshot. Read-only fields (stats) are stripped.
+func (c *NodeClient) GetRulesRaw(endpoint, apiKey string) ([]map[string]interface{}, error) {
+	req, _ := http.NewRequest("GET", endpoint+"/api/v1/rules", nil)
+	if apiKey != "" {
+		req.Header.Set("X-API-Key", apiKey)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /rules returned HTTP %d", resp.StatusCode)
+	}
+	var envelope struct {
+		Rules []map[string]interface{} `json:"rules"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, err
+	}
+	for _, r := range envelope.Rules {
+		delete(r, "stats")
+	}
+	return envelope.Rules, nil
+}
+
+// GetWhitelistRaw retrieves the node's current whitelist as raw maps, suitable
+// for use as a rollback snapshot.
+func (c *NodeClient) GetWhitelistRaw(endpoint, apiKey string) ([]map[string]interface{}, error) {
+	req, _ := http.NewRequest("GET", endpoint+"/api/v1/whitelist", nil)
+	if apiKey != "" {
+		req.Header.Set("X-API-Key", apiKey)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /whitelist returned HTTP %d", resp.StatusCode)
+	}
+	var envelope struct {
+		Entries []map[string]interface{} `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, err
+	}
+	return envelope.Entries, nil
+}
+
 // AtomicSync calls the node's atomic sync API (blacklist rules only, excludes whitelist)
 func (c *NodeClient) AtomicSync(endpoint, apiKey string, rules []map[string]interface{}) (*Response, error) {
 	return c.post(endpoint+"/api/v1/sync/atomic", apiKey, map[string]interface{}{
@@ -222,48 +273,89 @@ func (c *NodeClient) AtomicSync(endpoint, apiKey string, rules []map[string]inte
 	})
 }
 
-// FullSync fully synchronizes rules and whitelist to the node
+// FullSync fully synchronizes rules and whitelist to the node.
+//
+// This is the fallback path for old nodes without /sync/atomic. It snapshots
+// the node's current state before deletion so it can best-effort restore on
+// add failure, eliminating the "delete succeeded, add failed → node has 0
+// rules" failure mode called out in BUG-047.
+//
+// Rollback semantics:
+//   - Delete fails before state mutation → return error, node unchanged.
+//   - Delete succeeds, Add fails → attempt to re-insert the snapshot (best
+//     effort). If re-insert also fails, return a combined error so the caller
+//     can surface that the node is in an uncertain state.
+//   - Whitelist has the same pattern.
 func (c *NodeClient) FullSync(endpoint, apiKey string, rules []map[string]interface{}, whitelist []map[string]interface{}) error {
 	// === Sync rules ===
-	ruleIDs, err := c.GetRuleIDs(endpoint, apiKey)
+	ruleSnapshot, err := c.GetRulesRaw(endpoint, apiKey)
 	if err != nil {
-		return fmt.Errorf("failed to get existing rule IDs: %w", err)
+		return fmt.Errorf("failed to snapshot existing rules: %w", err)
 	}
 
 	// Delete existing rules
-	if len(ruleIDs) > 0 {
+	if len(ruleSnapshot) > 0 {
+		ruleIDs := make([]string, 0, len(ruleSnapshot))
+		for _, r := range ruleSnapshot {
+			if id, ok := r["id"].(string); ok {
+				ruleIDs = append(ruleIDs, id)
+			}
+		}
 		if _, err := c.DeleteRulesBatch(endpoint, apiKey, ruleIDs); err != nil {
+			// Delete failed — node state is whatever the partial delete left behind.
+			// No rollback makes sense here (we never had a target state applied).
 			return fmt.Errorf("failed to delete existing rules: %w", err)
 		}
 	}
 
-	// Add new rules in batch
+	// Add new rules in batch; rollback to snapshot on failure.
 	if len(rules) > 0 {
 		if _, err := c.AddRulesBatch(endpoint, apiKey, rules); err != nil {
+			if len(ruleSnapshot) > 0 {
+				if _, rErr := c.AddRulesBatch(endpoint, apiKey, ruleSnapshot); rErr != nil {
+					return fmt.Errorf("add rules failed (%w); rollback to snapshot also failed: %v", err, rErr)
+				}
+				return fmt.Errorf("add rules failed, rolled back to snapshot of %d rules: %w", len(ruleSnapshot), err)
+			}
 			return err
 		}
 	}
 
 	// === Sync whitelist (using batch API) ===
-	wlIDs, err := c.GetWhitelistIDs(endpoint, apiKey)
+	wlSnapshot, err := c.GetWhitelistRaw(endpoint, apiKey)
 	if err != nil {
-		return fmt.Errorf("failed to get existing whitelist IDs: %w", err)
+		return fmt.Errorf("failed to snapshot existing whitelist: %w", err)
 	}
 
 	// Delete existing whitelist entries in batch
-	if len(wlIDs) > 0 {
+	if len(wlSnapshot) > 0 {
+		wlIDs := make([]string, 0, len(wlSnapshot))
+		for _, w := range wlSnapshot {
+			if id, ok := w["id"].(string); ok {
+				wlIDs = append(wlIDs, id)
+			}
+		}
 		if _, err := c.DeleteWhitelistBatch(endpoint, apiKey, wlIDs); err != nil {
 			return fmt.Errorf("failed to delete existing whitelist: %w", err)
 		}
 	}
 
-	// Add new whitelist entries in batch
+	// Add new whitelist entries in batch; rollback to snapshot on failure.
 	if len(whitelist) > 0 {
 		resp, err := c.AddWhitelistBatch(endpoint, apiKey, whitelist)
 		if err != nil {
+			if len(wlSnapshot) > 0 {
+				if _, rErr := c.AddWhitelistBatch(endpoint, apiKey, wlSnapshot); rErr != nil {
+					return fmt.Errorf("add whitelist failed (%w); rollback to snapshot also failed: %v", err, rErr)
+				}
+				return fmt.Errorf("add whitelist failed, rolled back to snapshot of %d entries: %w", len(wlSnapshot), err)
+			}
 			return fmt.Errorf("failed to add whitelist batch: %w", err)
 		}
 		if resp.Failed > 0 {
+			// Partial add — leave what succeeded in place; do NOT rollback the whole
+			// snapshot since that would overwrite the successful entries. Just surface
+			// the partial-failure count to the caller.
 			return fmt.Errorf("whitelist sync partially failed: %d/%d entries failed", resp.Failed, len(whitelist))
 		}
 	}

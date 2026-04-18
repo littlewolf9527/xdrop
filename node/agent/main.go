@@ -198,7 +198,9 @@ func main() {
 
 		// Restore interfaces in fast forward mode (nil if signal fired pre-init)
 		if fastForwardMode && ifMgr != nil {
-			ifMgr.RestoreAll()
+			if err := ifMgr.RestoreAll(); err != nil {
+				log.Printf("[main] Warning: ifMgr.RestoreAll() reported errors: %v", err)
+			}
 		}
 
 		os.Exit(0)
@@ -226,20 +228,26 @@ func main() {
 			log.Fatalf("Failed to configure inbound interface: %v", err)
 		}
 		if err := ifMgr.ConfigureInterface(pair.Outbound); err != nil {
-			ifMgr.RestoreAll()
+			if rErr := ifMgr.RestoreAll(); rErr != nil {
+				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
+			}
 			log.Fatalf("Failed to configure outbound interface: %v", err)
 		}
 
 		// Setup devmap: bidirectional mapping
 		if err := setupDevmap(devmap, inboundIdx, outboundIdx); err != nil {
-			ifMgr.RestoreAll()
+			if rErr := ifMgr.RestoreAll(); rErr != nil {
+				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
+			}
 			log.Fatalf("Failed to setup devmap: %v", err)
 		}
 		log.Printf("Devmap configured: %d <-> %d", inboundIdx, outboundIdx)
 
 		// Configure fast forward settings in BPF config map
 		if err := configureFastForward(configA, configB, pair, inboundIdx, outboundIdx); err != nil {
-			ifMgr.RestoreAll()
+			if rErr := ifMgr.RestoreAll(); rErr != nil {
+				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
+			}
 			log.Fatalf("Failed to configure fast forward: %v", err)
 		}
 
@@ -254,7 +262,9 @@ func main() {
 
 		// Attach XDP to inbound interface
 		if err := xdp.Attach(pair.Inbound); err != nil {
-			ifMgr.RestoreAll()
+			if rErr := ifMgr.RestoreAll(); rErr != nil {
+				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
+			}
 			log.Fatalf("Failed to attach XDP to %s: %v", pair.Inbound, err)
 		}
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Inbound)
@@ -269,7 +279,9 @@ func main() {
 			if dErr := detachXDP(pair.Inbound); dErr != nil {
 				log.Printf("[main] Warning: failed to detach XDP from %s while rolling back: %v", pair.Inbound, dErr)
 			}
-			ifMgr.RestoreAll()
+			if rErr := ifMgr.RestoreAll(); rErr != nil {
+				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
+			}
 			log.Fatalf("Failed to attach XDP to %s: %v", pair.Outbound, err)
 		}
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Outbound)

@@ -7,6 +7,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -167,7 +168,9 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 	// Step 2: Delete old BPF entry if key changed
 	if oldStored != nil && oldStored.Key != ck {
 		if err := cbl.Delete(cidrRuleKeyToBytes(oldStored.Key)); err != nil {
-			cbl.Delete(keyBytes) // rollback new entry
+			if delErr := cbl.Delete(keyBytes); delErr != nil {
+				log.Printf("[addCIDRRule] WARN: best-effort cleanup of new CIDR BPF entry failed during abort: %v", delErr)
+			}
 			h.rulesMu.Unlock()
 			h.publishMu.Unlock()
 			h.syncMu.Unlock()
@@ -212,7 +215,9 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 	// Step 4: Publish config
 	if err := h.publishConfigUpdate(0, 0, countDelta); err != nil {
 		// Rollback new rule
-		cbl.Delete(keyBytes)
+		if delErr := cbl.Delete(keyBytes); delErr != nil {
+			log.Printf("[addCIDRRule] WARN: best-effort rollback delete of new CIDR BPF entry failed: %v", delErr)
+		}
 		if comboType >= 0 && comboType < 64 {
 			h.cidrComboRefCount[comboType]--
 		}
@@ -231,7 +236,9 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 			oldAction, _ := parseAction(oldStored.Action)
 			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
 			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-			cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue))
+			if insErr := cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue)); insErr != nil {
+				log.Printf("[addCIDRRule] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
+			}
 			oldCombo := getCIDRComboType(oldStored.Key)
 			if oldCombo >= 0 && oldCombo < 64 {
 				h.cidrComboRefCount[oldCombo]++
@@ -415,7 +422,9 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 	// Step 2: Delete old BPF entry if key changed
 	if oldStored != nil && oldStored.Key != ck {
 		if err := cbl.Delete(cidrRuleKeyToBytes(oldStored.Key)); err != nil {
-			cbl.Delete(keyBytes)
+			if delErr := cbl.Delete(keyBytes); delErr != nil {
+				log.Printf("[addCIDRRuleFromSync] WARN: best-effort cleanup of new CIDR BPF entry failed during abort: %v", delErr)
+			}
 			h.rulesMu.Unlock()
 			h.publishMu.Unlock()
 			h.syncMu.Unlock()
@@ -459,7 +468,9 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 	// Step 4: Publish config
 	if err := h.publishConfigUpdate(0, 0, countDelta); err != nil {
 		// Rollback new rule
-		cbl.Delete(keyBytes)
+		if delErr := cbl.Delete(keyBytes); delErr != nil {
+			log.Printf("[addCIDRRuleFromSync] WARN: best-effort rollback delete of new CIDR BPF entry failed: %v", delErr)
+		}
 		if comboType >= 0 && comboType < 64 {
 			h.cidrComboRefCount[comboType]--
 		}
@@ -478,7 +489,9 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 			oldAction, _ := parseAction(oldStored.Action)
 			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
 			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-			cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue))
+			if insErr := cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue)); insErr != nil {
+				log.Printf("[addCIDRRuleFromSync] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
+			}
 			oldCombo := getCIDRComboType(oldStored.Key)
 			if oldCombo >= 0 && oldCombo < 64 {
 				h.cidrComboRefCount[oldCombo]++

@@ -2,6 +2,7 @@
 package ifmgr
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -106,7 +107,10 @@ func (m *InterfaceManager) ConfigureInterface(name string) error {
 	return nil
 }
 
-// RestoreInterface restores original interface settings
+// RestoreInterface restores original interface settings. Each sub-operation
+// is best-effort: a failure is logged AND joined into the returned error so
+// callers can see that some state was not fully restored. Returns nil only
+// when every sub-operation succeeded (or none was needed).
 func (m *InterfaceManager) RestoreInterface(name string) error {
 	state, exists := m.originalStates[name]
 	if !exists {
@@ -115,10 +119,13 @@ func (m *InterfaceManager) RestoreInterface(name string) error {
 
 	log.Printf("[IfMgr] Restoring interface %s...", name)
 
+	var errs []error
+
 	// Restore promiscuous mode
 	if !state.WasPromisc {
 		if err := m.setPromiscuous(name, false); err != nil {
 			log.Printf("[IfMgr] Warning: failed to disable promiscuous on %s: %v", name, err)
+			errs = append(errs, fmt.Errorf("disable promisc on %s: %w", name, err))
 		}
 	}
 
@@ -126,16 +133,19 @@ func (m *InterfaceManager) RestoreInterface(name string) error {
 	if state.GRO {
 		if err := m.setOffload(name, "gro", true); err != nil {
 			log.Printf("[IfMgr] Warning: failed to restore GRO on %s: %v", name, err)
+			errs = append(errs, fmt.Errorf("restore GRO on %s: %w", name, err))
 		}
 	}
 	if state.LRO {
 		if err := m.setOffload(name, "lro", true); err != nil {
 			log.Printf("[IfMgr] Warning: failed to restore LRO on %s: %v", name, err)
+			errs = append(errs, fmt.Errorf("restore LRO on %s: %w", name, err))
 		}
 	}
 	if state.TSO {
 		if err := m.setOffload(name, "tso", true); err != nil {
 			log.Printf("[IfMgr] Warning: failed to restore TSO on %s: %v", name, err)
+			errs = append(errs, fmt.Errorf("restore TSO on %s: %w", name, err))
 		}
 	}
 
@@ -146,23 +156,31 @@ func (m *InterfaceManager) RestoreInterface(name string) error {
 	if !state.WasUp {
 		if err := m.setInterfaceDown(name); err != nil {
 			log.Printf("[IfMgr] Warning: failed to restore %s to DOWN state: %v", name, err)
+			errs = append(errs, fmt.Errorf("restore %s to DOWN: %w", name, err))
 		} else {
 			log.Printf("[IfMgr] Interface %s: restored to DOWN state", name)
 		}
 	}
 
 	delete(m.originalStates, name)
-	log.Printf("[IfMgr] Interface %s restored", name)
-	return nil
+	if len(errs) == 0 {
+		log.Printf("[IfMgr] Interface %s restored", name)
+		return nil
+	}
+	log.Printf("[IfMgr] Interface %s restored with %d error(s)", name, len(errs))
+	return errors.Join(errs...)
 }
 
-// RestoreAll restores all managed interfaces
-func (m *InterfaceManager) RestoreAll() {
+// RestoreAll restores all managed interfaces and returns a joined error
+// aggregating every per-interface failure. Returns nil only on full success.
+func (m *InterfaceManager) RestoreAll() error {
+	var errs []error
 	for name := range m.originalStates {
 		if err := m.RestoreInterface(name); err != nil {
-			log.Printf("[IfMgr] Warning: failed to restore %s: %v", name, err)
+			errs = append(errs, err)
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // GetOriginalState returns the original state of an interface (for debugging)
