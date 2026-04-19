@@ -125,6 +125,17 @@ xdrop/
 > Ubuntu 20.04 HWE / 22.04+（5.15+）。老内核用户请继续使用 xdrop **v2.4.2**
 > （最后一版基于 netlink attach 的发布）直到完成升级。
 
+> **BPF pinning（v2.5+）**：Node Agent 默认把所有 16 个 BPF map 全部 pin
+> 到 `/sys/fs/bpf/xdrop/`（`blacklist`、`whitelist`、`cidr_blacklist`、
+> 4 个 LPM trie、`config_a`/`config_b` 等），让 map 的 fd 跨
+> `systemctl restart xdrop-agent` 保活。这样 map ID 保持稳定，便于
+> `bpftool map dump pinned /sys/fs/bpf/xdrop/<name>` 跨重启观察，
+> 外部 BPF 工具也继续指向同一份对象。前置条件：`/sys/fs/bpf` 必须挂载为 `bpf`
+> 类型文件系统 —— 现代发行版通常由 systemd 自动挂载。若 pinning 失败
+> （未挂载、EPERM 等），默认会静默降级到非 pinned 模式；需要严格行为的话在
+> `config.yaml` 里设 `bpf.pinning: require`，要完全关闭 pinning 设
+> `disable`。
+
 详细的环境准备步骤请参见**[准备工作](GETTING_STARTED.zh.md)**。
 
 ---

@@ -139,6 +139,32 @@ whoami
 sudo ./scripts/node.sh start
 ```
 
+### 7. bpffs 挂载在 /sys/fs/bpf（可选但推荐）
+
+v2.5+ 把所有 BPF map pin 到 `/sys/fs/bpf/xdrop/`，让 map 的 fd 跨
+`systemctl restart xdrop-agent` 保活 —— map ID 稳定，bpftool 和其他外部
+BPF 工具观察同一份对象。前置条件：`/sys/fs/bpf` 必须挂载为 `bpf`
+类型文件系统。
+
+```bash
+# 检查 —— f_type 应为 "bpf_fs"（magic 0xcafe4a11）
+stat -f -c '%T' /sys/fs/bpf
+# 期望输出：bpf_fs
+```
+
+现代发行版通常由 systemd 的 `sys-fs-bpf.mount` unit 自动挂载。
+如果上面的检查返回 `sysfs` 或其他值，手动挂载：
+
+```bash
+mount -t bpf bpf /sys/fs/bpf
+
+# 持久化到 /etc/fstab：
+echo 'bpf /sys/fs/bpf bpf defaults 0 0' >> /etc/fstab
+```
+
+如果因任何原因无法挂载 bpffs，默认 `bpf.pinning: auto` 策略下 agent
+会自动降级到非 pinned 模式 —— 规则仍然能加载，只是丢失 map fd 的重启保活。
+
 ---
 
 ## 验证 Node 编译环境

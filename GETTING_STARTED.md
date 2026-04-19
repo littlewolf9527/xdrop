@@ -140,6 +140,34 @@ whoami
 sudo ./scripts/node.sh start
 ```
 
+### 7. bpffs mounted at /sys/fs/bpf (optional but recommended)
+
+v2.5+ pins its BPF maps under `/sys/fs/bpf/xdrop/` so map fds survive
+across `systemctl restart xdrop-agent` — stable map IDs for bpftool
+observers and external BPF tooling. This requires `/sys/fs/bpf` to be
+mounted as a `bpf` filesystem.
+
+```bash
+# Verify — f_type should be "bpf_fs" (magic 0xcafe4a11)
+stat -f -c '%T' /sys/fs/bpf
+# Expected: bpf_fs
+```
+
+Most modern distros mount bpffs automatically via systemd's
+`sys-fs-bpf.mount` unit. If the check above returns something else
+(e.g. `sysfs`), mount it manually:
+
+```bash
+mount -t bpf bpf /sys/fs/bpf
+
+# Persist via /etc/fstab:
+echo 'bpf /sys/fs/bpf bpf defaults 0 0' >> /etc/fstab
+```
+
+If you cannot mount bpffs for any reason, the agent falls back to
+non-pinned mode automatically under the default `bpf.pinning: auto`
+policy — rules still load, you just lose restart-survival of map fds.
+
 ---
 
 ## Verify Your Node Build Environment
