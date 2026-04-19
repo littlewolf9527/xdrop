@@ -43,6 +43,17 @@ type ServerConfig struct {
 // BPFConfig BPF configuration
 type BPFConfig struct {
 	Path string `mapstructure:"path"`
+
+	// Pinning controls whether BPF maps are pinned to /sys/fs/bpf/xdrop/ for
+	// survival across agent restarts (Phase 3 of goebpf→cilium migration).
+	//
+	//   "auto"    — default; try pinning, silently fall back if /sys/fs/bpf is
+	//               not mounted, EPERM, ENOSPC, or otherwise unusable. Rules
+	//               still load, just without restart survival.
+	//   "require" — fail startup if pinning cannot be enabled. Strict mode
+	//               for production where restart survival is expected.
+	//   "disable" — skip pinning entirely, matches pre-migration behaviour.
+	Pinning string `mapstructure:"pinning"`
 }
 
 // AuthConfig authentication configuration
@@ -74,6 +85,7 @@ func Load(configPath string) (*Config, error) {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.interface", "eth0")
 	viper.SetDefault("bpf.path", "../bpf/xdrop.elf")
+	viper.SetDefault("bpf.pinning", "auto")
 	viper.SetDefault("fast_forward.enabled", false)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -103,6 +115,16 @@ func MustLoad(configPath string) *Config {
 
 // Validate validates configuration
 func (c *Config) Validate() error {
+	// Normalise + validate bpf.pinning. Empty string (no key in config.yaml)
+	// maps to "auto" per the default set in Load() — this check covers
+	// freshly-constructed configs that bypass viper.
+	switch c.BPF.Pinning {
+	case "", "auto", "require", "disable":
+		// OK
+	default:
+		return fmt.Errorf("bpf.pinning must be one of auto|require|disable, got %q", c.BPF.Pinning)
+	}
+
 	// Reject placeholder credentials (CHANGE_ME_* etc.) from example configs.
 	// Prevents fresh deployments from starting with known-to-be-default keys.
 	if looksLikePlaceholder(c.Auth.NodeAPIKey) {

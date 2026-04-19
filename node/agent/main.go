@@ -18,17 +18,17 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/gin-gonic/gin"
 	"github.com/littlewolf9527/xdrop/node/agent/api"
+	xdropbpf "github.com/littlewolf9527/xdrop/node/agent/bpf"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 	"github.com/littlewolf9527/xdrop/node/agent/config"
 	"github.com/littlewolf9527/xdrop/node/agent/ifmgr"
 	"github.com/littlewolf9527/xdrop/node/agent/sync"
 )
 
-// Config map indices (must match xdrop.h)
-const (
-	ConfigFastForwardEnabled = 4
-	ConfigFilterIfindex      = 5
-)
+// Config map indices now live in the api package alongside the other
+// dynamic config slots so initDynamicConfig can zero them on every
+// startup (AUD-PH3-001). main.go uses api.ConfigFastForwardEnabled /
+// api.ConfigFilterIfindex at its own write sites in configureFastForward.
 
 func main() {
 	// Command-line flags (optionally override config file values)
@@ -52,18 +52,52 @@ func main() {
 		log.Fatalf("Config validation failed: %v", err)
 	}
 
-	// Load BPF ELF into a cilium/ebpf Collection. Phase 2 cutover from
-	// goebpf: we parse the ELF into a CollectionSpec, then instantiate
-	// maps + programs in one NewCollection call. No pinning for now —
-	// Phase 3 will add spec.Maps[name].Pinning = ebpf.PinByName.
+	// Load BPF ELF into a cilium/ebpf Collection via the Phase 3 loader
+	// helper, which threads the bpffs probe, pinned-map schema reconcile,
+	// and the `bpf.pinning: auto|require|disable` policy knob into a
+	// single call. Pinning is silently disabled under `auto` when bpffs
+	// is not mounted or otherwise unusable — rules still load, the agent
+	// just loses restart survival for this boot.
 	log.Printf("Loading BPF program from %s...", cfg.BPF.Path)
-	spec, err := ebpf.LoadCollectionSpec(cfg.BPF.Path)
+	coll, pinResult, err := xdropbpf.Load(xdropbpf.Options{
+		SpecPath: cfg.BPF.Path,
+		Mode:     xdropbpf.Mode(cfg.BPF.Pinning),
+	})
 	if err != nil {
-		log.Fatalf("Failed to parse BPF ELF: %v", err)
+		log.Fatalf("Failed to load BPF collection: %v", err)
 	}
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		log.Fatalf("Failed to create BPF collection: %v", err)
+	switch pinResult.EffectiveMode {
+	case xdropbpf.ModeAuto:
+		if len(pinResult.Wiped) > 0 {
+			log.Printf("BPF pinning enabled at %s (wiped schema-mismatched: %v)",
+				pinResult.PinPath, pinResult.Wiped)
+		} else {
+			log.Printf("BPF pinning enabled at %s", pinResult.PinPath)
+		}
+		// Phase 3 only promises MAP-INFRASTRUCTURE continuity across
+		// restart (stable fds for bpftool observers, config-map /
+		// stats-counter preservation). Data-map CONTENTS are wiped
+		// here so the in-memory rule index the agent is about to build
+		// reconverges with the kernel on controller sync — otherwise
+		// Update(UpdateNoExist) would trip ErrKeyExist on every rule
+		// the previous agent's life left behind. True zero-gap data
+		// plane comes in Phase 4 via link pinning + idempotent sync.
+		if err := xdropbpf.ClearDataMaps(coll, []string{
+			"blacklist", "blacklist_b",
+			"whitelist",
+			"cidr_blacklist", "cidr_blist_b",
+			"rl_states", "cidr_rl_states",
+			"sv4_cidr_trie", "dv4_cidr_trie",
+			"sv6_cidr_trie", "dv6_cidr_trie",
+		}); err != nil {
+			log.Printf("WARN: data-map clear reported error (continuing): %v", err)
+		}
+	case xdropbpf.ModeDisable:
+		if pinResult.FallbackReason != "" {
+			log.Printf("BPF pinning disabled (fallback): %s", pinResult.FallbackReason)
+		} else {
+			log.Printf("BPF pinning disabled (configured)")
+		}
 	}
 
 	// Helper to fetch a required map by name.
@@ -464,15 +498,17 @@ func configureFastForward(configA, configB *ebpf.Map, pair config.InterfacePair,
 		filterIdx = 0
 	}
 
-	// Write to both config maps so whichever is active sees the values
+	// Write to both config maps so whichever is active sees the values.
+	// Runs AFTER NewHandlers → initDynamicConfig has zeroed both slots
+	// (AUD-PH3-001); these writes overwrite with the real FF values.
 	for _, m := range []*ebpf.Map{configA, configB} {
-		binary.LittleEndian.PutUint32(key, ConfigFastForwardEnabled)
+		binary.LittleEndian.PutUint32(key, api.ConfigFastForwardEnabled)
 		binary.LittleEndian.PutUint64(value, 1)
 		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to enable fast forward: %w", err)
 		}
 
-		binary.LittleEndian.PutUint32(key, ConfigFilterIfindex)
+		binary.LittleEndian.PutUint32(key, api.ConfigFilterIfindex)
 		binary.LittleEndian.PutUint64(value, uint64(filterIdx))
 		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to set filter ifindex: %w", err)

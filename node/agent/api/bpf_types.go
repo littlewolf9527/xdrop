@@ -30,8 +30,10 @@ const (
 	ConfigWhitelistCount = 1
 	ConfigRuleBitmap     = 2
 	// ConfigBitmapValid (3) is reserved, no longer used in double-buffer mode
-	ConfigCIDRRuleCount = 6
-	ConfigCIDRBitmap    = 7
+	ConfigFastForwardEnabled = 4 // 0=traditional, 1=fast-forward (written by main.go at startup)
+	ConfigFilterIfindex      = 5 // ifindex filter target in fast-forward mode, 0=both
+	ConfigCIDRRuleCount      = 6
+	ConfigCIDRBitmap         = 7
 	// ConfigCIDRBitmapValid (8) is reserved, no longer used in double-buffer mode
 	ConfigRuleMapSelector = 9 // 0=A, 1=B (dual rule map Phase 4.2)
 	ConfigMapEntries      = 10

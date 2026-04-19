@@ -21,6 +21,30 @@ bpf:
   # Path to the compiled BPF ELF file, relative to the working directory.
   path: bpf/xdrop.elf
 
+  # BPF map pinning policy (v2.5+, Phase 3 of goebpf→cilium/ebpf migration).
+  # Pinning stores map fds under /sys/fs/bpf/xdrop/ so they survive across
+  # agent restart — preserves map IDs for bpftool observers and keeps
+  # external BPF tooling pointed at the same objects across
+  # `systemctl restart xdrop-agent`. Data-map CONTENTS are wiped on
+  # restart and reconciled via controller sync; true zero-gap data
+  # plane arrives in Phase 4 (link pinning).
+  #
+  #   auto     (default) try pinning; silently fall back to non-pinned
+  #                      mode if /sys/fs/bpf is not bpffs, inaccessible,
+  #                      or otherwise unusable. Rules still load — the
+  #                      agent just loses infrastructure continuity for
+  #                      this boot. Next restart re-tries pinning.
+  #   require            fail startup if pinning cannot be enabled.
+  #                      Strict mode for production where restart-survival
+  #                      of map fds is expected.
+  #   disable            skip pinning entirely. Matches pre-migration
+  #                      (v2.4.x) behaviour.
+  #
+  # Prerequisite: /sys/fs/bpf must be mounted as bpffs. Most modern
+  # distros do this by default via systemd. If missing, mount it with
+  # `mount -t bpf bpf /sys/fs/bpf` or add the entry to /etc/fstab.
+  pinning: "auto"
+
 auth:
   # API key that the controller must present when calling this node.
   # Must match the api_key entry for this node in the controller's config.
