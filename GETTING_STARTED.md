@@ -142,10 +142,18 @@ sudo ./scripts/node.sh start
 
 ### 7. bpffs mounted at /sys/fs/bpf (optional but recommended)
 
-v2.5+ pins its BPF maps under `/sys/fs/bpf/xdrop/` so map fds survive
-across `systemctl restart xdrop-agent` — stable map IDs for bpftool
-observers and external BPF tooling. This requires `/sys/fs/bpf` to be
-mounted as a `bpf` filesystem.
+v2.5+ pins its BPF objects under `/sys/fs/bpf/xdrop/` so state
+survives across `systemctl restart xdrop-agent`:
+
+- **16 map files** (Phase 3): `blacklist`, `whitelist`, the four
+  LPM tries, etc. Stable map IDs for `bpftool map dump pinned
+  /sys/fs/bpf/xdrop/<name>` and external BPF tooling.
+- **1 XDP link file per interface** (Phase 4): `link_<ifname>`
+  (e.g. `link_ens38`). Agent restart does `LoadPinnedLink +
+  Link.Update(newProg)` — zero-gap kernel attachment swap. Without
+  link pinning, restart leaves a ~1.5–3 s window with no filter.
+
+Both require `/sys/fs/bpf` to be mounted as a `bpf` filesystem.
 
 ```bash
 # Verify — f_type should be "bpf_fs" (magic 0xcafe4a11)
@@ -166,7 +174,9 @@ echo 'bpf /sys/fs/bpf bpf defaults 0 0' >> /etc/fstab
 
 If you cannot mount bpffs for any reason, the agent falls back to
 non-pinned mode automatically under the default `bpf.pinning: auto`
-policy — rules still load, you just lose restart-survival of map fds.
+policy — rules still load, you just lose restart-survival of map
+fds AND zero-gap XDP attach (Phase 2-equivalent ~1.5 s detach-reattach
+window on every restart).
 
 ---
 

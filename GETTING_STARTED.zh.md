@@ -141,10 +141,19 @@ sudo ./scripts/node.sh start
 
 ### 7. bpffs 挂载在 /sys/fs/bpf（可选但推荐）
 
-v2.5+ 把所有 BPF map pin 到 `/sys/fs/bpf/xdrop/`，让 map 的 fd 跨
-`systemctl restart xdrop-agent` 保活 —— map ID 稳定，bpftool 和其他外部
-BPF 工具观察同一份对象。前置条件：`/sys/fs/bpf` 必须挂载为 `bpf`
-类型文件系统。
+v2.5+ 把 BPF 对象 pin 到 `/sys/fs/bpf/xdrop/`，让状态跨
+`systemctl restart xdrop-agent` 存活：
+
+- **16 个 map 文件**（Phase 3）：`blacklist`、`whitelist`、4 个 LPM
+  trie 等。map ID 稳定，`bpftool map dump pinned
+  /sys/fs/bpf/xdrop/<name>` 可跨重启观察，外部 BPF 工具也继续指向
+  同一份对象。
+- **每个接口 1 个 XDP link 文件**（Phase 4）：`link_<ifname>`
+  （如 `link_ens38`）。Agent 重启通过 `LoadPinnedLink +
+  Link.Update(newProg)` 原子替换 XDP 程序 —— 内核层面零空窗切换。
+  没有 link pinning 的话，每次重启有约 1.5–3 秒的无过滤窗口。
+
+两者都需要 `/sys/fs/bpf` 挂载为 `bpf` 类型文件系统。
 
 ```bash
 # 检查 —— f_type 应为 "bpf_fs"（magic 0xcafe4a11）
@@ -163,7 +172,9 @@ echo 'bpf /sys/fs/bpf bpf defaults 0 0' >> /etc/fstab
 ```
 
 如果因任何原因无法挂载 bpffs，默认 `bpf.pinning: auto` 策略下 agent
-会自动降级到非 pinned 模式 —— 规则仍然能加载，只是丢失 map fd 的重启保活。
+会自动降级到非 pinned 模式 —— 规则仍然能加载，只是丢失 map fd 的
+重启保活 和 XDP 零空窗切换（降级为 Phase 2 等价行为，每次重启约
+1.5 秒 detach-reattach 窗口）。
 
 ---
 

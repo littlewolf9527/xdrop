@@ -127,16 +127,25 @@ xdrop/
 > on legacy kernels should hold on xdrop **v2.4.2** (the last release
 > using the netlink attach path) until they can upgrade.
 
-> **BPF pinning (v2.5+):** by default the node agent pins all its BPF
-> maps under `/sys/fs/bpf/xdrop/` (16 files — `blacklist`, `whitelist`,
-> `cidr_blacklist`, the four LPM tries, `config_a` / `config_b`, etc.)
-> so map fds survive across `systemctl restart xdrop-agent`. This
-> keeps map IDs stable for `bpftool map dump pinned
-> /sys/fs/bpf/xdrop/<name>` and for any external BPF tooling pointed
-> at those objects. Requires `/sys/fs/bpf` to be mounted as a `bpf`
-> filesystem — most modern distros do this automatically via systemd.
-> If pinning fails (unmounted, EPERM, etc.) the agent silently falls
-> back to non-pinned mode by default; set `bpf.pinning: require` in
+> **BPF pinning (v2.5+):** by default the node agent pins its BPF
+> objects under `/sys/fs/bpf/xdrop/` so state survives across
+> `systemctl restart xdrop-agent`:
+> - **16 map files** (Phase 3) — `blacklist`, `whitelist`,
+>   `cidr_blacklist`, the four LPM tries, `config_a` / `config_b`,
+>   etc. Keeps map IDs stable for `bpftool map dump pinned
+>   /sys/fs/bpf/xdrop/<name>` and for any external BPF tooling
+>   pointed at those objects.
+> - **1 XDP link file per interface** (Phase 4) — `link_<ifname>`
+>   (e.g. `link_ens38`). Agent restart does
+>   `LoadPinnedLink + Link.Update(newProg)` instead of
+>   detach/reattach, so the XDP program swap is atomic in the
+>   kernel — **zero-gap** attachment. Without link pinning, a
+>   restart would leave a ~1.5–3 s window with no filter.
+>
+> Requires `/sys/fs/bpf` to be mounted as a `bpf` filesystem — most
+> modern distros do this automatically via systemd. If pinning
+> fails (unmounted, EPERM, etc.) the agent silently falls back to
+> non-pinned mode by default; set `bpf.pinning: require` in
 > `config.yaml` for strict mode, or `disable` to opt out entirely.
 
 For a step-by-step environment setup guide, see **[Getting Started](GETTING_STARTED.md)**.

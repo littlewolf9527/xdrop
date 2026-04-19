@@ -21,24 +21,36 @@ bpf:
   # Path to the compiled BPF ELF file, relative to the working directory.
   path: bpf/xdrop.elf
 
-  # BPF map pinning policy (v2.5+, Phase 3 of goebpf→cilium/ebpf migration).
-  # Pinning stores map fds under /sys/fs/bpf/xdrop/ so they survive across
-  # agent restart — preserves map IDs for bpftool observers and keeps
-  # external BPF tooling pointed at the same objects across
-  # `systemctl restart xdrop-agent`. Data-map CONTENTS are wiped on
-  # restart and reconciled via controller sync; true zero-gap data
-  # plane arrives in Phase 4 (link pinning).
+  # BPF pinning policy (v2.5+, Phases 3+4 of goebpf→cilium/ebpf migration).
+  # When enabled, xdrop pins its BPF objects under /sys/fs/bpf/xdrop/ so
+  # they survive across `systemctl restart xdrop-agent`:
   #
-  #   auto     (default) try pinning; silently fall back to non-pinned
-  #                      mode if /sys/fs/bpf is not bpffs, inaccessible,
-  #                      or otherwise unusable. Rules still load — the
-  #                      agent just loses infrastructure continuity for
-  #                      this boot. Next restart re-tries pinning.
+  #   - Phase 3 (maps, 16 files): blacklist, whitelist, cidr_blacklist,
+  #     4 LPM tries, config_a/_b, stats, devmap, etc. Preserves map IDs
+  #     for bpftool observers and external BPF tooling across restart.
+  #     Data-map CONTENTS are wiped on every restart and reconciled via
+  #     controller sync (Phase 3 gives map-INFRASTRUCTURE continuity,
+  #     not rule-data continuity).
+  #   - Phase 4 (XDP link, 1 file per interface): link_<ifname>, e.g.
+  #     link_ens38. LoadPinnedLink + Link.Update atomically swaps the
+  #     XDP program pointer on restart — zero-gap kernel attachment.
+  #     Without this, restart would detach+reattach XDP (~1.5-3s gap).
+  #
+  #   auto     (default) try pinning (both map + link); silently fall
+  #                      back to non-pinned mode if /sys/fs/bpf is not
+  #                      bpffs, inaccessible, or otherwise unusable.
+  #                      Rules still load — the agent just loses
+  #                      restart continuity for this boot. Next restart
+  #                      re-tries pinning.
   #   require            fail startup if pinning cannot be enabled.
-  #                      Strict mode for production where restart-survival
-  #                      of map fds is expected.
+  #                      Strict mode for production where restart
+  #                      survival + zero-gap attachment is expected.
   #   disable            skip pinning entirely. Matches pre-migration
-  #                      (v2.4.x) behaviour.
+  #                      (v2.4.x) behaviour — maps recreate on every
+  #                      boot and XDP detaches/reattaches on restart.
+  #                      In disable mode, any stale link_<ifname> pin
+  #                      left by a prior auto run is actively unlinked
+  #                      so `ip link xdp off` works again.
   #
   # Prerequisite: /sys/fs/bpf must be mounted as bpffs. Most modern
   # distros do this by default via systemd. If missing, mount it with

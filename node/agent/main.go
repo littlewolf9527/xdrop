@@ -512,13 +512,6 @@ func configureFastForward(configA, configB *ebpf.Map, pair config.InterfacePair,
 	return nil
 }
 
-// Pre-attach stale-XDP cleanup via `ip link set ... xdp off` now lives
-// inside the bpf package's linkOps.PreDetach — the resolver decides
-// per-branch whether to call it (fresh attach: yes; link reuse: no,
-// because pre-detach would break zero-gap continuity on the reuse
-// path). Removed from main.go alongside attachXDPLink /
-// isXDPLinkUnsupported in Phase 4.
-
 // uint32ToBytes converts uint32 to little-endian byte slice
 func uint32ToBytes(v uint32) []byte {
 	b := make([]byte, 4)

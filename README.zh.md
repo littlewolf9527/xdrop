@@ -125,16 +125,23 @@ xdrop/
 > Ubuntu 20.04 HWE / 22.04+（5.15+）。老内核用户请继续使用 xdrop **v2.4.2**
 > （最后一版基于 netlink attach 的发布）直到完成升级。
 
-> **BPF pinning（v2.5+）**：Node Agent 默认把所有 16 个 BPF map 全部 pin
-> 到 `/sys/fs/bpf/xdrop/`（`blacklist`、`whitelist`、`cidr_blacklist`、
-> 4 个 LPM trie、`config_a`/`config_b` 等），让 map 的 fd 跨
-> `systemctl restart xdrop-agent` 保活。这样 map ID 保持稳定，便于
-> `bpftool map dump pinned /sys/fs/bpf/xdrop/<name>` 跨重启观察，
-> 外部 BPF 工具也继续指向同一份对象。前置条件：`/sys/fs/bpf` 必须挂载为 `bpf`
-> 类型文件系统 —— 现代发行版通常由 systemd 自动挂载。若 pinning 失败
-> （未挂载、EPERM 等），默认会静默降级到非 pinned 模式；需要严格行为的话在
-> `config.yaml` 里设 `bpf.pinning: require`，要完全关闭 pinning 设
-> `disable`。
+> **BPF pinning（v2.5+）**：Node Agent 默认把 BPF 对象 pin 到
+> `/sys/fs/bpf/xdrop/`，让状态跨 `systemctl restart xdrop-agent` 存活：
+> - **16 个 map 文件**（Phase 3）—— `blacklist`、`whitelist`、
+>   `cidr_blacklist`、4 个 LPM trie、`config_a`/`config_b` 等。
+>   map ID 保持稳定，便于 `bpftool map dump pinned
+>   /sys/fs/bpf/xdrop/<name>` 跨重启观察，外部 BPF 工具也继续指向
+>   同一份对象。
+> - **每个接口 1 个 XDP link 文件**（Phase 4）—— `link_<ifname>`
+>   （如 `link_ens38`）。Agent 重启通过 `LoadPinnedLink + Link.Update`
+>   原子替换 XDP 程序，而不是 detach/reattach —— 内核层面
+>   **零空窗** 切换。没有 link pinning 的话，每次重启会有约
+>   1.5–3 秒的无过滤窗口。
+>
+> 前置条件：`/sys/fs/bpf` 必须挂载为 `bpf` 类型文件系统 —— 现代
+> 发行版通常由 systemd 自动挂载。若 pinning 失败（未挂载、EPERM 等），
+> 默认会静默降级到非 pinned 模式；需要严格行为的话在 `config.yaml` 里
+> 设 `bpf.pinning: require`，要完全关闭 pinning 设 `disable`。
 
 详细的环境准备步骤请参见**[准备工作](GETTING_STARTED.zh.md)**。
 
