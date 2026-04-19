@@ -6,10 +6,10 @@ toolchain go1.24.4
 
 require (
 	github.com/cilium/ebpf v0.21.0
-	github.com/dropbox/goebpf v0.0.0-20240319152541-e5e17f597ca3
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.5.0
 	github.com/spf13/viper v1.21.0
+	golang.org/x/sys v0.37.0
 )
 
 require (
@@ -38,13 +38,10 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
-	github.com/vishvananda/netlink v1.1.1-0.20200218174631-5f2fc868c2d0 // indirect
-	github.com/vishvananda/netns v0.0.0-20200520041808-52d707b772fe // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
