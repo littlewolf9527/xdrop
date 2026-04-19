@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dropbox/goebpf"
+	"github.com/cilium/ebpf"
 )
 
 // publishConfigUpdate performs a double-buffer config publish.
@@ -26,8 +26,9 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	for i := uint32(0); i < ConfigMapEntries; i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, i)
-		if value, err := active.Lookup(key); err == nil {
-			if err := shadow.Update(key, value); err != nil {
+		var value [8]byte // config_{a,b} are u64 arrays
+		if err := active.Lookup(key, &value); err == nil {
+			if err := shadow.Update(key, value[:], ebpf.UpdateExist); err != nil {
 				return fmt.Errorf("failed to copy config index %d to shadow: %w", i, err)
 			}
 		}
@@ -46,7 +47,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	binary.LittleEndian.PutUint32(bitmapKey, ConfigRuleBitmap)
 	bitmapValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(bitmapValue, bitmap)
-	if err := shadow.Update(bitmapKey, bitmapValue); err != nil {
+	if err := shadow.Update(bitmapKey, bitmapValue, ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to update shadow bitmap: %w", err)
 	}
 
@@ -55,8 +56,9 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		countKey := make([]byte, 4)
 		binary.LittleEndian.PutUint32(countKey, ConfigBlacklistCount)
 		var currentCount uint64
-		if v, err := shadow.Lookup(countKey); err == nil && len(v) >= 8 {
-			currentCount = binary.LittleEndian.Uint64(v)
+		var v [8]byte
+		if err := shadow.Lookup(countKey, &v); err == nil {
+			currentCount = binary.LittleEndian.Uint64(v[:])
 		}
 		newCount := int64(currentCount) + countDelta
 		if newCount < 0 {
@@ -64,7 +66,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		}
 		countValue := make([]byte, 8)
 		binary.LittleEndian.PutUint64(countValue, uint64(newCount))
-		if err := shadow.Update(countKey, countValue); err != nil {
+		if err := shadow.Update(countKey, countValue, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to update shadow blacklist count: %w", err)
 		}
 	}
@@ -74,8 +76,9 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		wlKey := make([]byte, 4)
 		binary.LittleEndian.PutUint32(wlKey, ConfigWhitelistCount)
 		var currentWlCount uint64
-		if v, err := shadow.Lookup(wlKey); err == nil && len(v) >= 8 {
-			currentWlCount = binary.LittleEndian.Uint64(v)
+		var v [8]byte
+		if err := shadow.Lookup(wlKey, &v); err == nil {
+			currentWlCount = binary.LittleEndian.Uint64(v[:])
 		}
 		newWlCount := int64(currentWlCount) + wlCountDelta
 		if newWlCount < 0 {
@@ -83,7 +86,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		}
 		wlValue := make([]byte, 8)
 		binary.LittleEndian.PutUint64(wlValue, uint64(newWlCount))
-		if err := shadow.Update(wlKey, wlValue); err != nil {
+		if err := shadow.Update(wlKey, wlValue, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to update shadow whitelist count: %w", err)
 		}
 	}
@@ -99,7 +102,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	binary.LittleEndian.PutUint32(cidrBitmapKey, ConfigCIDRBitmap)
 	cidrBitmapValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(cidrBitmapValue, cidrBitmap)
-	if err := shadow.Update(cidrBitmapKey, cidrBitmapValue); err != nil {
+	if err := shadow.Update(cidrBitmapKey, cidrBitmapValue, ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to update shadow CIDR bitmap: %w", err)
 	}
 
@@ -108,8 +111,9 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		cidrCountKey := make([]byte, 4)
 		binary.LittleEndian.PutUint32(cidrCountKey, ConfigCIDRRuleCount)
 		var currentCIDRCount uint64
-		if v, err := shadow.Lookup(cidrCountKey); err == nil && len(v) >= 8 {
-			currentCIDRCount = binary.LittleEndian.Uint64(v)
+		var v [8]byte
+		if err := shadow.Lookup(cidrCountKey, &v); err == nil {
+			currentCIDRCount = binary.LittleEndian.Uint64(v[:])
 		}
 		newCIDRCount := int64(currentCIDRCount) + cidrCountDelta
 		if newCIDRCount < 0 {
@@ -117,7 +121,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		}
 		cidrCountValue := make([]byte, 8)
 		binary.LittleEndian.PutUint64(cidrCountValue, uint64(newCIDRCount))
-		if err := shadow.Update(cidrCountKey, cidrCountValue); err != nil {
+		if err := shadow.Update(cidrCountKey, cidrCountValue, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to update shadow CIDR count: %w", err)
 		}
 	}
@@ -127,7 +131,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	selKey := make([]byte, 4) // key = 0
 	selValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
-	if err := h.activeConfig.Update(selKey, selValue); err != nil {
+	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to switch active config: %w", err)
 	}
 	h.activeSlot = newSlot
@@ -138,14 +142,14 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	return nil
 }
 
-func (h *Handlers) activeMap() goebpf.Map {
+func (h *Handlers) activeMap() *ebpf.Map {
 	if h.activeSlot == 0 {
 		return h.configA
 	}
 	return h.configB
 }
 
-func (h *Handlers) shadowMap() goebpf.Map {
+func (h *Handlers) shadowMap() *ebpf.Map {
 	if h.activeSlot == 0 {
 		return h.configB
 	}
@@ -153,7 +157,7 @@ func (h *Handlers) shadowMap() goebpf.Map {
 }
 
 // activeBlacklist returns the currently active blacklist BPF map (Phase 4.2 dual rule map)
-func (h *Handlers) activeBlacklist() goebpf.Map {
+func (h *Handlers) activeBlacklist() *ebpf.Map {
 	if h.activeRuleSlot == 0 {
 		return h.blacklist
 	}
@@ -161,7 +165,7 @@ func (h *Handlers) activeBlacklist() goebpf.Map {
 }
 
 // shadowBlacklist returns the shadow blacklist BPF map (Phase 4.2 dual rule map)
-func (h *Handlers) shadowBlacklist() goebpf.Map {
+func (h *Handlers) shadowBlacklist() *ebpf.Map {
 	if h.activeRuleSlot == 0 {
 		return h.blacklistB
 	}
@@ -169,7 +173,7 @@ func (h *Handlers) shadowBlacklist() goebpf.Map {
 }
 
 // activeCidrBlacklist returns the currently active CIDR blacklist BPF map
-func (h *Handlers) activeCidrBlacklist() goebpf.Map {
+func (h *Handlers) activeCidrBlacklist() *ebpf.Map {
 	if h.activeRuleSlot == 0 {
 		return h.cidrBlacklist
 	}
@@ -177,37 +181,47 @@ func (h *Handlers) activeCidrBlacklist() goebpf.Map {
 }
 
 // shadowCidrBlacklist returns the shadow CIDR blacklist BPF map
-func (h *Handlers) shadowCidrBlacklist() goebpf.Map {
+func (h *Handlers) shadowCidrBlacklist() *ebpf.Map {
 	if h.activeRuleSlot == 0 {
 		return h.cidrBlacklistB
 	}
 	return h.cidrBlacklist
 }
 
-// clearMap removes all entries from a BPF hash map using GetNextKey iteration.
-// BPF hash maps have no bulk clear; we must iterate + delete.
+// clearMap removes all entries from a BPF hash map using cilium/ebpf's
+// iterator. BPF hash maps have no bulk clear; we must iterate + delete.
 // Returns a non-nil error containing the count of per-entry delete failures
 // (the first failing error is wrapped). All keys are attempted regardless of
 // individual failures so the map is left as empty as possible.
-func clearMap(m goebpf.Map) error {
-	// Collect all keys first to avoid iterator invalidation
+func clearMap(m *ebpf.Map) error {
+	// Collect all keys first to avoid iterator invalidation on Delete.
 	var keys [][]byte
-	var prevKey []byte
-	for {
-		nextKey, err := m.GetNextKey(prevKey)
-		if err != nil {
-			break // no more keys
-		}
-		keyCopy := make([]byte, len(nextKey))
-		copy(keyCopy, nextKey)
+	iter := m.Iterate()
+	keySize := int(m.KeySize())
+	key := make([]byte, keySize)
+	var valueScratch []byte
+	if vs := int(m.ValueSize()); vs > 0 {
+		valueScratch = make([]byte, vs)
+	} else {
+		// Per-CPU or otherwise size-zero reporting; fall back to a
+		// small scratch buffer. cilium/ebpf handles the actual copy.
+		valueScratch = make([]byte, 1)
+	}
+	for iter.Next(&key, &valueScratch) {
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy, key)
 		keys = append(keys, keyCopy)
-		prevKey = nextKey
+	}
+	if err := iter.Err(); err != nil {
+		// Iteration errors are reported but do not prevent deletion of
+		// whatever keys we did manage to enumerate.
+		log.Printf("[clearMap] iterator error (continuing with %d collected keys): %v", len(keys), err)
 	}
 
 	var firstErr error
 	failed := 0
-	for _, key := range keys {
-		if err := m.Delete(key); err != nil {
+	for _, k := range keys {
+		if err := m.Delete(k); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}

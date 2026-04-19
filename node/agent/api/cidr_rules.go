@@ -1,8 +1,9 @@
 // XDrop Agent - CIDR rule add paths (HTTP + sync recovery)
 // NOTE: DeleteRule (in rules_mutation.go) also calls cidrMgr.ReleaseSrcID/ReleaseDstID
 // when deleting CIDR rules. CIDR ID lifecycle therefore spans both files:
-//   alloc  → cidr_rules.go (addCIDRRule / addCIDRRuleFromSync)
-//   release on delete → rules_mutation.go (DeleteRule / DeleteRulesBatch)
+//
+//	alloc  → cidr_rules.go (addCIDRRule / addCIDRRuleFromSync)
+//	release on delete → rules_mutation.go (DeleteRule / DeleteRulesBatch)
 package api
 
 import (
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
@@ -151,7 +153,7 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 	}
 
 	// Step 1: Insert BPF entry
-	if err := cbl.Insert(keyBytes, valueBytes); err != nil {
+	if err := cbl.Update(keyBytes, valueBytes, ebpf.UpdateNoExist); err != nil {
 		h.rulesMu.Unlock()
 		h.publishMu.Unlock()
 		h.syncMu.Unlock()
@@ -236,7 +238,7 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 			oldAction, _ := parseAction(oldStored.Action)
 			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
 			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-			if insErr := cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue)); insErr != nil {
+			if insErr := cbl.Update(oldKeyBytes, ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 				log.Printf("[addCIDRRule] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
 			}
 			oldCombo := getCIDRComboType(oldStored.Key)
@@ -406,7 +408,7 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 	}
 
 	// Step 1: Insert BPF entry
-	if err := cbl.Insert(keyBytes, valueBytes); err != nil {
+	if err := cbl.Update(keyBytes, valueBytes, ebpf.UpdateNoExist); err != nil {
 		h.rulesMu.Unlock()
 		h.publishMu.Unlock()
 		h.syncMu.Unlock()
@@ -489,7 +491,7 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 			oldAction, _ := parseAction(oldStored.Action)
 			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
 			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-			if insErr := cbl.Insert(oldKeyBytes, ruleValueToBytes(oldValue)); insErr != nil {
+			if insErr := cbl.Update(oldKeyBytes, ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 				log.Printf("[addCIDRRuleFromSync] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
 			}
 			oldCombo := getCIDRComboType(oldStored.Key)

@@ -3,16 +3,19 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/dropbox/goebpf"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	"github.com/gin-gonic/gin"
 	"github.com/littlewolf9527/xdrop/node/agent/api"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
@@ -49,121 +52,72 @@ func main() {
 		log.Fatalf("Config validation failed: %v", err)
 	}
 
-	// Load BPF program
+	// Load BPF ELF into a cilium/ebpf Collection. Phase 2 cutover from
+	// goebpf: we parse the ELF into a CollectionSpec, then instantiate
+	// maps + programs in one NewCollection call. No pinning for now —
+	// Phase 3 will add spec.Maps[name].Pinning = ebpf.PinByName.
 	log.Printf("Loading BPF program from %s...", cfg.BPF.Path)
-	bpf := goebpf.NewDefaultEbpfSystem()
-	if err := bpf.LoadElf(cfg.BPF.Path); err != nil {
-		log.Fatalf("Failed to load BPF ELF: %v", err)
+	spec, err := ebpf.LoadCollectionSpec(cfg.BPF.Path)
+	if err != nil {
+		log.Fatalf("Failed to parse BPF ELF: %v", err)
+	}
+	coll, err := ebpf.NewCollection(spec)
+	if err != nil {
+		log.Fatalf("Failed to create BPF collection: %v", err)
 	}
 
-	// Get required maps
-	blacklist := bpf.GetMapByName("blacklist")
-	if blacklist == nil {
-		log.Fatal("BPF map 'blacklist' not found")
+	// Helper to fetch a required map by name.
+	requireMap := func(name string) *ebpf.Map {
+		m, ok := coll.Maps[name]
+		if !ok || m == nil {
+			log.Fatalf("BPF map %q not found in ELF", name)
+		}
+		return m
 	}
 
-	whitelist := bpf.GetMapByName("whitelist")
-	if whitelist == nil {
-		log.Fatal("BPF map 'whitelist' not found")
-	}
-
-	stats := bpf.GetMapByName("stats")
-	if stats == nil {
-		log.Fatal("BPF map 'stats' not found")
-	}
-
-	rlStates := bpf.GetMapByName("rl_states")
-	if rlStates == nil {
-		log.Fatal("BPF map 'rl_states' not found")
-	}
-
-	configA := bpf.GetMapByName("config_a")
-	if configA == nil {
-		log.Fatal("BPF map 'config_a' not found")
-	}
-
-	configB := bpf.GetMapByName("config_b")
-	if configB == nil {
-		log.Fatal("BPF map 'config_b' not found")
-	}
-
-	activeConfig := bpf.GetMapByName("active_config")
-	if activeConfig == nil {
-		log.Fatal("BPF map 'active_config' not found")
-	}
-
-	// Get CIDR maps
-	cidrBlacklist := bpf.GetMapByName("cidr_blacklist")
-	if cidrBlacklist == nil {
-		log.Fatal("BPF map 'cidr_blacklist' not found")
-	}
-
-	cidrRlStates := bpf.GetMapByName("cidr_rl_states")
-	if cidrRlStates == nil {
-		log.Fatal("BPF map 'cidr_rl_states' not found")
-	}
-
-	srcV4Trie := bpf.GetMapByName("sv4_cidr_trie")
-	if srcV4Trie == nil {
-		log.Fatal("BPF map 'sv4_cidr_trie' not found")
-	}
-
-	dstV4Trie := bpf.GetMapByName("dv4_cidr_trie")
-	if dstV4Trie == nil {
-		log.Fatal("BPF map 'dv4_cidr_trie' not found")
-	}
-
-	srcV6Trie := bpf.GetMapByName("sv6_cidr_trie")
-	if srcV6Trie == nil {
-		log.Fatal("BPF map 'sv6_cidr_trie' not found")
-	}
-
-	dstV6Trie := bpf.GetMapByName("dv6_cidr_trie")
-	if dstV6Trie == nil {
-		log.Fatal("BPF map 'dv6_cidr_trie' not found")
-	}
+	blacklist := requireMap("blacklist")
+	whitelist := requireMap("whitelist")
+	stats := requireMap("stats")
+	rlStates := requireMap("rl_states")
+	configA := requireMap("config_a")
+	configB := requireMap("config_b")
+	activeConfig := requireMap("active_config")
+	cidrBlacklist := requireMap("cidr_blacklist")
+	cidrRlStates := requireMap("cidr_rl_states")
+	srcV4Trie := requireMap("sv4_cidr_trie")
+	dstV4Trie := requireMap("dv4_cidr_trie")
+	srcV6Trie := requireMap("sv6_cidr_trie")
+	dstV6Trie := requireMap("dv6_cidr_trie")
+	blacklistB := requireMap("blacklist_b")
+	cidrBlacklistB := requireMap("cidr_blist_b")
 
 	cidrMgr := cidr.NewManager(srcV4Trie, dstV4Trie, srcV6Trie, dstV6Trie)
 	log.Println("CIDR manager initialized")
 
-	// Get shadow maps for dual rule map (Phase 4.2)
-	blacklistB := bpf.GetMapByName("blacklist_b")
-	if blacklistB == nil {
-		log.Fatal("BPF map 'blacklist_b' not found")
-	}
-
-	cidrBlacklistB := bpf.GetMapByName("cidr_blist_b")
-	if cidrBlacklistB == nil {
-		log.Fatal("BPF map 'cidr_blist_b' not found")
-	}
-
-	// Get devmap for fast forward mode
-	var devmap goebpf.Map
+	// Fast forward devmap (only required when enabled)
+	var devmap *ebpf.Map
 	if fastForwardMode {
-		devmap = bpf.GetMapByName("devmap")
-		if devmap == nil {
-			log.Fatal("BPF map 'devmap' not found (required for fast forward mode)")
-		}
+		devmap = requireMap("devmap")
 	}
 
-	// Get XDP program
-	xdp := bpf.GetProgramByName("xdrop_firewall")
-	if xdp == nil {
-		log.Fatal("XDP program 'xdrop_firewall' not found")
+	// XDP program. cilium/ebpf does not require an explicit Load() step —
+	// NewCollection already JITed + verified it. Attach happens via the
+	// link package further down.
+	xdpProg, ok := coll.Programs["xdrop_firewall"]
+	if !ok || xdpProg == nil {
+		log.Fatal("XDP program 'xdrop_firewall' not found in ELF")
 	}
 
-	// Load XDP program
-	if err := xdp.Load(); err != nil {
-		log.Fatalf("Failed to load XDP program: %v", err)
-	}
-
-	// Interface manager for fast forward mode
+	// Interface manager for fast forward mode.
 	var ifMgr *ifmgr.InterfaceManager
-	// Track all XDP-attached interfaces for reliable cleanup
-	// (goebpf's Detach() is unreliable for dual-NIC: GetProgramByName returns
-	// the same object, so the second Attach overwrites p.ifname and Detach
-	// only removes XDP from the last-attached interface)
+
+	// Track both the attached interface names (for logging + pre-detach on
+	// crash recovery) and the cilium Link objects that actually own the
+	// kernel-side attachment. Link.Close() on shutdown replaces the old
+	// shell-out to `ip link set ... xdp off` as the primary detach path
+	// (§5.5). detachXDP() is kept as a pre-attach stale-cleanup helper.
 	var xdpAttachedIfaces []string
+	var xdpLinks []link.Link
 
 	// Initialize API handlers before XDP attach so the signal handler can call
 	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not
@@ -173,10 +127,10 @@ func main() {
 		blacklistB, cidrBlacklistB)
 
 	// Setup graceful shutdown BEFORE XDP attach and ifmgr config, so Ctrl-C
-	// during startup still runs cleanup. The goroutine captures ifMgr and
-	// xdpAttachedIfaces by reference — both are still zero-value here but will
-	// be populated synchronously below, so they're valid by the time a signal
-	// can actually be delivered after startup completes.
+	// during startup still runs cleanup. The goroutine captures ifMgr,
+	// xdpAttachedIfaces, xdpLinks, and coll by reference — all are still
+	// zero-value here but will be populated synchronously below, so they're
+	// valid by the time a signal can actually be delivered after startup.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -187,14 +141,26 @@ func main() {
 		// Stop background samplers started by Handlers
 		handlers.Shutdown()
 
-		// Detach XDP from all attached interfaces (empty if signal fired pre-attach)
-		for _, iface := range xdpAttachedIfaces {
-			if err := detachXDP(iface); err != nil {
-				log.Printf("Warning: failed to detach XDP from %s: %v", iface, err)
-			} else {
-				log.Printf("XDP detached from %s", iface)
+		// Close each XDP link — this is what actually detaches the program
+		// from the kernel with cilium/ebpf. Iterate over both slices: the
+		// link list is the authoritative owner of the attachment, the iface
+		// list is only used for log messages.
+		for i, lnk := range xdpLinks {
+			ifaceLabel := ""
+			if i < len(xdpAttachedIfaces) {
+				ifaceLabel = xdpAttachedIfaces[i]
+			}
+			if err := lnk.Close(); err != nil {
+				log.Printf("Warning: failed to close XDP link for %s: %v", ifaceLabel, err)
+			} else if ifaceLabel != "" {
+				log.Printf("XDP detached from %s", ifaceLabel)
 			}
 		}
+
+		// Release collection: closes every map + program fd. Pinned maps
+		// (Phase 3+) would survive this; in Phase 2 all maps are unpinned
+		// so they're freed here. Collection.Close returns no error.
+		coll.Close()
 
 		// Restore interfaces in fast forward mode (nil if signal fired pre-init)
 		if fastForwardMode && ifMgr != nil {
@@ -260,30 +226,40 @@ func main() {
 			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", pair.Outbound, err)
 		}
 
-		// Attach XDP to inbound interface
-		if err := xdp.Attach(pair.Inbound); err != nil {
+		// Attach XDP to inbound interface via cilium/ebpf link. Flags:0 gives
+		// kernel best-effort (auto-select driver vs generic) — matches the
+		// pre-migration goebpf XdpAttachModeNone default (§5.1 / AUD-MIG-001).
+		inLink, err := attachXDPLink(xdpProg, pair.Inbound)
+		if err != nil {
 			if rErr := ifMgr.RestoreAll(); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
 			log.Fatalf("Failed to attach XDP to %s: %v", pair.Inbound, err)
 		}
+		xdpLinks = append(xdpLinks, inLink)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Inbound)
 		log.Printf("XDP program attached to %s (inbound)", pair.Inbound)
 
-		// Attach XDP to outbound interface
-		// Note: goebpf.GetProgramByName returns the same object pointer, so
-		// xdp.Attach(outbound) overwrites the internal p.ifname state.
-		// We do NOT rely on goebpf Detach(); instead we track interfaces in
-		// xdpAttachedIfaces and use detachXDP() for reliable cleanup.
-		if err := xdp.Attach(pair.Outbound); err != nil {
-			if dErr := detachXDP(pair.Inbound); dErr != nil {
-				log.Printf("[main] Warning: failed to detach XDP from %s while rolling back: %v", pair.Inbound, dErr)
+		// Attach XDP to outbound interface. With cilium/ebpf each
+		// link.AttachXDP returns an independent Link object, so the dual-NIC
+		// detach correctness quirk we had with goebpf's shared program
+		// pointer no longer applies — we simply Close() each Link on exit.
+		outLink, err := attachXDPLink(xdpProg, pair.Outbound)
+		if err != nil {
+			// Roll back the inbound attach before failing startup.
+			if cErr := inLink.Close(); cErr != nil {
+				log.Printf("[main] Warning: failed to close inbound XDP link while rolling back: %v", cErr)
 			}
+			// Drop the inbound link from the shutdown tracking list so the
+			// EXIT handler doesn't try to Close() it twice.
+			xdpLinks = xdpLinks[:len(xdpLinks)-1]
+			xdpAttachedIfaces = xdpAttachedIfaces[:len(xdpAttachedIfaces)-1]
 			if rErr := ifMgr.RestoreAll(); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
 			log.Fatalf("Failed to attach XDP to %s: %v", pair.Outbound, err)
 		}
+		xdpLinks = append(xdpLinks, outLink)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Outbound)
 		log.Printf("XDP program attached to %s (outbound)", pair.Outbound)
 
@@ -295,9 +271,11 @@ func main() {
 		if err := detachXDP(cfg.Server.Interface); err != nil {
 			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", cfg.Server.Interface, err)
 		}
-		if err := xdp.Attach(cfg.Server.Interface); err != nil {
+		lnk, err := attachXDPLink(xdpProg, cfg.Server.Interface)
+		if err != nil {
 			log.Fatalf("Failed to attach XDP to %s: %v", cfg.Server.Interface, err)
 		}
+		xdpLinks = append(xdpLinks, lnk)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, cfg.Server.Interface)
 		log.Printf("XDP program attached to %s", cfg.Server.Interface)
 	}
@@ -389,23 +367,88 @@ func main() {
 	}
 }
 
-// setupDevmap configures bidirectional interface mapping
-func setupDevmap(devmap goebpf.Map, inboundIdx, outboundIdx int) error {
-	// inbound -> outbound (use Update for BPF_ANY, allows overwrite)
-	if err := devmap.Update(uint32ToBytes(uint32(inboundIdx)), uint32ToBytes(uint32(outboundIdx))); err != nil {
+// attachXDPLink wires the XDP program onto the named interface via
+// cilium/ebpf's link package. Flags: 0 requests kernel best-effort
+// (native if the driver supports it, generic otherwise) — this matches
+// the pre-migration goebpf XdpAttachModeNone default behaviour
+// (proposal §5.1 / AUD-MIG-001). Do NOT hardcode link.XDPGenericMode;
+// a future config knob cfg.XDP.Mode can override if operators need it.
+//
+// KERNEL FLOOR: cilium/ebpf v0.21.0's link.AttachXDP issues BPF_LINK_CREATE
+// with type BPF_LINK_TYPE_XDP, which landed in Linux 5.9. Phase 2 of the
+// goebpf→cilium/ebpf migration intentionally does NOT implement the pre-5.9
+// netlink-attach fallback described in §Phase 4.a of the proposal — the
+// audit closure for AUD-PH2-001 narrows the supported floor to 5.9+ on the
+// grounds that every current stable distro ships a recent-enough kernel
+// (Debian 11+, RHEL 9+, Ubuntu 20.04 HWE+). On older kernels the returned
+// error is wrapped with an explicit pointer at this comment so operators
+// don't have to guess.
+func attachXDPLink(xdpProg *ebpf.Program, ifname string) (link.Link, error) {
+	iface, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return nil, fmt.Errorf("lookup interface %s: %w", ifname, err)
+	}
+	lnk, err := link.AttachXDP(link.XDPOptions{
+		Program:   xdpProg,
+		Interface: iface.Index,
+		// Flags: 0 (default) — best-effort / auto-select.
+	})
+	if err != nil {
+		if isXDPLinkUnsupported(err) {
+			return nil, fmt.Errorf(
+				"link.AttachXDP(%s) failed: %w\n\n"+
+					"  xdrop requires Linux 5.9+ for XDP attach (BPF_LINK_TYPE_XDP).\n"+
+					"  The pre-5.9 netlink fallback described in the migration\n"+
+					"  proposal §Phase 4.a is intentionally NOT implemented — closure\n"+
+					"  for AUD-PH2-001. Upgrade the host kernel or hold xdrop on the\n"+
+					"  prior v2.4.2 goebpf-based release.",
+				ifname, err)
+		}
+		return nil, fmt.Errorf("link.AttachXDP(%s): %w", ifname, err)
+	}
+	return lnk, nil
+}
+
+// isXDPLinkUnsupported heuristically classifies an AttachXDP error as
+// "kernel lacks BPF_LINK_TYPE_XDP support". cilium/ebpf surfaces this via
+// ebpf.ErrNotSupported; older kernels can also return ENOTSUP / EOPNOTSUPP
+// directly. We deliberately do NOT match EINVAL (too ambiguous — many real
+// misuse cases also return EINVAL and we don't want false positives leading
+// operators to suspect the kernel when the fault is in xdrop config).
+func isXDPLinkUnsupported(err error) bool {
+	if errors.Is(err, ebpf.ErrNotSupported) {
+		return true
+	}
+	if errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) {
+		return true
+	}
+	return false
+}
+
+// setupDevmap configures bidirectional interface mapping. DEVMAP is an
+// array-backed type — all max_entries slots are pre-allocated with empty
+// references, so Update(UpdateExist) succeeds and strictly matches the
+// pre-migration goebpf.Update (BPF_EXIST) semantics per §5.2.
+func setupDevmap(devmap *ebpf.Map, inboundIdx, outboundIdx int) error {
+	// inbound -> outbound
+	if err := devmap.Update(uint32ToBytes(uint32(inboundIdx)), uint32ToBytes(uint32(outboundIdx)), ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to set devmap[%d]=%d: %w", inboundIdx, outboundIdx, err)
 	}
 
 	// outbound -> inbound
-	if err := devmap.Update(uint32ToBytes(uint32(outboundIdx)), uint32ToBytes(uint32(inboundIdx))); err != nil {
+	if err := devmap.Update(uint32ToBytes(uint32(outboundIdx)), uint32ToBytes(uint32(inboundIdx)), ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to set devmap[%d]=%d: %w", outboundIdx, inboundIdx, err)
 	}
 
 	return nil
 }
 
-// configureFastForward sets up fast forward mode in both config maps (double-buffer)
-func configureFastForward(configA, configB goebpf.Map, pair config.InterfacePair, inboundIdx, outboundIdx int) error {
+// configureFastForward sets up fast forward mode in both config maps
+// (double-buffer). config_a / config_b are ARRAY maps — Update(UpdateExist)
+// is the direct translation of pre-migration goebpf.Update (BPF_EXIST)
+// per §5.2, and since all array slots are pre-populated it is equivalent
+// to Put here while remaining semantically precise.
+func configureFastForward(configA, configB *ebpf.Map, pair config.InterfacePair, inboundIdx, outboundIdx int) error {
 	key := make([]byte, 4)
 	value := make([]byte, 8)
 
@@ -422,16 +465,16 @@ func configureFastForward(configA, configB goebpf.Map, pair config.InterfacePair
 	}
 
 	// Write to both config maps so whichever is active sees the values
-	for _, m := range []goebpf.Map{configA, configB} {
+	for _, m := range []*ebpf.Map{configA, configB} {
 		binary.LittleEndian.PutUint32(key, ConfigFastForwardEnabled)
 		binary.LittleEndian.PutUint64(value, 1)
-		if err := m.Update(key, value); err != nil {
+		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to enable fast forward: %w", err)
 		}
 
 		binary.LittleEndian.PutUint32(key, ConfigFilterIfindex)
 		binary.LittleEndian.PutUint64(value, uint64(filterIdx))
-		if err := m.Update(key, value); err != nil {
+		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to set filter ifindex: %w", err)
 		}
 	}
@@ -440,9 +483,10 @@ func configureFastForward(configA, configB goebpf.Map, pair config.InterfacePair
 	return nil
 }
 
-// detachXDP removes XDP program from interface using ip command directly.
-// This bypasses goebpf's Detach() which is unreliable for dual-NIC mode
-// (GetProgramByName returns the same object, so p.ifname gets overwritten).
+// detachXDP removes any stale XDP program from an interface using the `ip`
+// command. Kept post-migration as a pre-attach cleanup helper for recovery
+// from crashes / kill -9 — see proposal §5.5. Normal-path detach is now
+// link.Close() on the shutdown-tracked Link objects.
 func detachXDP(ifname string) error {
 	return exec.Command("ip", "link", "set", ifname, "xdp", "off").Run()
 }

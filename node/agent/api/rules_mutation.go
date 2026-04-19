@@ -5,25 +5,32 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 
+	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-// isMapEntryMissing reports whether a goebpf map Delete returned ENOENT, which
+// isMapEntryMissing reports whether a map Delete returned ENOENT, which
 // happens when the key was never present. For lazily-populated maps such as
 // rl_states (written on first match, not on rule insert), ENOENT is the common
 // case for never-matched rules — not a real error.
+//
+// Post-migration: cilium/ebpf returns the typed sentinel ebpf.ErrKeyNotExist.
+// The goebpf string-match path is kept as a belt-and-braces fallback for any
+// transitional build that still links both libraries.
 func isMapEntryMissing(err error) bool {
 	if err == nil {
 		return false
 	}
-	// goebpf wraps the kernel errno as a plain string; on Linux ENOENT's
-	// strerror is "No such file or directory".
+	if errors.Is(err, ebpf.ErrKeyNotExist) {
+		return true
+	}
 	return strings.Contains(err.Error(), "No such file or directory")
 }
 
@@ -137,7 +144,7 @@ func (h *Handlers) AddRule(c *gin.Context) {
 	}
 
 	// Step 1: Insert new BPF entry (old entry still intact if different key)
-	if err := bl.Insert(keyBytes, valueBytes); err != nil {
+	if err := bl.Update(keyBytes, valueBytes, ebpf.UpdateNoExist); err != nil {
 		h.rulesMu.Unlock()
 		h.publishMu.Unlock()
 		h.syncMu.Unlock()
@@ -206,7 +213,7 @@ func (h *Handlers) AddRule(c *gin.Context) {
 				oldAction, _ := parseAction(oldStored.Action)
 				oldFlagsMask, oldFlagsValue, _ := parseTcpFlags(oldStored.TcpFlags)
 				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFlagsMask, TcpFlagsValue: oldFlagsValue, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-				if insErr := bl.Insert(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue)); insErr != nil {
+				if insErr := bl.Update(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddRule] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
 			}
@@ -491,7 +498,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 		}
 
 		// Insert new BPF entry FIRST (old still intact if different key)
-		if err := bl.Insert(p.keyBytes, p.valueBytes); err != nil {
+		if err := bl.Update(p.keyBytes, p.valueBytes, ebpf.UpdateNoExist); err != nil {
 			failed++
 			continue
 		}
@@ -575,7 +582,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 					if item.oldStored.Key != item.key {
 						oldAction, _ := parseAction(item.oldStored.Action)
 						oldValue := RuleValue{Action: oldAction, RateLimit: item.oldStored.RateLimit, PktLenMin: item.oldStored.PktLenMin, PktLenMax: item.oldStored.PktLenMax}
-						if insErr := bl.Insert(ruleKeyToBytes(item.oldStored.Key), ruleValueToBytes(oldValue)); insErr != nil {
+						if insErr := bl.Update(ruleKeyToBytes(item.oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 							log.Printf("[AddRulesBatch] WARN: best-effort rollback re-insert of old BPF entry failed (id=%s): %v", item.id, insErr)
 						}
 					}

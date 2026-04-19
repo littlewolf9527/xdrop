@@ -4,22 +4,28 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dropbox/goebpf"
+	"github.com/cilium/ebpf"
 )
 
-// fakeTrie is a minimal goebpf.Map implementation used only by Manager's
-// writeTrie / deleteTrie callers. Only Upsert and Delete are exercised; the
-// other interface methods panic if touched, forcing tests to fail loudly if a
-// new Manager code path uses them.
+// NEW-UT-03 (§8.1.2): compile-time assertion that `*ebpf.Map` satisfies
+// cidr.TrieWriter without an explicit adapter. If cilium/ebpf ever tightens
+// Put / Delete signatures, this breaks the test build (not the main binary),
+// giving early warning.
+var _ TrieWriter = (*ebpf.Map)(nil)
+
+// fakeTrie is a minimal cidr.TrieWriter implementation used by Manager's
+// writeTrie / deleteTrie call sites. Only Put and Delete are needed — a
+// two-method narrow interface (§5.3 / §5.7 of the migration proposal)
+// replaces the 19-method goebpf.Map mock we used to need.
 type fakeTrie struct {
 	entries map[string]struct{} // key-bytes hex → presence
 
 	// Injected failures
-	upsertErr error
+	putErr    error
 	deleteErr error
 
 	// Call counters for assertions
-	upsertCalls int
+	putCalls    int
 	deleteCalls int
 }
 
@@ -27,10 +33,10 @@ func newFakeTrie() *fakeTrie {
 	return &fakeTrie{entries: make(map[string]struct{})}
 }
 
-func (f *fakeTrie) Upsert(key, _ interface{}) error {
-	f.upsertCalls++
-	if f.upsertErr != nil {
-		return f.upsertErr
+func (f *fakeTrie) Put(key, _ interface{}) error {
+	f.putCalls++
+	if f.putErr != nil {
+		return f.putErr
 	}
 	f.entries[fmt.Sprintf("%v", key)] = struct{}{}
 	return nil
@@ -46,30 +52,6 @@ func (f *fakeTrie) Delete(key interface{}) error {
 }
 
 func (f *fakeTrie) len() int { return len(f.entries) }
-
-// Unused by Manager — panic if any new caller ever reaches them.
-func (f *fakeTrie) Create() error                          { panic("not implemented") }
-func (f *fakeTrie) GetFd() int                             { panic("not implemented") }
-func (f *fakeTrie) GetName() string                        { return "fake" }
-func (f *fakeTrie) GetType() goebpf.MapType                { return goebpf.MapTypeLPMTrie }
-func (f *fakeTrie) Close() error                           { return nil }
-func (f *fakeTrie) CloneTemplate() goebpf.Map              { panic("not implemented") }
-func (f *fakeTrie) Lookup(interface{}) ([]byte, error)     { panic("not implemented") }
-func (f *fakeTrie) LookupInt(interface{}) (int, error)     { panic("not implemented") }
-func (f *fakeTrie) LookupUint64(interface{}) (uint64, error) {
-	panic("not implemented")
-}
-func (f *fakeTrie) LookupString(interface{}) (string, error) { panic("not implemented") }
-func (f *fakeTrie) Insert(interface{}, interface{}) error    { panic("not implemented") }
-func (f *fakeTrie) Update(interface{}, interface{}) error    { panic("not implemented") }
-func (f *fakeTrie) GetNextKey(interface{}) ([]byte, error)   { panic("not implemented") }
-func (f *fakeTrie) GetNextKeyString(interface{}) (string, error) {
-	panic("not implemented")
-}
-func (f *fakeTrie) GetNextKeyInt(interface{}) (int, error) { panic("not implemented") }
-func (f *fakeTrie) GetNextKeyUint64(interface{}) (uint64, error) {
-	panic("not implemented")
-}
 
 // --- Tests ---
 
@@ -121,8 +103,8 @@ func TestReleaseSrcID_RefcountSemantics(t *testing.T) {
 	if _, err := m.AllocSrcID(testCIDR); err != nil {
 		t.Fatal(err)
 	}
-	if got := srcV4.upsertCalls; got != 1 {
-		t.Errorf("expected 1 trie upsert for 2 allocs of same CIDR, got %d", got)
+	if got := srcV4.putCalls; got != 1 {
+		t.Errorf("expected 1 trie put for 2 allocs of same CIDR, got %d", got)
 	}
 
 	// First release: refcount 2 → 1, trie untouched
@@ -225,17 +207,17 @@ func TestReleaseDstID_RefcountSemantics(t *testing.T) {
 func TestAllocDstID_TrieFailurePreservesIDCounter(t *testing.T) {
 	m, _, dstV4, _, _ := newTestManager()
 
-	dstV4.upsertErr = fmt.Errorf("injected upsert failure")
+	dstV4.putErr = fmt.Errorf("injected put failure")
 
 	if _, err := m.AllocDstID(testCIDR); err == nil {
-		t.Fatal("expected error when trie upsert fails")
+		t.Fatal("expected error when trie put fails")
 	}
 	if _, ok := m.GetDstID(testCIDR); ok {
-		t.Error("GetDstID has entry despite trie upsert failure")
+		t.Error("GetDstID has entry despite trie put failure")
 	}
 
 	// Retry after clearing injection
-	dstV4.upsertErr = nil
+	dstV4.putErr = nil
 	if _, err := m.AllocDstID(testCIDR); err != nil {
 		t.Fatalf("retry after cleared failure should succeed, got: %v", err)
 	}

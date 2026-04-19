@@ -14,7 +14,8 @@ type AgentState struct {
 // getAgentState returns a snapshot of the agent's in-memory state.
 //
 // Lock ordering (must not reverse):
-//   publishMu → rulesMu, publishMu → wlMu
+//
+//	publishMu → rulesMu, publishMu → wlMu
 //
 // activeSlot and activeRuleSlot are owned by publishMu (mutated inside
 // publishConfigUpdate and DoAtomicSync, both of which hold publishMu).

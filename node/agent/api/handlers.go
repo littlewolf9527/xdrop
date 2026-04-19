@@ -8,14 +8,14 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dropbox/goebpf"
+	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-func NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates goebpf.Map,
-	cidrBlacklist, cidrRlStates goebpf.Map, cidrMgr *cidr.Manager,
-	blacklistB, cidrBlacklistB goebpf.Map) *Handlers {
+func NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates *ebpf.Map,
+	cidrBlacklist, cidrRlStates *ebpf.Map, cidrMgr *cidr.Manager,
+	blacklistB, cidrBlacklistB *ebpf.Map) *Handlers {
 	h := &Handlers{
 		blacklist:         blacklist,
 		blacklistB:        blacklistB,
@@ -50,10 +50,12 @@ func NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rl
 		log.Fatalf("[NewHandlers] Failed to init config_b: %v", err)
 	}
 
-	// Set selector to point at A (slot 0)
+	// Set selector to point at A (slot 0). active_config is an ARRAY map
+	// so the slot always exists — Update(UpdateExist) is the strict §5.2
+	// translation of the pre-migration goebpf.Update (BPF_EXIST) semantics.
 	selKey := make([]byte, 4)
 	selValue := make([]byte, 8) // 0
-	if err := activeConfig.Update(selKey, selValue); err != nil {
+	if err := activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
 		log.Fatalf("[NewHandlers] Failed to init active_config selector: %v", err)
 	}
 
@@ -77,15 +79,18 @@ func (h *Handlers) Shutdown() {
 	stopSystemStatsSampler(h.sysStatsCache)
 }
 
-// initDynamicConfig initializes dynamic config items in one config map
-// Does not touch FF_ENABLED or FILTER_IFINDEX (written by main.go separately)
-func (h *Handlers) initDynamicConfig(m goebpf.Map) error {
+// initDynamicConfig initializes dynamic config items in one config map.
+// Does not touch FF_ENABLED or FILTER_IFINDEX (written by main.go separately).
+// config_a / config_b are ARRAY maps — all max_entries slots are pre-allocated
+// with zeros by the kernel, so Update(UpdateExist) always succeeds and
+// strictly reproduces the pre-migration goebpf.Update semantics per §5.2.
+func (h *Handlers) initDynamicConfig(m *ebpf.Map) error {
 	for _, idx := range []uint32{ConfigBlacklistCount, ConfigWhitelistCount, ConfigRuleBitmap,
 		ConfigCIDRRuleCount, ConfigCIDRBitmap, ConfigRuleMapSelector} {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, idx)
 		value := make([]byte, 8) // 0
-		if err := m.Update(key, value); err != nil {
+		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("failed to init config index %d: %w", idx, err)
 		}
 	}

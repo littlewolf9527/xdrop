@@ -22,11 +22,14 @@ func (h *Handlers) GetStats(c *gin.Context) {
 	for i := 0; i < 5; i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, uint32(i))
-		value, err := h.stats.Lookup(key)
-		if err == nil && len(value) > 0 {
-			total := uint64(0)
-			for j := 0; j+8 <= len(value); j += 8 {
-				total += binary.LittleEndian.Uint64(value[j:])
+		// stats is a PERCPU_ARRAY of u64 — cilium/ebpf returns one
+		// element per CPU in the slice; sum them for a global counter,
+		// preserving the pre-migration behaviour.
+		var perCPU []uint64
+		if err := h.stats.Lookup(key, &perCPU); err == nil {
+			var total uint64
+			for _, v := range perCPU {
+				total += v
 			}
 			current[i] = total
 		}

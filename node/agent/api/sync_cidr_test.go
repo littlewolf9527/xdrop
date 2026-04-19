@@ -5,52 +5,32 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dropbox/goebpf"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-// fakeTrie is a minimal goebpf.Map used only by cidr.Manager so these tests
-// can exercise addCIDRRuleFromSync without a real BPF environment.
-// Only Upsert and Delete are ever reached; other interface methods panic so
-// tests fail loudly if a new code path starts depending on them.
+// fakeTrie implements the cidr.TrieWriter narrow interface (§5.3 of the
+// migration proposal) so these tests can exercise addCIDRRuleFromSync without
+// a real BPF environment. Only Put and Delete are needed — we no longer have
+// to satisfy the 19-method goebpf.Map surface.
 type fakeTrie struct {
 	entries map[string]struct{}
 }
 
 func newFakeTrie() *fakeTrie { return &fakeTrie{entries: make(map[string]struct{})} }
 
-func (f *fakeTrie) Upsert(key, _ interface{}) error {
+func (f *fakeTrie) Put(key, _ interface{}) error {
 	f.entries[fmt.Sprintf("%v", key)] = struct{}{}
 	return nil
 }
+
 func (f *fakeTrie) Delete(key interface{}) error {
 	delete(f.entries, fmt.Sprintf("%v", key))
 	return nil
 }
-func (f *fakeTrie) Create() error                              { panic("unused") }
-func (f *fakeTrie) GetFd() int                                 { panic("unused") }
-func (f *fakeTrie) GetName() string                            { return "fake" }
-func (f *fakeTrie) GetType() goebpf.MapType                    { return goebpf.MapTypeLPMTrie }
-func (f *fakeTrie) Close() error                               { return nil }
-func (f *fakeTrie) CloneTemplate() goebpf.Map                  { panic("unused") }
-func (f *fakeTrie) Lookup(interface{}) ([]byte, error)         { panic("unused") }
-func (f *fakeTrie) LookupInt(interface{}) (int, error)         { panic("unused") }
-func (f *fakeTrie) LookupUint64(interface{}) (uint64, error)   { panic("unused") }
-func (f *fakeTrie) LookupString(interface{}) (string, error)   { panic("unused") }
-func (f *fakeTrie) Insert(interface{}, interface{}) error      { panic("unused") }
-func (f *fakeTrie) Update(interface{}, interface{}) error      { panic("unused") }
-func (f *fakeTrie) GetNextKey(interface{}) ([]byte, error)     { panic("unused") }
-func (f *fakeTrie) GetNextKeyString(interface{}) (string, error) {
-	panic("unused")
-}
-func (f *fakeTrie) GetNextKeyInt(interface{}) (int, error) { panic("unused") }
-func (f *fakeTrie) GetNextKeyUint64(interface{}) (uint64, error) {
-	panic("unused")
-}
 
 // newCIDRTestHandlers builds a Handlers with only the fields that
 // addCIDRRuleFromSync needs before CIDR allocation: the cidrMgr and the two
-// in-memory maps. All goebpf.Map fields stay nil because the rejection test
+// in-memory maps. BPF map fields stay nil because the rejection test
 // returns BEFORE any BPF access.
 func newCIDRTestHandlers() (*Handlers, *cidr.Manager) {
 	srcV4, dstV4 := newFakeTrie(), newFakeTrie()

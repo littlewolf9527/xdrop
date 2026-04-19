@@ -1,3 +1,5 @@
+//go:build linux
+
 // Phase 0 tool: capture the exact byte layout of LPM trie keys as produced
 // by `github.com/dropbox/goebpf`'s CreateLPMtrieKey + KeyValueToBytes path.
 //
@@ -6,8 +8,16 @@
 // cutover, xdrop's hand-rolled makeLPMv4Key / makeLPMv6Key functions must
 // produce byte-for-byte identical output.
 //
-// Usage:
-//   go run ./cmd/dump_lpm_keys > node/agent/cidr/testdata/lpm_keys_goebpf.json
+// Build tag `linux` (AUD-PH2-003 closure): goebpf transitively pulls
+// Linux-only syscall / sysinfo / netlink symbols that do not compile on
+// macOS / Windows. Without the tag, recursive `go test ./...` / `go vet`
+// from a developer machine fails on this helper even though it is never
+// executed there. Production / lab runs (Linux) build and work unchanged.
+//
+// Usage (run from node/agent — package path is relative to this go.mod):
+//
+//	cd node/agent
+//	go run ./cmd/dump_lpm_keys > cidr/testdata/lpm_keys_goebpf.json
 //
 // This tool is only meaningful while the goebpf import is still present;
 // it becomes obsolete after Phase 2 cutover and can then be deleted.

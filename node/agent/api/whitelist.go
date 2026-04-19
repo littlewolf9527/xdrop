@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -94,7 +95,7 @@ func (h *Handlers) AddWhitelist(c *gin.Context) {
 	}
 
 	// Step 1: Insert new BPF whitelist entry (old entry still intact if different key)
-	if err := h.whitelist.Insert(keyBytes, wlValue); err != nil {
+	if err := h.whitelist.Update(keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
 		h.wlMu.Unlock()
 		h.publishMu.Unlock()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to add whitelist: %v", err)})
@@ -135,7 +136,7 @@ func (h *Handlers) AddWhitelist(c *gin.Context) {
 			h.wlKeyIndex[*oldKey] = id
 			// Re-insert old BPF entry if it was deleted (best-effort restore)
 			if *oldKey != key {
-				if insErr := h.whitelist.Insert(ruleKeyToBytes(*oldKey), wlValue); insErr != nil {
+				if insErr := h.whitelist.Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddWhitelist] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
 			}
@@ -283,7 +284,7 @@ func (h *Handlers) AddWhitelistBatch(c *gin.Context) {
 		}
 
 		// Insert new BPF entry
-		if err := h.whitelist.Insert(p.keyBytes, wlValue); err != nil {
+		if err := h.whitelist.Update(p.keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
 			failed++
 			continue
 		}
@@ -340,7 +341,7 @@ func (h *Handlers) AddWhitelistBatch(c *gin.Context) {
 					h.wlEntries[item.id] = *item.oldKey
 					h.wlKeyIndex[*item.oldKey] = item.id
 					if *item.oldKey != item.key {
-						if insErr := h.whitelist.Insert(ruleKeyToBytes(*item.oldKey), wlValue); insErr != nil {
+						if insErr := h.whitelist.Update(ruleKeyToBytes(*item.oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
 							log.Printf("[AddWhitelistBatch] WARN: rollback re-insert failed (id=%s): %v", item.id, insErr)
 						}
 					}

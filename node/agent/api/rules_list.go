@@ -142,14 +142,16 @@ func (h *Handlers) ListRules(c *gin.Context) {
 		if e.isExact {
 			rule = h.storedRuleToRule(e.id, e.exactStored)
 			keyBytes := ruleKeyToBytes(e.exactStored.Key)
-			if valueBytes, err := h.activeBlacklist().Lookup(keyBytes); err == nil && len(valueBytes) >= 24 {
+			var valueBytes [32]byte // struct rule_value
+			if err := h.activeBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
 				matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
 				dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
 			}
 		} else {
 			rule = h.storedCIDRRuleToRule(e.id, e.cidrStored)
 			keyBytes := cidrRuleKeyToBytes(e.cidrStored.Key)
-			if valueBytes, err := h.activeCidrBlacklist().Lookup(keyBytes); err == nil && len(valueBytes) >= 24 {
+			var valueBytes [32]byte // struct rule_value
+			if err := h.activeCidrBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
 				matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
 				dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
 			}
@@ -230,7 +232,8 @@ func (h *Handlers) listAllRules(c *gin.Context) {
 		var matchCount, dropCount uint64
 
 		keyBytes := ruleKeyToBytes(stored.Key)
-		if valueBytes, err := h.activeBlacklist().Lookup(keyBytes); err == nil && len(valueBytes) >= 24 {
+		var valueBytes [32]byte // struct rule_value
+		if err := h.activeBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
 			matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
 			dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
 		}
@@ -244,7 +247,8 @@ func (h *Handlers) listAllRules(c *gin.Context) {
 		var matchCount, dropCount uint64
 
 		keyBytes := cidrRuleKeyToBytes(stored.Key)
-		if valueBytes, err := h.activeCidrBlacklist().Lookup(keyBytes); err == nil && len(valueBytes) >= 24 {
+		var valueBytes [32]byte // struct rule_value
+		if err := h.activeCidrBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
 			matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
 			dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
 		}

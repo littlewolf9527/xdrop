@@ -6,13 +6,74 @@
 package cidr
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
-
-	"github.com/dropbox/goebpf"
 )
+
+// TrieWriter is the narrow map interface the Manager needs for LPM trie
+// mutation. Extracted per proposal §5.3 / §5.7 so unit tests can inject a
+// two-method fake instead of having to satisfy the full `*ebpf.Map`
+// surface. `*ebpf.Map` satisfies this implicitly.
+type TrieWriter interface {
+	// Put creates or overwrites the trie entry (upsert semantics, matching
+	// the pre-migration goebpf Upsert call).
+	Put(key, value interface{}) error
+	// Delete removes the trie entry. Returns an error on missing key; the
+	// caller decides whether that is fatal.
+	Delete(key interface{}) error
+}
+
+// lpmV4Key mirrors the kernel `struct bpf_lpm_trie_key` for IPv4 (8 bytes:
+// 4-byte little-endian prefix length, 4-byte IP address in network byte
+// order). Layout must match goebpf's prior on-wire bytes exactly; see
+// node/agent/cidr/testdata/lpm_keys_goebpf.json for the ground-truth
+// fixture.
+type lpmV4Key struct {
+	PrefixLen uint32
+	Data      [4]byte
+}
+
+// lpmV6Key is the IPv6 variant (20 bytes: 4-byte LE prefix length, 16-byte
+// IPv6 address).
+type lpmV6Key struct {
+	PrefixLen uint32
+	Data      [16]byte
+}
+
+// makeLPMv4Key builds an IPv4 LPM trie key from a CIDR string.
+func makeLPMv4Key(cidr string) (lpmV4Key, error) {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return lpmV4Key{}, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+	}
+	ip4 := ipnet.IP.To4()
+	if ip4 == nil {
+		return lpmV4Key{}, fmt.Errorf("CIDR %q is not IPv4", cidr)
+	}
+	ones, _ := ipnet.Mask.Size()
+	var k lpmV4Key
+	k.PrefixLen = uint32(ones)
+	copy(k.Data[:], ip4)
+	return k, nil
+}
+
+// makeLPMv6Key builds an IPv6 LPM trie key from a CIDR string.
+func makeLPMv6Key(cidr string) (lpmV6Key, error) {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return lpmV6Key{}, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+	}
+	ip16 := ipnet.IP.To16()
+	if ip16 == nil {
+		return lpmV6Key{}, fmt.Errorf("CIDR %q is not IPv6", cidr)
+	}
+	ones, _ := ipnet.Mask.Size()
+	var k lpmV6Key
+	k.PrefixLen = uint32(ones)
+	copy(k.Data[:], ip16)
+	return k, nil
+}
 
 // Manager manages CIDR → ID mappings and LPM Trie operations.
 // IDs start from 1, 0 is reserved as wildcard/unmatched.
@@ -31,14 +92,15 @@ type Manager struct {
 
 	nextID uint32 // monotonically increasing, never reused
 
-	srcV4Trie goebpf.Map
-	dstV4Trie goebpf.Map
-	srcV6Trie goebpf.Map
-	dstV6Trie goebpf.Map
+	srcV4Trie TrieWriter
+	dstV4Trie TrieWriter
+	srcV6Trie TrieWriter
+	dstV6Trie TrieWriter
 }
 
 // NewManager creates a new CIDR Manager with trie map references.
-func NewManager(srcV4, dstV4, srcV6, dstV6 goebpf.Map) *Manager {
+// Production wiring passes four `*ebpf.Map` values; tests pass fakes.
+func NewManager(srcV4, dstV4, srcV6, dstV6 TrieWriter) *Manager {
 	return &Manager{
 		srcV4CIDRs: make(map[string]uint32),
 		dstV4CIDRs: make(map[string]uint32),
@@ -287,35 +349,54 @@ func CheckOverlap(newCIDR string, existingCIDRs []string) (string, error) {
 
 // ============ Internal helpers ============
 
-func (m *Manager) getSrcMaps(isV6 bool) (map[string]uint32, map[string]int, goebpf.Map) {
+func (m *Manager) getSrcMaps(isV6 bool) (map[string]uint32, map[string]int, TrieWriter) {
 	if isV6 {
 		return m.srcV6CIDRs, m.srcV6Refs, m.srcV6Trie
 	}
 	return m.srcV4CIDRs, m.srcV4Refs, m.srcV4Trie
 }
 
-func (m *Manager) getDstMaps(isV6 bool) (map[string]uint32, map[string]int, goebpf.Map) {
+func (m *Manager) getDstMaps(isV6 bool) (map[string]uint32, map[string]int, TrieWriter) {
 	if isV6 {
 		return m.dstV6CIDRs, m.dstV6Refs, m.dstV6Trie
 	}
 	return m.dstV4CIDRs, m.dstV4Refs, m.dstV4Trie
 }
 
-// writeTrie writes a CIDR → ID mapping to the LPM trie.
-// Uses goebpf.CreateLPMtrieKey for key construction.
-func (m *Manager) writeTrie(trie goebpf.Map, cidr string, id uint32, isV6 bool) error {
-	key := goebpf.CreateLPMtrieKey(cidr)
-
-	value := make([]byte, 4)
-	binary.LittleEndian.PutUint32(value, id)
-
-	return trie.Upsert(key, value)
+// writeTrie writes a CIDR → ID mapping to the LPM trie. Uses the hand-rolled
+// struct keys (see §5.4). cilium/ebpf's marshaller serialises the struct
+// into the kernel's bpf_lpm_trie_key layout (u32 LE prefix + IP bytes) —
+// byte-identical to goebpf's former encoding (verified in
+// cidr/testdata/lpm_keys_goebpf.json fixture).
+func (m *Manager) writeTrie(trie TrieWriter, cidr string, id uint32, isV6 bool) error {
+	if isV6 {
+		k, err := makeLPMv6Key(cidr)
+		if err != nil {
+			return err
+		}
+		return trie.Put(k, id)
+	}
+	k, err := makeLPMv4Key(cidr)
+	if err != nil {
+		return err
+	}
+	return trie.Put(k, id)
 }
 
 // deleteTrie removes a CIDR entry from the LPM trie.
-func (m *Manager) deleteTrie(trie goebpf.Map, cidr string, isV6 bool) error {
-	key := goebpf.CreateLPMtrieKey(cidr)
-	return trie.Delete(key)
+func (m *Manager) deleteTrie(trie TrieWriter, cidr string, isV6 bool) error {
+	if isV6 {
+		k, err := makeLPMv6Key(cidr)
+		if err != nil {
+			return err
+		}
+		return trie.Delete(k)
+	}
+	k, err := makeLPMv4Key(cidr)
+	if err != nil {
+		return err
+	}
+	return trie.Delete(k)
 }
 
 // isIPv6CIDR checks if a CIDR string is IPv6.

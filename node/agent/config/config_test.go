@@ -43,16 +43,16 @@ func TestValidate_RejectsPlaceholderKeys(t *testing.T) {
 
 func TestLooksLikePlaceholder(t *testing.T) {
 	cases := map[string]bool{
-		"":                     false,
-		"real-key-abcdef":      false,
-		"admin":                false,
-		"CHANGE_ME":            true,
-		"CHANGE_ME_NODE_KEY":   true,
-		"change-me":            true,
-		"changeme":             true,
-		"Changeme":             true,
-		"REPLACE_ME_SECRET":    true,
-		"replace_me":           true,
+		"":                   false,
+		"real-key-abcdef":    false,
+		"admin":              false,
+		"CHANGE_ME":          true,
+		"CHANGE_ME_NODE_KEY": true,
+		"change-me":          true,
+		"changeme":           true,
+		"Changeme":           true,
+		"REPLACE_ME_SECRET":  true,
+		"replace_me":         true,
 	}
 	for input, want := range cases {
 		if got := looksLikePlaceholder(input); got != want {

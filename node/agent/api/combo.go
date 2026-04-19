@@ -26,25 +26,25 @@ func validateComboType(comboType int) error {
 
 // Combo type constants (must match xdrop.h)
 const (
-	ComboExact5Tuple          = 0  // src_ip + dst_ip + src_port + dst_port + protocol
-	ComboWildcardSrcIP        = 1  // dst_ip + src_port + dst_port + protocol
-	ComboWildcardSrcIPPort    = 2  // dst_ip + dst_port + protocol
-	ComboDstIPProto           = 3  // dst_ip + protocol
-	ComboDstIPOnly            = 4  // dst_ip only
-	ComboProtoOnly            = 5  // protocol only
-	ComboSrcPortOnly          = 6  // src_port only
-	ComboDstPortOnly          = 7  // dst_port only
-	ComboSrcIPOnly            = 8  // src_ip only
-	ComboSrcIPProto           = 9  // src_ip + protocol
-	ComboSrcDstIP             = 10 // src_ip + dst_ip
-	ComboSrcIPDstPort         = 11 // src_ip + dst_port
-	ComboDstIPDstPort         = 12 // dst_ip + dst_port
-	ComboSrcDstIPProto        = 13 // src_ip + dst_ip + protocol
-	ComboSrcIPDstPortProto    = 14 // src_ip + dst_port + protocol
-	ComboSrcPortProto         = 15 // src_port + protocol
-	ComboDstPortProto         = 16 // dst_port + protocol
-	ComboSrcIPSrcPort         = 17 // src_ip + src_port
-	ComboSrcIPSrcPortProto    = 18 // src_ip + src_port + protocol
+	ComboExact5Tuple       = 0  // src_ip + dst_ip + src_port + dst_port + protocol
+	ComboWildcardSrcIP     = 1  // dst_ip + src_port + dst_port + protocol
+	ComboWildcardSrcIPPort = 2  // dst_ip + dst_port + protocol
+	ComboDstIPProto        = 3  // dst_ip + protocol
+	ComboDstIPOnly         = 4  // dst_ip only
+	ComboProtoOnly         = 5  // protocol only
+	ComboSrcPortOnly       = 6  // src_port only
+	ComboDstPortOnly       = 7  // dst_port only
+	ComboSrcIPOnly         = 8  // src_ip only
+	ComboSrcIPProto        = 9  // src_ip + protocol
+	ComboSrcDstIP          = 10 // src_ip + dst_ip
+	ComboSrcIPDstPort      = 11 // src_ip + dst_port
+	ComboDstIPDstPort      = 12 // dst_ip + dst_port
+	ComboSrcDstIPProto     = 13 // src_ip + dst_ip + protocol
+	ComboSrcIPDstPortProto = 14 // src_ip + dst_port + protocol
+	ComboSrcPortProto      = 15 // src_port + protocol
+	ComboDstPortProto      = 16 // dst_port + protocol
+	ComboSrcIPSrcPort      = 17 // src_ip + src_port
+	ComboSrcIPSrcPortProto = 18 // src_ip + src_port + protocol
 	// Note: combo 19 was removed (duplicate of ComboDstIPProto)
 	ComboDstIPDstPortProto    = 20 // dst_ip + dst_port + protocol
 	ComboSrcDstIPDstPort      = 21 // src_ip + dst_ip + dst_port

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
@@ -106,7 +107,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 	}
 
 	// Step 1: Insert new BPF entry (old entry still intact if different key)
-	if err := bl.Insert(keyBytes, valueBytes); err != nil {
+	if err := bl.Update(keyBytes, valueBytes, ebpf.UpdateNoExist); err != nil {
 		h.rulesMu.Unlock()
 		h.publishMu.Unlock()
 		h.syncMu.Unlock()
@@ -172,7 +173,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 				oldAction, _ := parseAction(oldStored.Action)
 				oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
 				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
-				if insErr := bl.Insert(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue)); insErr != nil {
+				if insErr := bl.Update(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddRuleFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
 			}
@@ -358,7 +359,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				PktLenMax:     r.PktLenMax,
 			}
 
-			if err := cidrShadow.Insert(cidrRuleKeyToBytes(ck), ruleValueToBytes(value)); err != nil {
+			if err := cidrShadow.Update(cidrRuleKeyToBytes(ck), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
 				if srcCIDR != "" {
 					h.cidrMgr.ReleaseSrcID(srcCIDR)
 				}
@@ -423,7 +424,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				PktLenMax:     r.PktLenMax,
 			}
 
-			if err := shadow.Insert(ruleKeyToBytes(key), ruleValueToBytes(value)); err != nil {
+			if err := shadow.Update(ruleKeyToBytes(key), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
 				failed++
 				continue
 			}
@@ -471,8 +472,11 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	for i := uint32(0); i < ConfigMapEntries; i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, i)
-		if value, err := activeConf.Lookup(key); err == nil {
-			shadowConf.Update(key, value)
+		var value [8]byte
+		if err := activeConf.Lookup(key, &value); err == nil {
+			// shadowConf is an ARRAY map → Update(UpdateExist) is the
+			// strict §5.2 translation of the prior goebpf.Update call.
+			shadowConf.Update(key, value[:], ebpf.UpdateExist)
 		}
 	}
 
@@ -507,7 +511,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		binary.LittleEndian.PutUint32(key, u.idx)
 		val := make([]byte, 8)
 		binary.LittleEndian.PutUint64(val, u.val)
-		if err := shadowConf.Update(key, val); err != nil {
+		if err := shadowConf.Update(key, val, ebpf.UpdateExist); err != nil {
 			// Release allocated CIDR IDs and abort
 			for _, stored := range newCidrRules {
 				if stored.SrcCIDR != "" {
@@ -528,7 +532,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	selKey := make([]byte, 4) // key = 0
 	selValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
-	if err := h.activeConfig.Update(selKey, selValue); err != nil {
+	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
 		// Release newly allocated CIDR IDs (they're in shared tries and can affect LPM behavior)
 		for _, stored := range newCidrRules {
 			if stored.SrcCIDR != "" {
@@ -660,7 +664,7 @@ func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
 	}
 
 	// Step 1: Insert new BPF entry (old entry still intact if different key)
-	if err := h.whitelist.Insert(keyBytes, wlValue); err != nil {
+	if err := h.whitelist.Update(keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
 		h.wlMu.Unlock()
 		h.publishMu.Unlock()
 		return fmt.Errorf("failed to insert whitelist: %w", err)
@@ -699,7 +703,7 @@ func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
 			h.wlKeyIndex[*oldKey] = id
 			// Re-insert old BPF entry if it was deleted (best-effort restore)
 			if *oldKey != key {
-				if insErr := h.whitelist.Insert(ruleKeyToBytes(*oldKey), wlValue); insErr != nil {
+				if insErr := h.whitelist.Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddWhitelistFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
 			}

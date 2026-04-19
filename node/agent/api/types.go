@@ -46,22 +46,22 @@ type XDPInterface struct {
 
 // XDPInfo reports the XDP operating mode and attached interfaces
 type XDPInfo struct {
-	Mode       string         `json:"mode"`       // "traditional" / "fast_forward"
+	Mode       string         `json:"mode"` // "traditional" / "fast_forward"
 	Interfaces []XDPInterface `json:"interfaces"`
 }
 
 // Stats represents global statistics
 type Stats struct {
-	TotalPackets       uint64  `json:"total_packets"`
-	DroppedPackets     uint64  `json:"dropped_packets"`
-	PassedPackets      uint64  `json:"passed_packets"`
-	WhitelistedPackets uint64  `json:"whitelisted_packets"`
-	RateLimitedPackets uint64  `json:"rate_limited_packets"`
-	RulesCount         int     `json:"rules_count"`
-	WhitelistCount     int     `json:"whitelist_count"`
-	DroppedPPS         float64 `json:"dropped_pps"`
-	PassedPPS          float64 `json:"passed_pps"`
-	TotalPPS           float64 `json:"total_pps"`
+	TotalPackets       uint64       `json:"total_packets"`
+	DroppedPackets     uint64       `json:"dropped_packets"`
+	PassedPackets      uint64       `json:"passed_packets"`
+	WhitelistedPackets uint64       `json:"whitelisted_packets"`
+	RateLimitedPackets uint64       `json:"rate_limited_packets"`
+	RulesCount         int          `json:"rules_count"`
+	WhitelistCount     int          `json:"whitelist_count"`
+	DroppedPPS         float64      `json:"dropped_pps"`
+	PassedPPS          float64      `json:"passed_pps"`
+	TotalPPS           float64      `json:"total_pps"`
 	System             *SystemStats `json:"system,omitempty"`
 	AgentState         *AgentState  `json:"agent_state,omitempty"`
 	XDPInfo            *XDPInfo     `json:"xdp_info,omitempty"`
