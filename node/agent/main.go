@@ -7,15 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	"github.com/gin-gonic/gin"
 	"github.com/littlewolf9527/xdrop/node/agent/api"
 	xdropbpf "github.com/littlewolf9527/xdrop/node/agent/bpf"
@@ -145,13 +142,17 @@ func main() {
 	// Interface manager for fast forward mode.
 	var ifMgr *ifmgr.InterfaceManager
 
-	// Track both the attached interface names (for logging + pre-detach on
-	// crash recovery) and the cilium Link objects that actually own the
-	// kernel-side attachment. Link.Close() on shutdown replaces the old
-	// shell-out to `ip link set ... xdp off` as the primary detach path
-	// (§5.5). detachXDP() is kept as a pre-attach stale-cleanup helper.
+	// Track both the attached interface names (for logging) and the
+	// resolved XDP links. Each ResolvedXDPLink wraps a cilium/ebpf
+	// link.Link plus pin metadata — Phase 4 may reuse an existing
+	// pinned link via LoadPinned + Update (zero gap), pin a fresh
+	// attach (Phase-3-equivalent state, zero gap on next restart), or
+	// fall back to fresh-unpinned (Phase-2-equivalent ~1.5s gap on
+	// next restart). Shutdown calls Link.Close() on each; pinned links
+	// stay alive in the kernel across process exit, unpinned links
+	// detach. See bpf/xdp_link.go.
 	var xdpAttachedIfaces []string
-	var xdpLinks []link.Link
+	var xdpLinks []*xdropbpf.ResolvedXDPLink
 
 	// Initialize API handlers before XDP attach so the signal handler can call
 	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not
@@ -175,18 +176,28 @@ func main() {
 		// Stop background samplers started by Handlers
 		handlers.Shutdown()
 
-		// Close each XDP link — this is what actually detaches the program
-		// from the kernel with cilium/ebpf. Iterate over both slices: the
-		// link list is the authoritative owner of the attachment, the iface
-		// list is only used for log messages.
-		for i, lnk := range xdpLinks {
+		// Close each XDP link. For pinned links (Phase 4), Close only drops
+		// the userspace fd — kernel-side attachment persists via the pin
+		// file, which is exactly what enables zero-gap restart on the next
+		// boot (LoadPinnedLink picks up the same link and Update()s the
+		// program pointer). For unpinned links, Close tears down the XDP
+		// attach. The iface list is only used for log messages.
+		for i, res := range xdpLinks {
 			ifaceLabel := ""
 			if i < len(xdpAttachedIfaces) {
 				ifaceLabel = xdpAttachedIfaces[i]
 			}
-			if err := lnk.Close(); err != nil {
+			pinned := res.PinPath != ""
+			if err := res.Link.Close(); err != nil {
 				log.Printf("Warning: failed to close XDP link for %s: %v", ifaceLabel, err)
-			} else if ifaceLabel != "" {
+				continue
+			}
+			if ifaceLabel == "" {
+				continue
+			}
+			if pinned {
+				log.Printf("XDP link fd released for %s (pin persists, next restart is zero-gap)", ifaceLabel)
+			} else {
 				log.Printf("XDP detached from %s", ifaceLabel)
 			}
 		}
@@ -251,37 +262,29 @@ func main() {
 			log.Fatalf("Failed to configure fast forward: %v", err)
 		}
 
-		// Pre-detach: clear any stale XDP programs left by a previous crash/kill -9.
-		// Error is expected when nothing is attached — we log at DEBUG level only.
-		if err := detachXDP(pair.Inbound); err != nil {
-			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", pair.Inbound, err)
-		}
-		if err := detachXDP(pair.Outbound); err != nil {
-			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", pair.Outbound, err)
-		}
-
-		// Attach XDP to inbound interface via cilium/ebpf link. Flags:0 gives
-		// kernel best-effort (auto-select driver vs generic) — matches the
-		// pre-migration goebpf XdpAttachModeNone default (§5.1 / AUD-MIG-001).
-		inLink, err := attachXDPLink(xdpProg, pair.Inbound)
+		// Attach XDP to inbound interface via the Phase 4 resolver. The
+		// resolver handles pre-detach internally when taking the fresh-
+		// attach branch, and skips pre-detach when reusing a pinned link
+		// (pre-detach in the reuse path would break zero-gap continuity).
+		inRes, err := resolveLink(xdpProg, pair.Inbound, cfg.BPF.Pinning)
 		if err != nil {
 			if rErr := ifMgr.RestoreAll(); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
-			log.Fatalf("Failed to attach XDP to %s: %v", pair.Inbound, err)
+			logXDPAttachFailure(pair.Inbound, err)
 		}
-		xdpLinks = append(xdpLinks, inLink)
+		xdpLinks = append(xdpLinks, inRes)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Inbound)
-		log.Printf("XDP program attached to %s (inbound)", pair.Inbound)
+		logXDPAttachOutcome(pair.Inbound, "inbound", inRes)
 
-		// Attach XDP to outbound interface. With cilium/ebpf each
-		// link.AttachXDP returns an independent Link object, so the dual-NIC
-		// detach correctness quirk we had with goebpf's shared program
-		// pointer no longer applies — we simply Close() each Link on exit.
-		outLink, err := attachXDPLink(xdpProg, pair.Outbound)
+		// Attach XDP to outbound interface. With cilium/ebpf each attach
+		// returns an independent Link, so the dual-NIC detach correctness
+		// quirk we had with goebpf's shared program pointer no longer
+		// applies.
+		outRes, err := resolveLink(xdpProg, pair.Outbound, cfg.BPF.Pinning)
 		if err != nil {
 			// Roll back the inbound attach before failing startup.
-			if cErr := inLink.Close(); cErr != nil {
+			if cErr := inRes.Link.Close(); cErr != nil {
 				log.Printf("[main] Warning: failed to close inbound XDP link while rolling back: %v", cErr)
 			}
 			// Drop the inbound link from the shutdown tracking list so the
@@ -291,27 +294,22 @@ func main() {
 			if rErr := ifMgr.RestoreAll(); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
-			log.Fatalf("Failed to attach XDP to %s: %v", pair.Outbound, err)
+			logXDPAttachFailure(pair.Outbound, err)
 		}
-		xdpLinks = append(xdpLinks, outLink)
+		xdpLinks = append(xdpLinks, outRes)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Outbound)
-		log.Printf("XDP program attached to %s (outbound)", pair.Outbound)
+		logXDPAttachOutcome(pair.Outbound, "outbound", outRes)
 
 	} else {
 		// === TRADITIONAL MODE ===
 		log.Println("Traditional mode (single interface)")
-		// Pre-detach: clear any stale XDP program left by a previous crash/kill -9.
-		// Error is expected when nothing is attached — we only log.
-		if err := detachXDP(cfg.Server.Interface); err != nil {
-			log.Printf("[main] pre-detach XDP from %s returned error (likely no program attached): %v", cfg.Server.Interface, err)
-		}
-		lnk, err := attachXDPLink(xdpProg, cfg.Server.Interface)
+		res, err := resolveLink(xdpProg, cfg.Server.Interface, cfg.BPF.Pinning)
 		if err != nil {
-			log.Fatalf("Failed to attach XDP to %s: %v", cfg.Server.Interface, err)
+			logXDPAttachFailure(cfg.Server.Interface, err)
 		}
-		xdpLinks = append(xdpLinks, lnk)
+		xdpLinks = append(xdpLinks, res)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, cfg.Server.Interface)
-		log.Printf("XDP program attached to %s", cfg.Server.Interface)
+		logXDPAttachOutcome(cfg.Server.Interface, "filter", res)
 	}
 
 	// Set XDP interface info for stats reporting (after XDP attach completed)
@@ -401,62 +399,57 @@ func main() {
 	}
 }
 
-// attachXDPLink wires the XDP program onto the named interface via
-// cilium/ebpf's link package. Flags: 0 requests kernel best-effort
-// (native if the driver supports it, generic otherwise) — this matches
-// the pre-migration goebpf XdpAttachModeNone default behaviour
-// (proposal §5.1 / AUD-MIG-001). Do NOT hardcode link.XDPGenericMode;
-// a future config knob cfg.XDP.Mode can override if operators need it.
+// resolveLink is the Phase 4 XDP attach entrypoint called from main().
+// It hands off to the bpf package's ResolveXDPLink, which runs the
+// LoadPinned+Update / fresh-attach+Pin / fresh-unpinned decision tree
+// gated on the bpf.pinning policy. The returned ResolvedXDPLink is
+// tracked in xdpLinks so the shutdown goroutine can Close() every fd.
 //
-// KERNEL FLOOR: cilium/ebpf v0.21.0's link.AttachXDP issues BPF_LINK_CREATE
-// with type BPF_LINK_TYPE_XDP, which landed in Linux 5.9. Phase 2 of the
-// goebpf→cilium/ebpf migration intentionally does NOT implement the pre-5.9
-// netlink-attach fallback described in §Phase 4.a of the proposal — the
-// audit closure for AUD-PH2-001 narrows the supported floor to 5.9+ on the
-// grounds that every current stable distro ships a recent-enough kernel
-// (Debian 11+, RHEL 9+, Ubuntu 20.04 HWE+). On older kernels the returned
-// error is wrapped with an explicit pointer at this comment so operators
-// don't have to guess.
-func attachXDPLink(xdpProg *ebpf.Program, ifname string) (link.Link, error) {
-	iface, err := net.InterfaceByName(ifname)
-	if err != nil {
-		return nil, fmt.Errorf("lookup interface %s: %w", ifname, err)
-	}
-	lnk, err := link.AttachXDP(link.XDPOptions{
-		Program:   xdpProg,
-		Interface: iface.Index,
-		// Flags: 0 (default) — best-effort / auto-select.
-	})
-	if err != nil {
-		if isXDPLinkUnsupported(err) {
-			return nil, fmt.Errorf(
-				"link.AttachXDP(%s) failed: %w\n\n"+
-					"  xdrop requires Linux 5.9+ for XDP attach (BPF_LINK_TYPE_XDP).\n"+
-					"  The pre-5.9 netlink fallback described in the migration\n"+
-					"  proposal §Phase 4.a is intentionally NOT implemented — closure\n"+
-					"  for AUD-PH2-001. Upgrade the host kernel or hold xdrop on the\n"+
-					"  prior v2.4.2 goebpf-based release.",
-				ifname, err)
-		}
-		return nil, fmt.Errorf("link.AttachXDP(%s): %w", ifname, err)
-	}
-	return lnk, nil
+// KERNEL FLOOR: cilium/ebpf v0.21.0's link.AttachXDP issues
+// BPF_LINK_CREATE with type BPF_LINK_TYPE_XDP, which landed in Linux
+// 5.9. The pre-5.9 netlink-attach fallback described in §Phase 4.a is
+// intentionally NOT implemented (AUD-PH2-001 closure) — every current
+// stable distro ships a recent-enough kernel. On older kernels the
+// resolver wraps the returned error with ErrLinkPinningUnsupported so
+// operators see the right diagnostic rather than a raw ENOTSUP.
+func resolveLink(xdpProg *ebpf.Program, ifname, pinningMode string) (*xdropbpf.ResolvedXDPLink, error) {
+	return xdropbpf.ResolveXDPLink(xdpProg, ifname, xdropbpf.Mode(pinningMode), xdropbpf.DefaultPinRoot)
 }
 
-// isXDPLinkUnsupported heuristically classifies an AttachXDP error as
-// "kernel lacks BPF_LINK_TYPE_XDP support". cilium/ebpf surfaces this via
-// ebpf.ErrNotSupported; older kernels can also return ENOTSUP / EOPNOTSUPP
-// directly. We deliberately do NOT match EINVAL (too ambiguous — many real
-// misuse cases also return EINVAL and we don't want false positives leading
-// operators to suspect the kernel when the fault is in xdrop config).
-func isXDPLinkUnsupported(err error) bool {
-	if errors.Is(err, ebpf.ErrNotSupported) {
-		return true
+// logXDPAttachOutcome emits a structured startup log line describing
+// what Phase 4 actually did for this interface. "reused" is the
+// zero-gap path (program swapped in-place on an existing pinned link);
+// "pinned" means fresh attach + newly pinned (zero-gap available on
+// next restart); "unpinned" means the Phase-2-equivalent fallback.
+func logXDPAttachOutcome(ifname, role string, res *xdropbpf.ResolvedXDPLink) {
+	switch {
+	case res.Reused:
+		log.Printf("XDP program updated in place on %s (%s, zero-gap link reuse via %s)", ifname, role, res.PinPath)
+	case res.PinPath != "":
+		log.Printf("XDP program attached and pinned on %s (%s, pin=%s)", ifname, role, res.PinPath)
+	default:
+		reason := res.DowngradeReason
+		if reason == "" {
+			reason = "link pinning disabled"
+		}
+		log.Printf("XDP program attached on %s (%s, unpinned — next restart will have a brief gap; reason: %s)",
+			ifname, role, reason)
 	}
-	if errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) {
-		return true
+}
+
+// logXDPAttachFailure logs+exits for a resolver error. Adds the kernel
+// hint when the error looks like pre-5.9 missing BPF_LINK_TYPE_XDP.
+func logXDPAttachFailure(ifname string, err error) {
+	if errors.Is(err, xdropbpf.ErrLinkPinningUnsupported) || xdropbpf.IsXDPLinkUnsupported(err) {
+		log.Fatalf(
+			"Failed to attach XDP to %s: %v\n\n"+
+				"  xdrop requires Linux 5.9+ for XDP attach (BPF_LINK_TYPE_XDP).\n"+
+				"  The pre-5.9 netlink fallback described in proposal §Phase 4.a is\n"+
+				"  intentionally NOT implemented (AUD-PH2-001 closure). Upgrade the\n"+
+				"  host kernel or hold xdrop on the prior v2.4.2 goebpf-based release.",
+			ifname, err)
 	}
-	return false
+	log.Fatalf("Failed to attach XDP to %s: %v", ifname, err)
 }
 
 // setupDevmap configures bidirectional interface mapping. DEVMAP is an
@@ -519,13 +512,12 @@ func configureFastForward(configA, configB *ebpf.Map, pair config.InterfacePair,
 	return nil
 }
 
-// detachXDP removes any stale XDP program from an interface using the `ip`
-// command. Kept post-migration as a pre-attach cleanup helper for recovery
-// from crashes / kill -9 — see proposal §5.5. Normal-path detach is now
-// link.Close() on the shutdown-tracked Link objects.
-func detachXDP(ifname string) error {
-	return exec.Command("ip", "link", "set", ifname, "xdp", "off").Run()
-}
+// Pre-attach stale-XDP cleanup via `ip link set ... xdp off` now lives
+// inside the bpf package's linkOps.PreDetach — the resolver decides
+// per-branch whether to call it (fresh attach: yes; link reuse: no,
+// because pre-detach would break zero-gap continuity on the reuse
+// path). Removed from main.go alongside attachXDPLink /
+// isXDPLinkUnsupported in Phase 4.
 
 // uint32ToBytes converts uint32 to little-endian byte slice
 func uint32ToBytes(v uint32) []byte {
