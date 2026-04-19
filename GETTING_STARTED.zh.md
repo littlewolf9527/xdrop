@@ -49,17 +49,24 @@ npm --version
 
 Node Agent 必须在 **Linux 主机**上编译和运行。
 
-### 1. Linux 内核 ≥ 5.4
+### 1. Linux 内核 ≥ 5.9
 
-XDP 需要内核 5.4 或更高版本。如需最佳性能（Native XDP 模式），推荐使用 5.10+。
+Node Agent 使用 `BPF_LINK_TYPE_XDP` 挂载 XDP 程序，该特性 2020-10 在
+Linux 5.9 落地。在更老的内核上 agent 会直接拒绝启动，并返回指向此
+要求的明确错误信息。
 
 ```bash
 uname -r
-# 期望输出：5.4.x 或更高
+# 期望输出：5.9.x 或更高
 ```
 
-> **内核 5.4–5.9**：XDP 可用，但仅支持 Generic（SKB）模式，性能较低。
+> **内核 5.9–5.10**：XDP 可用，但通常只支持 Generic（SKB）模式，性能较低。
 > **内核 5.10+**：大多数驱动支持 Native XDP 模式，**推荐使用**。
+>
+> **跑着老内核？** 请 pin 在 xdrop **v2.4.2** —— 那是最后一版走
+> netlink attach 路径的发布，支持 5.4 起的内核。v2.5+ 为什么不实现
+> pre-5.9 fallback 详见 `docs/proposals/goebpf-to-cilium-migration.md`
+> §Phase 4.a。
 
 ### 2. clang 和 llvm ≥ 11
 
@@ -108,13 +115,16 @@ ls /usr/src/linux-headers-$(uname -r)/
 
 > 若找不到精确匹配的版本，可安装最接近的版本并创建软链接。大多数情况下，安装通用的 `linux-headers-generic` 包即可正常编译 BPF 程序。
 
-### 5. Go ≥ 1.21
+### 5. Go ≥ 1.24
 
-与 Controller 要求相同。
+v2.5 起从 1.21 升到 1.24，因为 Node Agent 依赖的
+`github.com/cilium/ebpf@v0.21.0`（负责 BPF loader + link 生命周期管理）
+要求 Go 1.24。Controller 仍保持 1.21+ —— **只有 Node Agent 构建需要
+新工具链**。
 
 ```bash
 go version
-# 期望输出：go version go1.21.x linux/amd64
+# 期望输出：go version go1.24.x linux/amd64
 ```
 
 ### 6. 运行时需要 root 权限

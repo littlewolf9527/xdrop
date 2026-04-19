@@ -49,17 +49,25 @@ npm --version
 
 The Node Agent must be built and run on a **Linux host**.
 
-### 1. Linux Kernel ≥ 5.4
+### 1. Linux Kernel ≥ 5.9
 
-XDP requires kernel 5.4 or later. For best performance (native XDP mode), use kernel 5.10+.
+The node agent uses `BPF_LINK_TYPE_XDP` for XDP attach, which landed in
+Linux 5.9 (October 2020). On older kernels the agent refuses to start
+with a clear error message pointing to this requirement.
 
 ```bash
 uname -r
-# Expected: 5.4.x or higher
+# Expected: 5.9.x or higher
 ```
 
-> **Kernel 5.4–5.9**: XDP works but only in generic (SKB) mode — lower performance.
+> **Kernel 5.9–5.10**: XDP works but typically only in generic (SKB) mode — lower performance.
 > **Kernel 5.10+**: Native XDP mode available on most drivers — recommended.
+>
+> **Running an older kernel?** Pin to xdrop **v2.4.2**, the last release
+> that uses the netlink-based attach path and supports kernels down to
+> 5.4. See the Phase 2 migration note in
+> `docs/proposals/goebpf-to-cilium-migration.md` §Phase 4.a for why a
+> pre-5.9 fallback was intentionally not implemented in v2.5+.
 
 ### 2. clang and llvm ≥ 11
 
@@ -108,13 +116,16 @@ ls /usr/src/linux-headers-$(uname -r)/
 
 > If the exact version is unavailable, install the closest available version and create a symlink. Alternatively, most BPF programs compile fine with the generic `linux-headers-generic` package.
 
-### 5. Go ≥ 1.21
+### 5. Go ≥ 1.24
 
-Same as the Controller requirement.
+Bumped from 1.21 in v2.5 because `github.com/cilium/ebpf@v0.21.0`
+(used by the node agent for BPF loader + link management) requires
+Go 1.24. The Controller still targets 1.21+ — only the node agent
+build needs the newer toolchain.
 
 ```bash
 go version
-# Expected: go version go1.21.x linux/amd64
+# Expected: go version go1.24.x linux/amd64
 ```
 
 ### 6. Root access at runtime

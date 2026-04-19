@@ -114,10 +114,16 @@ xdrop/
 
 | 组件 | 要求 |
 |------|------|
-| Node Agent | Linux 内核 ≥ 5.4、clang ≥ 11、Go ≥ 1.21、root / CAP_NET_ADMIN |
+| Node Agent | Linux 内核 **≥ 5.9**、clang ≥ 11、Go ≥ 1.24、root / CAP_NET_ADMIN |
 | Controller | Go ≥ 1.21、Node.js ≥ 18（仅编译前端需要）——可运行于任意系统 |
 
 > Node Agent **必须运行在 Linux 上**（XDP 是 Linux 内核特性）。Controller 可部署在任意系统。
+
+> **内核门槛说明（v2.5+）**：Node Agent 使用 `BPF_LINK_TYPE_XDP` 挂载 XDP 程序，
+> 该特性 2020-10 在 Linux 5.9 落地。在 5.8 及以下内核启动会返回明确的错误信息指向
+> 此要求。主流发行版已满足：Debian 11+（5.10）、RHEL/Rocky/Alma 9+（5.14）、
+> Ubuntu 20.04 HWE / 22.04+（5.15+）。老内核用户请继续使用 xdrop **v2.4.2**
+> （最后一版基于 netlink attach 的发布）直到完成升级。
 
 详细的环境准备步骤请参见**[准备工作](GETTING_STARTED.zh.md)**。
 

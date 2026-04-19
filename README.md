@@ -114,10 +114,18 @@ xdrop/
 
 | Component | Requirement |
 |-----------|-------------|
-| Node Agent | Linux kernel ≥ 5.4, clang ≥ 11, Go ≥ 1.21, root / CAP_NET_ADMIN |
+| Node Agent | Linux kernel **≥ 5.9**, clang ≥ 11, Go ≥ 1.24, root / CAP_NET_ADMIN |
 | Controller | Go ≥ 1.21, Node.js ≥ 18 (build only) — runs on any OS |
 
 > The node agent **must run on Linux** (XDP is a Linux kernel feature). The controller can be deployed anywhere.
+
+> **Kernel floor note (v2.5+):** the node agent uses `BPF_LINK_TYPE_XDP` for
+> XDP attach, which landed in Linux 5.9 (October 2020). On older kernels
+> (5.8 and below) startup fails with a clear error message pointing to
+> this requirement. Modern distros are covered: Debian 11+ (5.10),
+> RHEL/Rocky/Alma 9+ (5.14), Ubuntu 20.04 HWE / 22.04+ (5.15+). Operators
+> on legacy kernels should hold on xdrop **v2.4.2** (the last release
+> using the netlink attach path) until they can upgrade.
 
 For a step-by-step environment setup guide, see **[Getting Started](GETTING_STARTED.md)**.
 
