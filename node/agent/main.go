@@ -283,9 +283,15 @@ func main() {
 		// applies.
 		outRes, err := resolveLink(xdpProg, pair.Outbound, cfg.BPF.Pinning)
 		if err != nil {
-			// Roll back the inbound attach before failing startup.
-			if cErr := inRes.Link.Close(); cErr != nil {
-				log.Printf("[main] Warning: failed to close inbound XDP link while rolling back: %v", cErr)
+			// Roll back the inbound attach before failing startup. Must
+			// use ForceDetach, not Link.Close: if the inbound link is
+			// pinned (Phase 4), a plain Close only drops the userspace
+			// fd and the pin keeps the kernel-side XDP attached — we'd
+			// exit fatally with inbound XDP still live and no agent
+			// tracking it. ForceDetach unpins first so the refcount
+			// actually hits zero.
+			if dErr := inRes.ForceDetach(); dErr != nil {
+				log.Printf("[main] Warning: failed to tear down inbound XDP link during rollback: %v", dErr)
 			}
 			// Drop the inbound link from the shutdown tracking list so the
 			// EXIT handler doesn't try to Close() it twice.
@@ -437,16 +443,37 @@ func logXDPAttachOutcome(ifname, role string, res *xdropbpf.ResolvedXDPLink) {
 	}
 }
 
-// logXDPAttachFailure logs+exits for a resolver error. Adds the kernel
-// hint when the error looks like pre-5.9 missing BPF_LINK_TYPE_XDP.
+// logXDPAttachFailure logs+exits for a resolver error. Splits into
+// three categories so the operator-facing hint points at the actual
+// cause rather than a hardcoded "upgrade your kernel":
+//
+//  1. pre-5.9 kernel (AttachXDP returned ErrNotSupported / ENOTSUP /
+//     EOPNOTSUPP): emit the Linux 5.9+ / BPF_LINK_TYPE_XDP hint.
+//  2. other ErrLinkPinningUnsupported (bpffs not mounted, MkdirAll
+//     EPERM, Pin() EPERM in require mode, etc.): emit a pin-layer
+//     diagnostic pointing at bpffs / permissions, NOT a kernel hint —
+//     those failures happen on fully-supported modern kernels and the
+//     kernel hint would actively mislead.
+//  3. anything else: generic "attach failed" message.
 func logXDPAttachFailure(ifname string, err error) {
-	if errors.Is(err, xdropbpf.ErrLinkPinningUnsupported) || xdropbpf.IsXDPLinkUnsupported(err) {
+	if xdropbpf.IsXDPLinkUnsupported(err) {
 		log.Fatalf(
 			"Failed to attach XDP to %s: %v\n\n"+
 				"  xdrop requires Linux 5.9+ for XDP attach (BPF_LINK_TYPE_XDP).\n"+
 				"  The pre-5.9 netlink fallback described in proposal §Phase 4.a is\n"+
 				"  intentionally NOT implemented (AUD-PH2-001 closure). Upgrade the\n"+
 				"  host kernel or hold xdrop on the prior v2.4.2 goebpf-based release.",
+			ifname, err)
+	}
+	if errors.Is(err, xdropbpf.ErrLinkPinningUnsupported) {
+		log.Fatalf(
+			"Failed to attach XDP to %s: %v\n\n"+
+				"  bpf.pinning=require but link pinning could not be enabled. This\n"+
+				"  is NOT a kernel-version problem — AttachXDP itself succeeded.\n"+
+				"  Likely causes: /sys/fs/bpf is not mounted as bpffs, EPERM on\n"+
+				"  /sys/fs/bpf/xdrop/, or Pin() rejected for another reason.\n"+
+				"  Check `stat -f -c '%%T' /sys/fs/bpf` (expect bpf_fs), verify the\n"+
+				"  agent runs as root, or set bpf.pinning=auto to downgrade silently.",
 			ifname, err)
 	}
 	log.Fatalf("Failed to attach XDP to %s: %v", ifname, err)

@@ -32,8 +32,10 @@ type fakeLink struct {
 	name       string
 	updateErr  error
 	pinErr     error
+	unpinErr   error
 	closeErr   error
 	closed     bool
+	unpinned   bool
 	updateArgs []*ebpf.Program
 	pinArgs    []string
 }
@@ -43,6 +45,7 @@ func (f *fakeLink) Update(p *ebpf.Program) error {
 	return f.updateErr
 }
 func (f *fakeLink) Pin(path string) error { f.pinArgs = append(f.pinArgs, path); return f.pinErr }
+func (f *fakeLink) Unpin() error          { f.unpinned = true; return f.unpinErr }
 func (f *fakeLink) Close() error          { f.closed = true; return f.closeErr }
 
 // fakeOps is a scripted linkOps implementation. Each call records its
@@ -432,6 +435,72 @@ func TestLinkPinPathFor_Stable(t *testing.T) {
 		if got := LinkPinPathFor(c.root, c.iface); got != c.want {
 			t.Errorf("LinkPinPathFor(%q, %q) = %q, want %q", c.root, c.iface, got, c.want)
 		}
+	}
+}
+
+// -- ForceDetach (rollback safety) ---------------------------------------
+
+// ForceDetach on a pinned link MUST Unpin before Close so the kernel-
+// side attachment actually goes away. A plain Close on a pinned link
+// only drops the userspace fd and leaves XDP attached, which would
+// turn a fast-forward startup rollback into a silent XDP leak.
+func TestForceDetach_PinnedLink_UnpinsThenCloses(t *testing.T) {
+	l := &fakeLink{name: "pinned"}
+	res := &ResolvedXDPLink{Link: l, PinPath: "/sys/fs/bpf/xdrop/link_ens38"}
+	if err := res.ForceDetach(); err != nil {
+		t.Fatalf("ForceDetach returned error: %v", err)
+	}
+	if !l.unpinned {
+		t.Error("pinned link was not Unpinned by ForceDetach — kernel attachment would leak")
+	}
+	if !l.closed {
+		t.Error("link was not Closed by ForceDetach")
+	}
+}
+
+// ForceDetach on an unpinned link MUST NOT call Unpin (nothing to
+// unpin, calling would return an error the caller doesn't need).
+func TestForceDetach_UnpinnedLink_OnlyCloses(t *testing.T) {
+	l := &fakeLink{name: "unpinned"}
+	res := &ResolvedXDPLink{Link: l, PinPath: ""}
+	if err := res.ForceDetach(); err != nil {
+		t.Fatalf("ForceDetach returned error: %v", err)
+	}
+	if l.unpinned {
+		t.Error("unpinned link had Unpin called — wasted work + spurious error surface")
+	}
+	if !l.closed {
+		t.Error("link was not Closed by ForceDetach")
+	}
+}
+
+// Unpin failure must not prevent Close from running — we want every
+// tear-down step attempted on the unhappy path.
+func TestForceDetach_UnpinErrorStillCloses(t *testing.T) {
+	l := &fakeLink{name: "pinned", unpinErr: fmt.Errorf("unpin boom")}
+	res := &ResolvedXDPLink{Link: l, PinPath: "/sys/fs/bpf/xdrop/link_ens38"}
+	err := res.ForceDetach()
+	if err == nil {
+		t.Fatal("expected error from Unpin failure")
+	}
+	if !strings.Contains(err.Error(), "unpin boom") {
+		t.Errorf("error should mention unpin cause, got %v", err)
+	}
+	if !l.closed {
+		t.Error("Unpin failure must not short-circuit Close — got !closed")
+	}
+}
+
+// Nil receiver and nil Link are both no-ops — rollback code paths
+// may reach ForceDetach with partial state and shouldn't panic.
+func TestForceDetach_NilSafe(t *testing.T) {
+	var r *ResolvedXDPLink
+	if err := r.ForceDetach(); err != nil {
+		t.Errorf("nil receiver: got err %v, want nil", err)
+	}
+	r = &ResolvedXDPLink{Link: nil}
+	if err := r.ForceDetach(); err != nil {
+		t.Errorf("nil Link: got err %v, want nil", err)
 	}
 }
 

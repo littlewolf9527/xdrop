@@ -24,7 +24,49 @@ check_root() {
 }
 
 is_running() {
-    pgrep -f "xdrop-agent" &>/dev/null
+    # -x matches the process name exactly (against /proc/<pid>/comm).
+    # The earlier -f form matched any command line containing
+    # "xdrop-agent" — including the very bash invoking this script —
+    # which caused false "already running" positives during `restart`
+    # and `start` races. Stick with -x.
+    pgrep -x xdrop-agent &>/dev/null
+}
+
+# agent_pid prints the single running agent PID, or empty if none.
+# Uses the same exact-match rule as is_running.
+agent_pid() {
+    pgrep -x xdrop-agent 2>/dev/null | head -1
+}
+
+# sweep_link_pins removes any /sys/fs/bpf/xdrop/link_* files so the
+# corresponding XDP attachments detach from their interfaces. Safe
+# when no pins exist. Called only from `stop`, NOT from `restart` —
+# keeping the pins alive across restart is what gives Phase 4 its
+# zero-gap program-swap behaviour (LoadPinnedLink + Update on the
+# next start).
+sweep_link_pins() {
+    shopt -s nullglob
+    local pins=( /sys/fs/bpf/xdrop/link_* )
+    shopt -u nullglob
+    (( ${#pins[@]} )) || return 0
+    for p in "${pins[@]}"; do
+        info "Unlinking pinned XDP link: $p"
+        rm -f "$p"
+    done
+}
+
+# kill_agent_process kills the agent binary without touching pin files.
+# Shared between `stop` (which then sweeps pins) and `restart` (which
+# preserves pins for zero-gap reattach).
+kill_agent_process() {
+    if is_running; then
+        info "Stopping agent (PID $(agent_pid))..."
+        pkill -x xdrop-agent || true
+        sleep 1
+        is_running && pkill -9 -f "xdrop-agent" || true
+    else
+        warn "Agent is not running"
+    fi
 }
 
 do_start() {
@@ -33,7 +75,7 @@ do_start() {
     [[ -f "$CONFIG"    ]] || die "Config not found: $CONFIG — copy config.example.yaml and edit it"
 
     if is_running; then
-        warn "Agent already running (PID $(pgrep -f xdrop-agent))"
+        warn "Agent already running (PID $(agent_pid))"
         return 0
     fi
 
@@ -44,7 +86,7 @@ do_start() {
     sleep 2
 
     if is_running; then
-        info "Agent started (PID $(pgrep -f xdrop-agent))"
+        info "Agent started (PID $(agent_pid))"
         info "Logs: $LOG_FILE"
     else
         die "Agent failed to start — check $LOG_FILE\n$(tail -20 "$LOG_FILE" 2>/dev/null)"
@@ -53,15 +95,25 @@ do_start() {
 
 do_stop() {
     check_root
-    if is_running; then
-        info "Stopping agent (PID $(pgrep -f xdrop-agent))..."
-        pkill -f "xdrop-agent" || true
-        sleep 1
-        is_running && pkill -9 -f "xdrop-agent" || true
-        info "Stopped"
-    else
-        warn "Agent is not running"
-    fi
+    kill_agent_process
+    # Since v2.5 (Phase 4 link pinning) the agent can leave a pinned
+    # XDP link behind — `Link.Close()` during graceful shutdown only
+    # drops the userspace fd, kernel XDP stays attached via the pin
+    # file. That's the feature that makes restart zero-gap, but it
+    # means `stop` alone would leave packet filtering active with no
+    # process tracking it — a confusing semantic for operators. So
+    # `stop` explicitly sweeps the pins too. Use `restart` if you
+    # actually want the pin preserved across a process cycle.
+    sweep_link_pins
+    info "Stopped (agent killed, XDP link pins swept)"
+}
+
+# do_stop_keep_pins is the restart-time stop: kill the process but
+# leave /sys/fs/bpf/xdrop/link_* in place so the next start takes the
+# zero-gap LoadPinnedLink + Update path instead of a fresh attach.
+do_stop_keep_pins() {
+    check_root
+    kill_agent_process
 }
 
 do_status() {
@@ -70,7 +122,7 @@ do_status() {
     echo ""
 
     if is_running; then
-        echo -e "  Process : ${GREEN}running${NC} (PID $(pgrep -f xdrop-agent))"
+        echo -e "  Process : ${GREEN}running${NC} (PID $(agent_pid))"
     else
         echo -e "  Process : ${RED}stopped${NC}"
         echo ""
@@ -107,15 +159,16 @@ CMD="${1:-}"
 case "$CMD" in
     start)   do_start ;;
     stop)    do_stop ;;
-    restart) do_stop; sleep 1; do_start ;;
+    restart) do_stop_keep_pins; sleep 1; do_start ;;
     status)  do_status ;;
     logs)    do_logs ;;
     *)
         echo "Usage: $0 {start|stop|restart|status|logs}"
         echo ""
         echo "  start    Start node agent (requires root)"
-        echo "  stop     Stop node agent"
-        echo "  restart  Stop then start"
+        echo "  stop     Stop node agent AND detach XDP (sweeps link pins)"
+        echo "  restart  Stop process only, then start — preserves link"
+        echo "           pins for Phase 4 zero-gap attachment"
         echo "  status   Show process, API health and XDP state"
         echo "  logs     Tail live log output"
         echo ""

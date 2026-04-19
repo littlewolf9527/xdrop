@@ -55,11 +55,11 @@ func LinkPinPathFor(pinRoot, ifname string) string {
 }
 
 // XDPLink is the narrow surface of a cilium/ebpf link.Link that Phase 4
-// cares about: atomic program swap, pin, close. Declared here rather
-// than reusing link.Link directly because link.Link has an unexported
-// marker method (isLink) that prevents external packages (including
-// tests) from synthesising fakes. The real link.Link satisfies this
-// interface naturally by method-set match.
+// cares about: atomic program swap, pin, unpin, close. Declared here
+// rather than reusing link.Link directly because link.Link has an
+// unexported marker method (isLink) that prevents external packages
+// (including tests) from synthesising fakes. The real link.Link
+// satisfies this interface naturally by method-set match.
 type XDPLink interface {
 	// Update atomically swaps the attached program bytecode for prog.
 	// This is the zero-gap path — no XDP detach/reattach on the iface.
@@ -68,6 +68,12 @@ type XDPLink interface {
 	// a reference to the link independent of this process's fd, so the
 	// link survives across agent restart.
 	Pin(path string) error
+	// Unpin drops the bpffs reference previously added by Pin. After
+	// Unpin + Close the link's refcount hits zero and the kernel-side
+	// XDP attachment is torn down. Used by ForceDetach on abnormal exit
+	// paths (startup rollback) where we explicitly do NOT want the
+	// attachment to survive.
+	Unpin() error
 	// Close releases this process's fd on the link. If the link has
 	// been Pin()ed the kernel-side attachment survives; otherwise
 	// Close() tears down the XDP attach as well.
@@ -78,7 +84,10 @@ type XDPLink interface {
 // the Link in their shutdown-tracking slice and invoke Close() during
 // graceful shutdown regardless of Pinned — Close on a pinned link only
 // drops the userspace fd, the kernel-side attachment stays alive thanks
-// to the pin file (that's the whole point of Phase 4).
+// to the pin file (that's the whole point of Phase 4). Abnormal exit
+// paths (startup rollback, forced detach) should call ForceDetach()
+// instead — it unlinks the pin BEFORE closing so the kernel-side
+// attachment goes with us.
 type ResolvedXDPLink struct {
 	// Link is the live XDP link. Never nil when error is nil.
 	Link XDPLink
@@ -93,6 +102,32 @@ type ResolvedXDPLink struct {
 	EffectiveMode Mode
 	// DowngradeReason is non-empty when EffectiveMode != requested Mode.
 	DowngradeReason string
+}
+
+// ForceDetach tears down the XDP attachment unconditionally — if the
+// link is pinned it Unpins first so the bpffs reference is released,
+// then Close drops the fd and the kernel-side refcount hits zero.
+// Intended for startup rollback and other error paths where leaving a
+// pinned XDP program attached without an owning agent would be worse
+// than briefly losing the filter. The graceful-shutdown path uses a
+// plain Link.Close() instead so the pin survives into the next boot.
+//
+// Returns the first error encountered, but still best-effort calls
+// every tear-down step so a failure in one doesn't prevent the rest.
+func (r *ResolvedXDPLink) ForceDetach() error {
+	if r == nil || r.Link == nil {
+		return nil
+	}
+	var firstErr error
+	if r.PinPath != "" {
+		if err := r.Link.Unpin(); err != nil {
+			firstErr = fmt.Errorf("unpin %s: %w", r.PinPath, err)
+		}
+	}
+	if err := r.Link.Close(); err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("close link: %w", err)
+	}
+	return firstErr
 }
 
 // ErrLinkPinningUnsupported is returned by ResolveXDPLink when
