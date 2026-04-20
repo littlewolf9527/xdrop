@@ -65,7 +65,7 @@ X-API-Key: <external_api_key>
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.1.1",
+  "version": "2.5.0",
   "status": "running"
 }
 ```

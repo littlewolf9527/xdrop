@@ -46,7 +46,7 @@ X-API-Key: <node_api_key>
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.1.1",
+  "version": "2.5.0",
   "status": "running",
   "features": ["ipv4", "ipv6", "rate_limit"]
 }

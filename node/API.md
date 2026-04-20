@@ -46,7 +46,7 @@ All endpoints return JSON. Errors return an appropriate HTTP status code with:
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.1.1",
+  "version": "2.5.0",
   "status": "running",
   "features": ["ipv4", "ipv6", "rate_limit"]
 }

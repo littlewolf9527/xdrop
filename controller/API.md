@@ -65,7 +65,7 @@ Successful responses return `200 OK` with a JSON body. Errors return an appropri
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.1.1",
+  "version": "2.5.0",
   "status": "running"
 }
 ```
