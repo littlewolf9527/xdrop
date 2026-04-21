@@ -63,6 +63,7 @@
       "srcPort": "源端口",
       "dstPort": "目标端口",
       "protocol": "协议",
+      "decoder": "解码器",
       "action": "动作",
       "rateLimit": "限速 (pps)",
       "pktLen": "包长度 (字节)",
@@ -80,7 +81,13 @@
       "tcp": "TCP",
       "udp": "UDP",
       "icmp": "ICMP",
-      "icmpv6": "ICMPv6"
+      "icmpv6": "ICMPv6",
+      "igmp": "IGMP",
+      "gre": "GRE",
+      "esp": "ESP"
+    },
+    "decoders": {
+      "none": "无（使用协议字段）"
     },
     "ipType": {
       "src": "作为源 IP",
@@ -183,6 +190,7 @@
     "batchSuccess": "成功添加 {n} 条",
     "pktLenHint": "L3 (IP层) 包长度，单位字节。0 表示不限制",
     "tcpFlagsHint": "例如 SYN,!ACK（匹配不含 ACK 的 SYN 包）。支持: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
+    "decoderHint": "语法糖，由 Controller 展开。选择后协议/TCP 标志字段会被清空且不能再手填。bad_fragment 与 invalid 需要显式指定源/目标 IP 或 CIDR；bad_fragment 在 v1.3 仅支持 IPv4。",
     "pktLenOnlyNotAllowed": "纯长度规则不允许：请至少指定一个五元组字段（IP/端口/协议）",
     "invalidLenRange": "长度范围无效：最小值不能大于最大值",
     "invalidCIDR": "CIDR 格式无效，请使用如: 10.0.0.0/8"

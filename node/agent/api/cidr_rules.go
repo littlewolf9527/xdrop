@@ -109,6 +109,7 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 		Action:        action,
 		TcpFlagsMask:  flagsMask,
 		TcpFlagsValue: flagsValue,
+		MatchAnomaly:  req.MatchAnomaly,
 		RateLimit:     req.RateLimit,
 		PktLenMin:     req.PktLenMin,
 		PktLenMax:     req.PktLenMax,
@@ -203,14 +204,15 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 		h.cidrComboRefCount[comboType]++
 	}
 	h.cidrRules[id] = StoredCIDRRule{
-		Key:       ck,
-		SrcCIDR:   srcCIDR,
-		DstCIDR:   dstCIDR,
-		Action:    req.Action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
-		TcpFlags:  req.TcpFlags,
+		Key:          ck,
+		SrcCIDR:      srcCIDR,
+		DstCIDR:      dstCIDR,
+		Action:       req.Action,
+		RateLimit:    req.RateLimit,
+		PktLenMin:    req.PktLenMin,
+		PktLenMax:    req.PktLenMax,
+		TcpFlags:     req.TcpFlags,
+		MatchAnomaly: req.MatchAnomaly,
 	}
 	h.cidrRuleKeyIndex[ck] = id
 
@@ -365,6 +367,7 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		Action:        action,
 		TcpFlagsMask:  sfm,
 		TcpFlagsValue: sfv,
+		MatchAnomaly:  rule.MatchAnomaly,
 		RateLimit:     rule.RateLimit,
 		PktLenMin:     rule.PktLenMin,
 		PktLenMax:     rule.PktLenMax,
@@ -456,14 +459,15 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		h.cidrComboRefCount[comboType]++
 	}
 	h.cidrRules[id] = StoredCIDRRule{
-		Key:       ck,
-		SrcCIDR:   srcCIDR,
-		DstCIDR:   dstCIDR,
-		Action:    rule.Action,
-		RateLimit: rule.RateLimit,
-		PktLenMin: rule.PktLenMin,
-		PktLenMax: rule.PktLenMax,
-		TcpFlags:  rule.TcpFlags,
+		Key:          ck,
+		SrcCIDR:      srcCIDR,
+		DstCIDR:      dstCIDR,
+		Action:       rule.Action,
+		RateLimit:    rule.RateLimit,
+		PktLenMin:    rule.PktLenMin,
+		PktLenMax:    rule.PktLenMax,
+		TcpFlags:     rule.TcpFlags,
+		MatchAnomaly: rule.MatchAnomaly,
 	}
 	h.cidrRuleKeyIndex[ck] = id
 

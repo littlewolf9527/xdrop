@@ -20,12 +20,15 @@ type Rule struct {
 	PktLenMin int        `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
 	PktLenMax int        `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
 	TcpFlags  string     `json:"tcp_flags,omitempty"`   // TCP flags filter (e.g. "SYN,!ACK")
-	Source    string     `json:"source,omitempty"`
-	Comment   string     `json:"comment,omitempty"`
-	Enabled   bool       `json:"enabled"`
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	// MatchAnomaly is a bitmask (bit0=bad_fragment bit1=invalid). 0=don't
+	// check (default; legacy rules behave unchanged). v2.6 Phase 4.
+	MatchAnomaly int        `json:"match_anomaly,omitempty"`
+	Source       string     `json:"source,omitempty"`
+	Comment      string     `json:"comment,omitempty"`
+	Enabled      bool       `json:"enabled"`
+	CreatedAt    time.Time  `json:"created_at"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // RuleRequest add/update rule request
@@ -43,9 +46,21 @@ type RuleRequest struct {
 	PktLenMin int    `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
 	PktLenMax int    `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
 	TcpFlags  *string `json:"tcp_flags,omitempty"`   // TCP flags filter; pointer for tri-state: nil=omit, ""=clear, "SYN"=set
-	ExpiresIn string  `json:"expires_in,omitempty"`  // "1h", "30m", "24h"
-	Source    string `json:"source,omitempty"`
-	Comment   string `json:"comment,omitempty"`
+	// Decoder is an input-only syntactic sugar (v2.6 Phase 2). When set, the
+	// service layer's normalizeDecoder expands it into protocol / tcp_flags
+	// / match_anomaly before storage. Rule.Protocol / Rule.TcpFlags /
+	// Rule.MatchAnomaly are what persists — the GET response never exposes a
+	// Decoder field.
+	// Allowed values: tcp_ack / tcp_rst / tcp_fin (v1.3 Tier 1), bad_fragment
+	// / invalid (v2.6 Phase 4). Mutually exclusive with the underlying fields.
+	Decoder string `json:"decoder,omitempty"`
+	// MatchAnomaly is normally set via Decoder. Explicit input is rejected by
+	// normalizeDecoder as mutually exclusive with decoder (prevents silent
+	// drift). 0=don't check.
+	MatchAnomaly int     `json:"match_anomaly,omitempty"`
+	ExpiresIn    string  `json:"expires_in,omitempty"` // "1h", "30m", "24h"
+	Source       string  `json:"source,omitempty"`
+	Comment      string  `json:"comment,omitempty"`
 }
 
 // ToNodeRule converts to Node API format
@@ -86,6 +101,9 @@ func (r *Rule) ToNodeRule() map[string]interface{} {
 	}
 	if r.DstCIDR != "" {
 		rule["dst_cidr"] = r.DstCIDR
+	}
+	if r.MatchAnomaly != 0 {
+		rule["match_anomaly"] = r.MatchAnomaly
 	}
 	return rule
 }

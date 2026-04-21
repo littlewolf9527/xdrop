@@ -38,13 +38,13 @@ func ruleValueToBytes(v RuleValue) []byte {
 	b[0] = v.Action
 	b[1] = v.TcpFlagsMask
 	b[2] = v.TcpFlagsValue
-	// b[3] is pad (zero)
+	b[3] = v.MatchAnomaly // v2.6 Phase 4: previously pad
 	binary.LittleEndian.PutUint32(b[4:], v.RateLimit)
 	binary.LittleEndian.PutUint64(b[8:], v.MatchCount)
 	binary.LittleEndian.PutUint64(b[16:], v.DropCount)
 	binary.LittleEndian.PutUint16(b[24:], v.PktLenMin)
 	binary.LittleEndian.PutUint16(b[26:], v.PktLenMax)
-	// b[28:32] is pad2 (zeros)
+	// b[28:32] is pad2 (zeros, reserved for future anomaly widening)
 	return b
 }
 

@@ -17,6 +17,13 @@ import (
 // wlCountDelta: whitelist count increment (most calls pass 0)
 // cidrCountDelta: CIDR blacklist count increment (most calls pass 0)
 //
+// v2.6.1 Phase 4 B5: anomaly rule count is NOT passed as a delta. Instead,
+// this function recomputes it from the authoritative in-memory rule store
+// (h.rules + h.cidrRules) on every publish. This avoids counter drift
+// bugs and keeps the delta contract minimal. The BPF config slot
+// CONFIG_ANOMALY_RULE_COUNT is what xdp_firewall's tail_call dispatch
+// gate reads.
+//
 // Returns error on failure; caller must rollback memory state and not proceed with BPF map writes.
 func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta int64) error {
 	shadow := h.shadowMap()
@@ -126,6 +133,21 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 		}
 	}
 
+	// 2f. v2.6.1 Phase 4 B5: anomaly rule count (absolute, not delta).
+	// Count rules with MatchAnomaly != 0 across both exact blacklist
+	// (h.rules) and CIDR blacklist (h.cidrRules). The BPF main program
+	// reads this on every lookup miss to decide whether to tail_call
+	// into xdp_anomaly_verify. When 0, the tail_call dispatch is
+	// skipped — hot path stays zero-cost (§7.8.4).
+	anomalyCount := h.countAnomalyRulesLocked()
+	anomalyKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(anomalyKey, ConfigAnomalyRuleCount)
+	anomalyValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(anomalyValue, uint64(anomalyCount))
+	if err := shadow.Update(anomalyKey, anomalyValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow anomaly count: %w", err)
+	}
+
 	// Step 3: Atomically switch active selector
 	newSlot := 1 - h.activeSlot
 	selKey := make([]byte, 4) // key = 0
@@ -154,6 +176,41 @@ func (h *Handlers) shadowMap() *ebpf.Map {
 		return h.configB
 	}
 	return h.configA
+}
+
+// countAnomalyRulesLocked returns the total number of rules (exact + CIDR)
+// where MatchAnomaly != 0. Caller must hold h.rulesMu (at least for read),
+// and in practice also publishMu since this is called from
+// publishConfigUpdate. The counter is recomputed on every publish — absolute
+// value, not delta — so concurrent counter drift bugs are structurally
+// impossible. Cost is O(N) but N is the rule count which is small relative
+// to per-packet cost; acceptable for the mutation path.
+//
+// v2.6.1 Phase 4 B5. Reads StoredRule.MatchAnomaly + StoredCIDRRule.MatchAnomaly
+// which are populated at rule insertion time (rules_mutation.go / sync.go /
+// cidr_rules.go — all 5 construction sites carry req.MatchAnomaly through to
+// the stored struct).
+//
+// SAFETY: The returned count is stored as a uint64 in the config map.
+// If the count exceeds uint64 max, there's a bigger problem than this.
+func (h *Handlers) countAnomalyRulesLocked() uint64 {
+	// Note: we don't need to re-acquire rulesMu because publishConfigUpdate's
+	// callers already serialize via publishMu and mutate h.rules atomically
+	// with publish. If this invariant is ever violated (caller forgets to
+	// hold the lock chain), counter might read a torn value — but same
+	// risk already applies to countEntries / bitmap reads in publish.
+	var count uint64
+	for _, r := range h.rules {
+		if r.MatchAnomaly != 0 {
+			count++
+		}
+	}
+	for _, r := range h.cidrRules {
+		if r.MatchAnomaly != 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // activeBlacklist returns the currently active blacklist BPF map (Phase 4.2 dual rule map)

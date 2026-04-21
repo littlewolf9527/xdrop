@@ -116,9 +116,9 @@ func (h *Handlers) initDynamicConfig(m *ebpf.Map) error {
 func (h *Handlers) Welcome(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":     "XDrop Agent",
-		"version":  "2.5.0",
+		"version":  "2.6.1",
 		"status":   "running",
-		"features": []string{"ipv4", "ipv6", "rate_limit"},
+		"features": []string{"ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"},
 	})
 }
 

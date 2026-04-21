@@ -38,6 +38,11 @@ type RuleRepository interface {
 	DeleteExpired() (int, error)
 	Exists(srcIP, dstIP string, srcPort, dstPort int, protocol string) (bool, error)
 	CIDRExists(srcCIDR, dstCIDR string, srcPort, dstPort int, protocol string) (bool, error)
+	// GetByTuple / GetByCIDRTuple return the rule matching the given 5-tuple
+	// (exact IP or CIDR respectively), or (nil, nil) when none exists.
+	// Used by v2.6.1 anomaly merge path (proposal §7.2.1).
+	GetByTuple(srcIP, dstIP string, srcPort, dstPort int, protocol string) (*model.Rule, error)
+	GetByCIDRTuple(srcCIDR, dstCIDR string, srcPort, dstPort int, protocol string) (*model.Rule, error)
 	ListSrcCIDRs() ([]string, error)
 	ListDstCIDRs() ([]string, error)
 }

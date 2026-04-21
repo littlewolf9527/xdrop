@@ -105,6 +105,7 @@ func (h *Handlers) AddRule(c *gin.Context) {
 		Action:        action,
 		TcpFlagsMask:  flagsMask,
 		TcpFlagsValue: flagsValue,
+		MatchAnomaly:  req.MatchAnomaly,
 		RateLimit:     req.RateLimit,
 		PktLenMin:     req.PktLenMin,
 		PktLenMax:     req.PktLenMax,
@@ -180,12 +181,13 @@ func (h *Handlers) AddRule(c *gin.Context) {
 		h.comboRefCount[comboType]++
 	}
 	h.rules[id] = StoredRule{
-		Key:       key,
-		Action:    req.Action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
-		TcpFlags:  req.TcpFlags,
+		Key:          key,
+		Action:       req.Action,
+		RateLimit:    req.RateLimit,
+		PktLenMin:    req.PktLenMin,
+		PktLenMax:    req.PktLenMax,
+		TcpFlags:     req.TcpFlags,
+		MatchAnomaly: req.MatchAnomaly,
 	}
 	h.ruleKeyIndex[key] = id
 
@@ -380,15 +382,16 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 
 	// Pre-validate and prepare exact rules
 	type preparedRule struct {
-		id         string
-		key        RuleKey
-		keyBytes   []byte
-		valueBytes []byte
-		action     string
-		rateLimit  uint32
-		pktLenMin  uint16
-		pktLenMax  uint16
-		tcpFlags   string
+		id           string
+		key          RuleKey
+		keyBytes     []byte
+		valueBytes   []byte
+		action       string
+		rateLimit    uint32
+		pktLenMin    uint16
+		pktLenMax    uint16
+		tcpFlags     string
+		matchAnomaly uint8
 	}
 	prepared := make([]preparedRule, 0, len(exactRules))
 
@@ -442,6 +445,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			Action:        action,
 			TcpFlagsMask:  bfm,
 			TcpFlagsValue: bfv,
+			MatchAnomaly:  r.MatchAnomaly,
 			RateLimit:     r.RateLimit,
 			PktLenMin:     r.PktLenMin,
 			PktLenMax:     r.PktLenMax,
@@ -454,15 +458,16 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 
 		normalizedFlags := tcpFlagsToString(bfm, bfv)
 		p := preparedRule{
-			id:         id,
-			key:        key,
-			keyBytes:   ruleKeyToBytes(key),
-			valueBytes: ruleValueToBytes(value),
-			action:     r.Action,
-			rateLimit:  r.RateLimit,
-			pktLenMin:  r.PktLenMin,
-			pktLenMax:  r.PktLenMax,
-			tcpFlags:   normalizedFlags,
+			id:           id,
+			key:          key,
+			keyBytes:     ruleKeyToBytes(key),
+			valueBytes:   ruleValueToBytes(value),
+			action:       r.Action,
+			rateLimit:    r.RateLimit,
+			pktLenMin:    r.PktLenMin,
+			pktLenMax:    r.PktLenMax,
+			tcpFlags:     normalizedFlags,
+			matchAnomaly: r.MatchAnomaly,
 		}
 
 		// If same ID already seen in this batch, replace it (keep last occurrence)
@@ -538,12 +543,13 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 			h.comboRefCount[comboType]++
 		}
 		h.rules[p.id] = StoredRule{
-			Key:       p.key,
-			Action:    p.action,
-			RateLimit: p.rateLimit,
-			PktLenMin: p.pktLenMin,
-			PktLenMax: p.pktLenMax,
-			TcpFlags:  p.tcpFlags,
+			Key:          p.key,
+			Action:       p.action,
+			RateLimit:    p.rateLimit,
+			PktLenMin:    p.pktLenMin,
+			PktLenMax:    p.pktLenMax,
+			TcpFlags:     p.tcpFlags,
+			MatchAnomaly: p.matchAnomaly,
 		}
 		h.ruleKeyIndex[p.key] = p.id
 		succeeded = append(succeeded, succeededItem{id: p.id, key: p.key, comboType: comboType, keyBytes: p.keyBytes, isReplacement: isReplacement, oldStored: oldStored})

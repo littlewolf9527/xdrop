@@ -198,13 +198,28 @@
           </el-col>
         </el-row>
         <el-form-item :label="$t('rules.form.protocol')">
-          <el-select v-model="form.protocol" :placeholder="$t('rules.protocols.all')" style="width: 100%">
+          <el-select v-model="form.protocol" :placeholder="$t('rules.protocols.all')" style="width: 100%"
+                     :disabled="!!form.decoder">
             <el-option :label="$t('rules.protocols.all')" value="" />
             <el-option :label="$t('rules.protocols.tcp')" value="tcp" />
             <el-option :label="$t('rules.protocols.udp')" value="udp" />
             <el-option :label="$t('rules.protocols.icmp')" value="icmp" />
             <el-option :label="$t('rules.protocols.icmpv6')" value="icmpv6" />
+            <el-option :label="$t('rules.protocols.igmp')" value="igmp" />
+            <el-option :label="$t('rules.protocols.gre')" value="gre" />
+            <el-option :label="$t('rules.protocols.esp')" value="esp" />
           </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('rules.form.decoder')">
+          <el-select v-model="form.decoder" :placeholder="$t('rules.decoders.none')" clearable style="width: 100%">
+            <el-option :label="$t('rules.decoders.none')" value="" />
+            <el-option label="tcp_ack" value="tcp_ack" />
+            <el-option label="tcp_rst" value="tcp_rst" />
+            <el-option label="tcp_fin" value="tcp_fin" />
+            <el-option label="bad_fragment" value="bad_fragment" />
+            <el-option label="invalid" value="invalid" />
+          </el-select>
+          <div class="form-hint">{{ $t('messages.decoderHint') }}</div>
         </el-form-item>
         <el-form-item :label="$t('rules.form.action')">
           <el-radio-group v-model="form.action">
@@ -329,6 +344,7 @@ const form = ref({
   src_port: 0,
   dst_port: 0,
   protocol: '',
+  decoder: '',
   action: 'drop',
   rate_limit: 1000,
   pkt_len_min: 0,
@@ -433,7 +449,7 @@ const showAddDialog = () => {
   form.value = {
     src_mode: 'ip', dst_mode: 'ip',
     src_ip: '', dst_ip: '', src_cidr: '', dst_cidr: '',
-    src_port: 0, dst_port: 0, protocol: '', action: 'drop',
+    src_port: 0, dst_port: 0, protocol: '', decoder: '', action: 'drop',
     rate_limit: 1000, pkt_len_min: 0, pkt_len_max: 0, tcp_flags: '', comment: ''
   }
   dialogVisible.value = true
@@ -488,12 +504,19 @@ const addRule = async () => {
     // Other fields
     if (f.src_port) data.src_port = f.src_port
     if (f.dst_port) data.dst_port = f.dst_port
-    if (f.protocol) data.protocol = f.protocol
+    if (f.decoder) {
+      // Decoder is syntactic sugar — Controller expands it into protocol /
+      // tcp_flags / match_anomaly. Do NOT also send raw protocol/tcp_flags
+      // (Controller would reject as mutually exclusive, §7.4.1).
+      data.decoder = f.decoder
+    } else {
+      if (f.protocol) data.protocol = f.protocol
+      if (f.tcp_flags) data.tcp_flags = f.tcp_flags
+    }
     data.action = f.action
     if (f.action === 'rate_limit') data.rate_limit = f.rate_limit
     if (f.pkt_len_min) data.pkt_len_min = f.pkt_len_min
     if (f.pkt_len_max) data.pkt_len_max = f.pkt_len_max
-    if (f.tcp_flags) data.tcp_flags = f.tcp_flags
     if (f.comment) data.comment = f.comment
 
     await rulesApi.create(data)

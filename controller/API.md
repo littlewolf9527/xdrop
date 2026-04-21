@@ -65,7 +65,7 @@ Successful responses return `200 OK` with a JSON body. Errors return an appropri
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.5.0",
+  "version": "2.6.1",
   "status": "running"
 }
 ```
@@ -263,10 +263,19 @@ Create a rule. Triggers an immediate sync to all nodes.
 | `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
 | `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
 | `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
+| `decoder` | string | No | **v2.6+ syntactic sugar.** Expands to underlying `protocol` / `tcp_flags` / `match_anomaly` before storage. Allowed values: `tcp_ack`, `tcp_rst`, `tcp_fin` (Phase 2), `bad_fragment`, `invalid` (Phase 4 anomaly). Mutually exclusive with `protocol`, `tcp_flags`, and `match_anomaly` — setting any of them together → 400. Not returned on `GET /rules` (always replaced by expanded underlying fields). |
+| `match_anomaly` | integer | No | **v2.6+ anomaly bitmask** — `bit0=bad_fragment (0x01)`, `bit1=invalid (0x02)`. Typically set via `decoder` sugar; explicit input is rejected when `decoder` is also set. `0` = legacy behavior (don't check anomaly bits). |
 | `name` | string | No | Label |
 | `comment` | string | No | Notes |
 | `source` | string | No | Origin label |
 | `expires_in` | string | No | Relative expiry, e.g. `1h`, `30m`, `24h` |
+
+**v2.6+ decoder / anomaly semantics**:
+
+- **Anomaly action restriction**: anomaly rules (any non-zero `match_anomaly`, whether set directly or via `decoder=bad_fragment|invalid`) only support `action=drop`. Sending `action=rate_limit` with an anomaly decoder returns 400 with stable diagnosis substring `does not support action=rate_limit` / `anomaly rules are drop-only`.
+- **IPv6 scope guard**: `decoder=bad_fragment` is rejected with 400 when any target field (`src_ip`/`dst_ip`/`src_cidr`/`dst_cidr`) is IPv6 — v1.3 BPF does not detect IPv6 fragment anomalies. Stable diagnosis substring: `not supported for IPv6 target in v1.3` / `deferred to v1.4`. `decoder=invalid` is allowed on IPv6 (direct-TCP doff<5 check works).
+- **Anomaly rule merge**: POSTing two anomaly rules with the same 5-tuple + same `action=drop` but different `decoder` (e.g. first `bad_fragment`, then `invalid`) merges the `match_anomaly` bitmask onto the existing rule (`0x01 | 0x02 = 0x03`) and returns the same rule ID — no 409 conflict, no duplicate row. BatchCreate does NOT merge (falls back to legacy UNIQUE conflict semantics). `PUT` replaces `match_anomaly` atomically, does not merge.
+- **Anomaly + non-anomaly on same tuple**: creating an anomaly rule on a tuple that already has a non-anomaly rule → 409 conflict (operator must resolve the intent explicitly).
 
 **Response `200`:**
 

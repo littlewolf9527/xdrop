@@ -46,9 +46,9 @@ All endpoints return JSON. Errors return an appropriate HTTP status code with:
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.5.0",
+  "version": "2.6.1",
   "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit"]
+  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"]
 }
 ```
 
@@ -79,6 +79,7 @@ All endpoints return JSON. Errors return an appropriate HTTP status code with:
 | `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
 | `pkt_len_max` | integer | Maximum L3 packet length in bytes. `0` = disabled |
 | `tcp_flags` | string | TCP flags filter (e.g. `SYN`, `SYN,ACK`, `RST`). Requires `protocol=tcp` |
+| `match_anomaly` | integer | **v2.6+.** Anomaly bitmask (`0x01=bad_fragment`, `0x02=invalid`). `0` = legacy no-op. Rules with non-zero `match_anomaly` are processed by `xdp_anomaly_verify` tail-called program |
 | `comment` | string | Free-text note |
 | `stats` | RuleStats | Per-rule match/drop counters (included in list responses) |
 
@@ -192,6 +193,7 @@ Add a rule. Triggers AtomicSync (double-buffer config publish).
 | `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
 | `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
 | `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
+| `match_anomaly` | integer | No | **v2.6+.** Anomaly bitmask — `bit0=bad_fragment (0x01)`, `bit1=invalid (0x02)`. `0` = don't check (legacy). Non-zero triggers tail_call dispatch to `xdp_anomaly_verify`. The Node Agent accepts this field directly on sync from the Controller (after the Controller's `decoder` sugar has been expanded — Node never sees a `decoder` field). Anomaly rules must use `action=drop`; `action=rate_limit` with non-zero `match_anomaly` is accepted by the Node (contract boundary is Controller's `normalizeDecoder`) but the dataplane maps it to `XDP_DROP` as a safety net. |
 | `comment` | string | No | Notes |
 
 **Response `200`:**

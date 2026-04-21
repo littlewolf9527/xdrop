@@ -8,12 +8,15 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-// Protocol constants
+// Protocol constants (IANA protocol numbers).
 const (
 	ProtoAll    = 0
 	ProtoICMP   = 1
+	ProtoIGMP   = 2  // v2.6 Phase 1: IGMP (IANA)
 	ProtoTCP    = 6
 	ProtoUDP    = 17
+	ProtoGRE    = 47 // v2.6 Phase 1: GRE (IANA)
+	ProtoESP    = 50 // v2.6 Phase 1: ESP (IANA)
 	ProtoICMPv6 = 58
 )
 
@@ -36,7 +39,11 @@ const (
 	ConfigCIDRBitmap         = 7
 	// ConfigCIDRBitmapValid (8) is reserved, no longer used in double-buffer mode
 	ConfigRuleMapSelector = 9 // 0=A, 1=B (dual rule map Phase 4.2)
-	ConfigMapEntries      = 10
+	// v2.6.1 Phase 4 B5: counts rules with MatchAnomaly != 0 across
+	// exact + CIDR blacklist. Non-zero gates main program's tail_call
+	// dispatch into xdp_anomaly_verify. MUST match xdrop.h CONFIG_ANOMALY_RULE_COUNT.
+	ConfigAnomalyRuleCount = 10
+	ConfigMapEntries       = 11
 )
 
 // IPAddr represents a 128-bit IP address (IPv4-mapped or native IPv6)
@@ -52,19 +59,29 @@ type RuleKey struct {
 	Pad      [3]uint8
 }
 
-// RuleValue matches the BPF struct rule_value (32 bytes)
+// RuleValue matches the BPF struct rule_value (32 bytes).
+// v2.6 Phase 4: MatchAnomaly reuses the pad byte at offset 3 — struct size
+// stays 32 bytes so upgrades don't trigger Phase 3 schema-drift auto-wipe
+// (see proposal xsight-v13-decoder-adaptation.md §7.2.0).
 type RuleValue struct {
 	Action        uint8
 	TcpFlagsMask  uint8 // TCP flags mask (0=don't check)
 	TcpFlagsValue uint8 // TCP flags expected value
-	Pad           uint8
+	MatchAnomaly  uint8 // v2.6 Phase 4: bit0=bad_fragment bit1=invalid (0=don't check)
 	RateLimit     uint32
 	MatchCount    uint64
 	DropCount     uint64
 	PktLenMin     uint16   // Minimum L3 packet length (0=no limit)
 	PktLenMax     uint16   // Maximum L3 packet length (0=no limit)
-	Pad2          [4]uint8 // Padding for 32-byte alignment
+	Pad2          [4]uint8 // Padding for 32-byte alignment (reserved)
 }
+
+// Anomaly bits for RuleValue.MatchAnomaly and runtime packet anomaly bitmap.
+// Must stay in sync with xdrop.h ANOMALY_* defines.
+const (
+	AnomalyBadFragment uint8 = 0x01
+	AnomalyInvalid     uint8 = 0x02
+)
 
 // CIDRRuleKey matches the BPF struct cidr_rule_key (16 bytes)
 type CIDRRuleKey struct {
@@ -78,24 +95,26 @@ type CIDRRuleKey struct {
 
 // StoredRule stores both key and value for API display
 type StoredRule struct {
-	Key       RuleKey
-	Action    string
-	RateLimit uint32
-	PktLenMin uint16
-	PktLenMax uint16
-	TcpFlags  string // human-readable: "SYN,!ACK" etc
+	Key          RuleKey
+	Action       string
+	RateLimit    uint32
+	PktLenMin    uint16
+	PktLenMax    uint16
+	TcpFlags     string // human-readable: "SYN,!ACK" etc
+	MatchAnomaly uint8  // v2.6.1 Phase 4 B5: 0 = not anomaly rule; non-zero = anomaly bitmask
 }
 
 // StoredCIDRRule stores CIDR rule info for API display and deletion
 type StoredCIDRRule struct {
-	Key       CIDRRuleKey
-	SrcCIDR   string // original CIDR string (normalized)
-	DstCIDR   string
-	Action    string
-	RateLimit uint32
-	PktLenMin uint16
-	PktLenMax uint16
-	TcpFlags  string
+	Key          CIDRRuleKey
+	SrcCIDR      string // original CIDR string (normalized)
+	DstCIDR      string
+	Action       string
+	RateLimit    uint32
+	PktLenMin    uint16
+	PktLenMax    uint16
+	TcpFlags     string
+	MatchAnomaly uint8 // v2.6.1 Phase 4 B5
 }
 
 // Handlers holds the BPF maps and rule storage

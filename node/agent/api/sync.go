@@ -21,17 +21,18 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 
 	// Convert to internal Rule format
 	req := Rule{
-		ID:        rule.ID,
-		SrcIP:     rule.SrcIP,
-		DstIP:     rule.DstIP,
-		SrcPort:   rule.SrcPort,
-		DstPort:   rule.DstPort,
-		Protocol:  rule.Protocol,
-		Action:    rule.Action,
-		RateLimit: rule.RateLimit,
-		PktLenMin: rule.PktLenMin,
-		PktLenMax: rule.PktLenMax,
-		TcpFlags:  rule.TcpFlags,
+		ID:           rule.ID,
+		SrcIP:        rule.SrcIP,
+		DstIP:        rule.DstIP,
+		SrcPort:      rule.SrcPort,
+		DstPort:      rule.DstPort,
+		Protocol:     rule.Protocol,
+		Action:       rule.Action,
+		RateLimit:    rule.RateLimit,
+		PktLenMin:    rule.PktLenMin,
+		PktLenMax:    rule.PktLenMax,
+		TcpFlags:     rule.TcpFlags,
+		MatchAnomaly: rule.MatchAnomaly,
 	}
 
 	// Validation is done at Controller level, but do a sanity check
@@ -69,6 +70,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		Action:        action,
 		TcpFlagsMask:  fm,
 		TcpFlagsValue: fv,
+		MatchAnomaly:  req.MatchAnomaly,
 		RateLimit:     req.RateLimit,
 		PktLenMin:     req.PktLenMin,
 		PktLenMax:     req.PktLenMax,
@@ -140,12 +142,13 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 		h.comboRefCount[comboType]++
 	}
 	h.rules[id] = StoredRule{
-		Key:       key,
-		Action:    req.Action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
-		TcpFlags:  req.TcpFlags,
+		Key:          key,
+		Action:       req.Action,
+		RateLimit:    req.RateLimit,
+		PktLenMin:    req.PktLenMin,
+		PktLenMax:    req.PktLenMax,
+		TcpFlags:     req.TcpFlags,
+		MatchAnomaly: req.MatchAnomaly,
 	}
 	h.ruleKeyIndex[key] = id
 
@@ -354,6 +357,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				Action:        action,
 				TcpFlagsMask:  cfm,
 				TcpFlagsValue: cfv,
+				MatchAnomaly:  r.MatchAnomaly,
 				RateLimit:     r.RateLimit,
 				PktLenMin:     r.PktLenMin,
 				PktLenMax:     r.PktLenMax,
@@ -376,14 +380,15 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			}
 			shadowCidrCount++
 			newCidrRules[id] = StoredCIDRRule{
-				Key:       ck,
-				SrcCIDR:   srcCIDR,
-				DstCIDR:   dstCIDR,
-				Action:    r.Action,
-				RateLimit: r.RateLimit,
-				PktLenMin: r.PktLenMin,
-				PktLenMax: r.PktLenMax,
-				TcpFlags:  r.TcpFlags,
+				Key:          ck,
+				SrcCIDR:      srcCIDR,
+				DstCIDR:      dstCIDR,
+				Action:       r.Action,
+				RateLimit:    r.RateLimit,
+				PktLenMin:    r.PktLenMin,
+				PktLenMax:    r.PktLenMax,
+				TcpFlags:     r.TcpFlags,
+				MatchAnomaly: r.MatchAnomaly,
 			}
 			newCidrRuleKeyIndex[ck] = id
 			added++
@@ -419,6 +424,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				Action:        action,
 				TcpFlagsMask:  efm,
 				TcpFlagsValue: efv,
+				MatchAnomaly:  r.MatchAnomaly,
 				RateLimit:     r.RateLimit,
 				PktLenMin:     r.PktLenMin,
 				PktLenMax:     r.PktLenMax,
@@ -435,12 +441,13 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			}
 			shadowRuleCount++
 			newRules[id] = StoredRule{
-				Key:       key,
-				Action:    r.Action,
-				RateLimit: r.RateLimit,
-				PktLenMin: r.PktLenMin,
-				PktLenMax: r.PktLenMax,
-				TcpFlags:  r.TcpFlags,
+				Key:          key,
+				Action:       r.Action,
+				RateLimit:    r.RateLimit,
+				PktLenMin:    r.PktLenMin,
+				PktLenMax:    r.PktLenMax,
+				TcpFlags:     r.TcpFlags,
+				MatchAnomaly: r.MatchAnomaly,
 			}
 			newRuleKeyIndex[key] = id
 			added++

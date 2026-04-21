@@ -84,3 +84,6 @@ temp/
 
 # === Local project docs (excluded from public repo) ===
 docs/
+
+# Internal ops scripts — local only, never tracked/published
+/internal_scripts/

@@ -64,6 +64,8 @@ The system has two components:
 - **Actions** — `drop`, `rate_limit` (token bucket, configurable PPS), `pass`
 - **Packet length filter** — `pkt_len_min` / `pkt_len_max` (L3 total length)
 - **TCP flags matching** — `tcp_flags` post-match filter (e.g. `SYN`, `SYN,ACK`, `RST`); mismatch continues wildcard fallback
+- **Decoder sugar** (v2.6+) — `decoder=tcp_ack|tcp_rst|tcp_fin` expands to `protocol=tcp` + matching TCP flags mask at rule creation; lets upstream detectors name attack patterns instead of bit-manipulating flags
+- **Anomaly data plane** (v2.6.1+) — `decoder=bad_fragment|invalid` attaches anomaly bits to rules; a tail-called `xdp_anomaly_verify` program detects Ping-of-Death (offset*8+payload>65535), tiny-first-fragment (TCP <20B / UDP <8B), malformed IHL<5, truncated total_length, and TCP `doff<5` — drops packets only when the rule's `match_anomaly` bits intersect with the packet's actual anomaly signature. Anomaly detection logic ported byte-for-byte from xSight v1.3 for cross-repo parity. IPv6 `invalid` supported; IPv6 `bad_fragment` rejected at the Controller (deferred)
 - **Bitmap optimization** — 64-bit bitmap encodes which of 34 field combinations have active rules; BPF skips combinations with no rules, keeping the hot path O(1)
 - **Per-rule statistics** — per-CPU `match_count` and `drop_count` aggregated by the agent
 

@@ -24,6 +24,12 @@ func parseProtocol(s string) uint8 {
 		return ProtoICMP
 	case "icmpv6":
 		return ProtoICMPv6
+	case "igmp":
+		return ProtoIGMP
+	case "gre":
+		return ProtoGRE
+	case "esp":
+		return ProtoESP
 	default:
 		return ProtoAll
 	}
@@ -39,6 +45,12 @@ func protocolToString(p uint8) string {
 		return "icmp"
 	case ProtoICMPv6:
 		return "icmpv6"
+	case ProtoIGMP:
+		return "igmp"
+	case ProtoGRE:
+		return "gre"
+	case ProtoESP:
+		return "esp"
 	default:
 		return "all"
 	}

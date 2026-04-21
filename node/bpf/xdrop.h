@@ -7,6 +7,18 @@
 
 #include "bpf_helpers.h"
 
+// v2.6 Phase 4: provide bool typedef — bpf_helpers.h doesn't pull stdbool.h
+// and we can't rely on clang's -target bpf freestanding defaults. Match the
+// size used by `__u8`-style wire fields; only `true` / `false` literals are
+// used at call sites.
+typedef _Bool bool;
+#ifndef true
+#define true  1
+#endif
+#ifndef false
+#define false 0
+#endif
+
 // NULL definition for BPF
 #ifndef NULL
 #define NULL ((void *)0)
@@ -133,19 +145,26 @@ struct rule_key {
   __u8 pad[3];             // Padding for alignment
 } __attribute__((packed)); // Total: 40 bytes
 
-// Rule value (32 bytes, aligned)
+// Rule value (32 bytes, aligned).
+// v2.6 Phase 4: match_anomaly reuses the pad byte at offset 3. Struct size
+// stays 32 so Phase 3 reconcilePinnedMaps does NOT trigger auto-wipe on
+// upgrade. See proposal xsight-v13-decoder-adaptation.md §7.2.0.
 struct rule_value {
   __u8 action;          // 0=pass, 1=drop, 2=rate_limit
   __u8 tcp_flags_mask;  // TCP flags mask (0=don't check)
   __u8 tcp_flags_value; // TCP flags expected value
-  __u8 pad;
+  __u8 match_anomaly;   // v2.6 Phase 4: bit0=bad_fragment bit1=invalid (0=don't check)
   __u32 rate_limit;     // PPS limit (when action=2)
   __u64 match_count;    // Match counter
   __u64 drop_count;     // Drop counter
   __u16 pkt_len_min;    // Minimum packet length (L3), 0=no limit
   __u16 pkt_len_max;    // Maximum packet length (L3), 0=no limit
-  __u8 pad2[4];         // Padding for 32-byte alignment
+  __u8 pad2[4];         // Padding for 32-byte alignment (reserved for future anomaly widening)
 } __attribute__((packed));
+
+// v2.6 Phase 4: anomaly bits for rule_value.match_anomaly and runtime pkt_anomaly.
+#define ANOMALY_BAD_FRAGMENT 0x01
+#define ANOMALY_INVALID      0x02
 
 // Statistics indices (PERCPU)
 #define STATS_TOTAL_PACKETS 0
@@ -244,8 +263,51 @@ struct rate_limit_state {
 // Dual rule map selector (Phase 4.2)
 #define CONFIG_RULE_MAP_SELECTOR 9   // 0 = blacklist/cidr_blacklist, 1 = blacklist_b/cidr_blist_b
 
+// v2.6.1 Phase 4 B5: total number of anomaly rules (match_anomaly != 0)
+// across both exact blacklist and CIDR blacklist. Non-zero triggers tail_call
+// to xdp_anomaly_verify on main program lookup miss. Updated by Go agent
+// on every rule add / delete / update / sync that changes anomaly rule count.
+#define CONFIG_ANOMALY_RULE_COUNT 10
+
 // Double-buffer config map entries
-#define CONFIG_MAP_ENTRIES 10
+#define CONFIG_MAP_ENTRIES 11
+
+// v2.6.1 Phase 4 B5: tail_call prog_array slot assignments (D2 — proposal §7.8.5).
+// max_entries=16, reserved slot layout:
+//   0      = xdp_anomaly_verify (B5)
+//   1-3    = payload match (v2.7+ reserved)
+//   4      = GeoIP filter (reserved)
+//   5-7    = TLS / SNI / JA3 match (reserved)
+//   8-15   = dynamic allocation
+#define TAIL_SLOT_ANOMALY_VERIFY 0
+#define TAIL_SLOT_MAX            16
+
+// v2.6.1 Phase 4 B5: stash struct for tail_call state transfer (D1 — proposal §7.8.5).
+// Per-CPU single-slot map; main program writes before bpf_tail_call, callee
+// reads after. Layout must be stable across tail_call chain; reserved padding
+// allows future tail-called programs (payload / GeoIP / TLS) to extend without
+// changing map schema.
+struct tail_stash {
+  __u32 stage;               // D4 dispatch state; B5 uses 0 = anomaly_verify
+  __u8  action;              // ACTION_DROP / RATE_LIMIT — unused in B5 (anomaly_verify re-looks up rule)
+  __u8  match_anomaly;       // anomaly bitmask caller wants matched (0 in B5; anomaly_verify compute fresh)
+  __u16 pkt_len;             // L3 packet length (from main program parse)
+  __u32 rate_limit;          // payload match future use
+  __u32 payload_pattern_id;  // payload match future use
+  __u8  tcp_flags;           // TCP flags byte (from main program parse)
+  __u8  eth_proto_is_v6;     // 0 = IPv4, 1 = IPv6 (so anomaly_verify skips re-parse dispatch)
+  __u8  is_ff;               // v2.6.1 FF regression fix: 1 = fast_forward mode active, 0 = traditional.
+                             // Caller (main program) resolves is_fast_forward_enabled() once and passes
+                             // via stash so anomaly_verify can decide pass-vs-redirect without a second
+                             // config_lookup + null-check (verifier insn budget).
+  __u8  reserved_b[1];
+  __u32 ingress_ifindex;     // v2.6.1 FF regression fix: main program's ctx->ingress_ifindex, stashed so
+                             // anomaly_verify can bpf_redirect_map(&devmap, ingress_ifindex, 0) on FF
+                             // fallthrough. Re-reading ctx->ingress_ifindex in the callee would double
+                             // verifier work across every anomaly-lookup miss path.
+  struct rule_key key;       // main program's parsed 5-tuple for re-lookup in anomaly-aware path
+  __u8  reserved[28];        // future extensions (D1 — 32B total padding budget, 4B now consumed)
+} __attribute__((aligned(8)));
 
 // Active config selector map key
 #define ACTIVE_CONFIG_KEY 0

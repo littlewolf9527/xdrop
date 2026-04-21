@@ -46,9 +46,9 @@ X-API-Key: <node_api_key>
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.5.0",
+  "version": "2.6.1",
   "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit"]
+  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"]
 }
 ```
 
@@ -79,6 +79,7 @@ X-API-Key: <node_api_key>
 | `pkt_len_min` | integer | L3 最小包长（字节），`0` = 不限 |
 | `pkt_len_max` | integer | L3 最大包长（字节），`0` = 不限 |
 | `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
+| `match_anomaly` | integer | **v2.6+。** Anomaly 位图（`0x01=bad_fragment`、`0x02=invalid`）。`0` = 不检查。非零值由 `xdp_anomaly_verify` tail-call 程序处理 |
 | `comment` | string | 备注 |
 | `stats` | RuleStats | 每条规则的匹配/丢包计数（列表响应中包含） |
 
@@ -189,8 +190,8 @@ X-API-Key: <node_api_key>
 | `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
 | `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
 | `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
-| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`RST`），需 `protocol=tcp` |
-| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
+| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
+| `match_anomaly` | integer | 否 | **v2.6+。** Anomaly 位图 —— `bit0=bad_fragment (0x01)`、`bit1=invalid (0x02)`。`0` = 不检查（老语义）。非零值触发主程序 tail_call 到 `xdp_anomaly_verify`。Node 直接接受此字段（Controller 已把 `decoder` 糖展开成底层字段，Node 从不看到 `decoder`）。Anomaly 规则应使用 `action=drop`；`action=rate_limit` + 非零 `match_anomaly` Node 会接受（契约边界在 Controller `normalizeDecoder`），但数据面会 safety-net 映射为 `XDP_DROP`。 |
 | `comment` | string | 否 | 备注 |
 
 **响应 `200`：**

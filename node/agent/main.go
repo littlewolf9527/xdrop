@@ -139,6 +139,63 @@ func main() {
 		log.Fatal("XDP program 'xdrop_firewall' not found in ELF")
 	}
 
+	// v2.6.1 Phase 4 B5: tail-call dispatch setup.
+	//
+	// The xdp_anomaly_verify program is loaded out of the same ELF but must
+	// be wired into prog_tail_map[TAIL_SLOT_ANOMALY_VERIFY=0] before the
+	// main xdp_firewall's bpf_tail_call() can dispatch to it. Until this
+	// wire-up is done, the tail_call in main returns control to caller and
+	// the packet goes XDP_PASS (safe default).
+	//
+	// The map + program are already loaded by NewCollection above. We just
+	// need to populate the PROG_ARRAY slot with the program's FD.
+	//
+	// D6 check: assert program type matches XDP.
+	anomalyProg, ok := coll.Programs["xdp_anomaly_verify"]
+	if !ok || anomalyProg == nil {
+		log.Fatal("XDP program 'xdp_anomaly_verify' not found in ELF")
+	}
+	if anomalyProg.Type() != ebpf.XDP {
+		log.Fatalf("xdp_anomaly_verify has unexpected type %v (want XDP) — D6 violation", anomalyProg.Type())
+	}
+	progTailMap := requireMap("prog_tail_map")
+	tailStashMap := requireMap("tail_stash")
+	_ = tailStashMap // used only by BPF programs; hold ref to keep pinned
+	// D6 verification: PROG_ARRAY key/value must be exactly 4 bytes.
+	if info, err := progTailMap.Info(); err == nil {
+		if info.KeySize != 4 || info.ValueSize != 4 {
+			log.Fatalf("prog_tail_map key/value sizes = %d/%d, want 4/4 (D6)",
+				info.KeySize, info.ValueSize)
+		}
+	}
+	// D1 RT-kernel boundary (proposal §7.8.5). On PREEMPT_RT kernels the
+	// single-entry per-CPU tail_stash is not safe against intra-CPU BPF
+	// program preemption. Detection via /sys/kernel/realtime (presence of
+	// the file + content "1") or /proc/version containing "PREEMPT_RT".
+	// On detection, we SKIP populating prog_tail_map[0] — the main
+	// program's bpf_tail_call then fallthroughs to XDP_PASS, which is the
+	// documented "anomaly disabled but agent continues normally" behavior.
+	if isRTKernel() {
+		log.Printf("[bpf] WARN: PREEMPT_RT kernel detected — anomaly data plane disabled " +
+			"(tail_call skipped, per-CPU single-slot stash unsafe under RT interleaving). " +
+			"Controller will still accept/store anomaly rules but BPF won't drop anomaly " +
+			"packets. See proposal §7.8.5 D1 RT boundary.")
+		// Do not populate prog_tail_map[0]. bpf_tail_call in main will fallthrough.
+	} else {
+		// Populate slot 0. D5 implementation checklist: after agent restart this
+		// same block re-runs — since cilium/ebpf re-creates programs on every
+		// NewCollection (or loads pinned program with a fresh FD), we always
+		// write the current FD into the map. This is what smoke test's
+		// TestPinning phase-2 lesson says: on reopen, always re-populate.
+		tailSlotAnomalyVerify := uint32(0) // matches xdrop.h TAIL_SLOT_ANOMALY_VERIFY
+		anomalyFD := uint32(anomalyProg.FD())
+		if err := progTailMap.Update(tailSlotAnomalyVerify, anomalyFD, ebpf.UpdateAny); err != nil {
+			log.Fatalf("populate prog_tail_map[0] with xdp_anomaly_verify FD: %v", err)
+		}
+		log.Printf("[bpf] prog_tail_map[%d] = xdp_anomaly_verify FD=%d (B5 anomaly dispatch wired)",
+			tailSlotAnomalyVerify, anomalyFD)
+	}
+
 	// Interface manager for fast forward mode.
 	var ifMgr *ifmgr.InterfaceManager
 

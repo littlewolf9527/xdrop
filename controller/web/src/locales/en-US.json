@@ -63,6 +63,7 @@
       "srcPort": "Source Port",
       "dstPort": "Destination Port",
       "protocol": "Protocol",
+      "decoder": "Decoder",
       "action": "Action",
       "rateLimit": "Rate Limit (pps)",
       "pktLen": "Packet Length (bytes)",
@@ -80,7 +81,13 @@
       "tcp": "TCP",
       "udp": "UDP",
       "icmp": "ICMP",
-      "icmpv6": "ICMPv6"
+      "icmpv6": "ICMPv6",
+      "igmp": "IGMP",
+      "gre": "GRE",
+      "esp": "ESP"
+    },
+    "decoders": {
+      "none": "None (explicit protocol)"
     },
     "ipType": {
       "src": "As Source IP",
@@ -183,6 +190,7 @@
     "batchSuccess": "Successfully added {n} entries",
     "pktLenHint": "L3 (IP layer) packet length in bytes. 0 means no limit",
     "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid flags: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
+    "decoderHint": "Syntactic sugar expanded server-side. When set, Protocol/TCP Flags selectors are cleared and must not be specified. bad_fragment and invalid require an explicit IP/CIDR target; bad_fragment is IPv4-only in v1.3.",
     "pktLenOnlyNotAllowed": "Length-only rules not allowed: please specify at least one 5-tuple field (IP/Port/Protocol)",
     "invalidLenRange": "Invalid length range: minimum cannot be greater than maximum",
     "invalidCIDR": "Invalid CIDR format, use e.g.: 10.0.0.0/8"

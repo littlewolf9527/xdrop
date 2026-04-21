@@ -10,21 +10,22 @@ type RuleStats struct {
 
 // Rule is the API representation of a rule
 type Rule struct {
-	ID        string     `json:"id"`
-	SrcIP     string     `json:"src_ip,omitempty"`
-	DstIP     string     `json:"dst_ip,omitempty"`
-	SrcCIDR   string     `json:"src_cidr,omitempty"`
-	DstCIDR   string     `json:"dst_cidr,omitempty"`
-	SrcPort   uint16     `json:"src_port,omitempty"`
-	DstPort   uint16     `json:"dst_port,omitempty"`
-	Protocol  string     `json:"protocol,omitempty"`
-	Action    string     `json:"action"`
-	RateLimit uint32     `json:"rate_limit,omitempty"`
-	PktLenMin uint16     `json:"pkt_len_min,omitempty"`
-	PktLenMax uint16     `json:"pkt_len_max,omitempty"`
-	TcpFlags  string     `json:"tcp_flags,omitempty"`
-	Comment   string     `json:"comment,omitempty"`
-	Stats     *RuleStats `json:"stats,omitempty"`
+	ID           string     `json:"id"`
+	SrcIP        string     `json:"src_ip,omitempty"`
+	DstIP        string     `json:"dst_ip,omitempty"`
+	SrcCIDR      string     `json:"src_cidr,omitempty"`
+	DstCIDR      string     `json:"dst_cidr,omitempty"`
+	SrcPort      uint16     `json:"src_port,omitempty"`
+	DstPort      uint16     `json:"dst_port,omitempty"`
+	Protocol     string     `json:"protocol,omitempty"`
+	Action       string     `json:"action"`
+	RateLimit    uint32     `json:"rate_limit,omitempty"`
+	PktLenMin    uint16     `json:"pkt_len_min,omitempty"`
+	PktLenMax    uint16     `json:"pkt_len_max,omitempty"`
+	TcpFlags     string     `json:"tcp_flags,omitempty"`
+	MatchAnomaly uint8      `json:"match_anomaly,omitempty"` // v2.6 Phase 4 bit0=bad_fragment bit1=invalid
+	Comment      string     `json:"comment,omitempty"`
+	Stats        *RuleStats `json:"stats,omitempty"`
 }
 
 // WhitelistEntry is the API representation of a whitelist entry
@@ -69,19 +70,20 @@ type Stats struct {
 
 // SyncRule represents a rule for sync (matches sync.Rule)
 type SyncRule struct {
-	ID        string
-	SrcIP     string
-	DstIP     string
-	SrcCIDR   string
-	DstCIDR   string
-	SrcPort   uint16
-	DstPort   uint16
-	Protocol  string
-	Action    string
-	RateLimit uint32
-	PktLenMin uint16
-	PktLenMax uint16
-	TcpFlags  string
+	ID           string
+	SrcIP        string
+	DstIP        string
+	SrcCIDR      string
+	DstCIDR      string
+	SrcPort      uint16
+	DstPort      uint16
+	Protocol     string
+	Action       string
+	RateLimit    uint32
+	PktLenMin    uint16
+	PktLenMax    uint16
+	TcpFlags     string
+	MatchAnomaly uint8 // v2.6 Phase 4: bit0=bad_fragment bit1=invalid
 }
 
 // SyncWhitelistEntry represents a whitelist entry for sync (matches sync.WhitelistEntry)

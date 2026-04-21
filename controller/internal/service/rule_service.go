@@ -27,6 +27,12 @@ func NewRuleService(repo repository.RuleRepository, syncService *SyncService) *R
 
 // Create creates a new rule.
 func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, error) {
+	// Phase 2 decoder sugar normalization (before any other validation so
+	// downstream validators see the expanded predicate fields).
+	if err := normalizeDecoder(req); err != nil {
+		return nil, nil, err
+	}
+
 	// Validate
 	if req.Action == "" {
 		req.Action = "drop"
@@ -60,27 +66,44 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		}
 	}
 
-	// Check for duplicates
+	// Check for duplicates. v2.6.1 Phase 4 B5 (proposal §7.2.1 committed
+	// 方案 a Controller merge): if the incoming request is an anomaly rule
+	// (MatchAnomaly != 0) AND an existing rule with the same 5-tuple is
+	// also anomaly-specialized AND has the same action, merge the anomaly
+	// bitmask into the existing rule instead of rejecting. This lets
+	// xSight push `decoder:bad_fragment` + `decoder:invalid` for the same
+	// target without the client having to merge them.
 	protocol := req.Protocol
 	if protocol == "" {
 		protocol = "all"
 	}
+	var existing *model.Rule
+	var lookupErr error
 	if isCIDR {
-		exists, err := s.repo.CIDRExists(req.SrcCIDR, req.DstCIDR, req.SrcPort, req.DstPort, protocol)
-		if err != nil {
-			return nil, nil, err
+		existing, lookupErr = s.repo.GetByCIDRTuple(req.SrcCIDR, req.DstCIDR, req.SrcPort, req.DstPort, protocol)
+	} else {
+		existing, lookupErr = s.repo.GetByTuple(req.SrcIP, req.DstIP, req.SrcPort, req.DstPort, protocol)
+	}
+	if lookupErr != nil {
+		return nil, nil, lookupErr
+	}
+	if existing != nil {
+		merged, mergeResult, mergeErr := s.tryAnomalyMerge(existing, req)
+		if mergeErr != nil {
+			return nil, nil, mergeErr
 		}
-		if exists {
+		if merged != nil {
+			// Merge succeeded — Update() + sync happened inside.
+			return merged, mergeResult, nil
+		}
+		// merged == nil && err == nil means "not a merge candidate, proceed
+		// to Create" — but the tuple already has a rule, so Create will
+		// conflict via UNIQUE constraint. Return the legacy 409 message to
+		// preserve backward-compatible error text.
+		if isCIDR {
 			return nil, nil, fmt.Errorf("CIDR rule already exists")
 		}
-	} else {
-		exists, err := s.repo.Exists(req.SrcIP, req.DstIP, req.SrcPort, req.DstPort, protocol)
-		if err != nil {
-			return nil, nil, err
-		}
-		if exists {
-			return nil, nil, fmt.Errorf("rule already exists")
-		}
+		return nil, nil, fmt.Errorf("rule already exists")
 	}
 
 	// Compute expiry time
@@ -96,26 +119,27 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 
 	// Build rule
 	rule := &model.Rule{
-		ID:        "rule_" + uuid.New().String()[:8],
-		Name:      req.Name,
-		SrcIP:     req.SrcIP,
-		DstIP:     req.DstIP,
-		SrcCIDR:   req.SrcCIDR,
-		DstCIDR:   req.DstCIDR,
-		SrcPort:   req.SrcPort,
-		DstPort:   req.DstPort,
-		Protocol:  protocol,
-		Action:    req.Action,
-		RateLimit: req.RateLimit,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
-		TcpFlags:  derefString(req.TcpFlags),
-		Source:    req.Source,
-		Comment:   req.Comment,
-		Enabled:   true,
-		CreatedAt: time.Now(),
-		ExpiresAt: expiresAt,
-		UpdatedAt: time.Now(),
+		ID:           "rule_" + uuid.New().String()[:8],
+		Name:         req.Name,
+		SrcIP:        req.SrcIP,
+		DstIP:        req.DstIP,
+		SrcCIDR:      req.SrcCIDR,
+		DstCIDR:      req.DstCIDR,
+		SrcPort:      req.SrcPort,
+		DstPort:      req.DstPort,
+		Protocol:     protocol,
+		Action:       req.Action,
+		RateLimit:    req.RateLimit,
+		PktLenMin:    req.PktLenMin,
+		PktLenMax:    req.PktLenMax,
+		TcpFlags:     derefString(req.TcpFlags),
+		MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
+		Source:       req.Source,
+		Comment:      req.Comment,
+		Enabled:      true,
+		CreatedAt:    time.Now(),
+		ExpiresAt:    expiresAt,
+		UpdatedAt:    time.Now(),
 	}
 
 	if rule.Source == "" {
@@ -130,6 +154,63 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 	syncResult := s.syncService.SyncAddRule(rule)
 
 	return rule, syncResult, nil
+}
+
+// tryAnomalyMerge implements v2.6.1 Phase 4 B5 Controller-side anomaly merge
+// (proposal §7.2.1 committed 方案 a). Given an existing rule on the same
+// 5-tuple and an incoming request, decides between:
+//
+//   - (merged, result, nil)  — both are anomaly rules with same action → merged
+//     via OR'd match_anomaly bitmask. Calls repo.Update + SyncUpdateRule.
+//   - (nil, nil, 409 err)    — conflict (different action OR existing non-anomaly
+//     AND incoming anomaly, etc.). Caller should return this error verbatim.
+//   - (nil, nil, nil)        — not a merge candidate (both non-anomaly, or
+//     incoming non-anomaly). Caller falls through to the legacy "rule already
+//     exists" path.
+//
+// Merge rules (from §7.2.1):
+//   - incoming MatchAnomaly == 0 → not a merge candidate (nil, nil, nil)
+//   - incoming anomaly + existing non-anomaly → 409
+//   - incoming anomaly + existing anomaly + different action → 409
+//   - incoming anomaly + existing anomaly + same action → merge (OR bits)
+func (s *RuleService) tryAnomalyMerge(existing *model.Rule, req *model.RuleRequest) (*model.Rule, *SyncResult, error) {
+	// Only anomaly-carrying requests participate in merge.
+	if req.MatchAnomaly == 0 {
+		return nil, nil, nil
+	}
+	// Existing rule is not anomaly-specialized — refuse (proposal §7.2.1).
+	if existing.MatchAnomaly == 0 {
+		return nil, nil, fmt.Errorf(
+			"rule already exists at this tuple without match_anomaly; refusing to merge anomaly bits onto a non-anomaly rule (delete the existing rule or use a different tuple)")
+	}
+	// Action mismatch — refuse; caller must resolve explicitly.
+	if existing.Action != req.Action {
+		return nil, nil, fmt.Errorf(
+			"anomaly rule already exists at this tuple with action %q; refusing to merge with conflicting action %q",
+			existing.Action, req.Action)
+	}
+	// Idempotent: if all the bits are already set, this is a no-op merge.
+	// Still return the existing rule so the caller's API response looks like
+	// a successful POST (201 with rule body), not a 409.
+	before := existing.MatchAnomaly
+	existing.MatchAnomaly |= req.MatchAnomaly
+	if existing.MatchAnomaly == before {
+		// Nothing changed — caller treats as successful "no-op merge" and
+		// returns the existing rule. No need to re-sync.
+		return existing, &SyncResult{}, nil
+	}
+
+	existing.UpdatedAt = time.Now()
+	if err := s.repo.Update(existing); err != nil {
+		// Revert the bitmask mutation on the in-memory rule so the caller
+		// doesn't report a bogus merged state.
+		existing.MatchAnomaly = before
+		return nil, nil, fmt.Errorf("anomaly merge update failed: %w", err)
+	}
+
+	// Propagate the merged rule to all nodes.
+	syncResult := s.syncService.SyncUpdateRule(existing)
+	return existing, syncResult, nil
 }
 
 // Get retrieves a rule by ID.
@@ -154,8 +235,18 @@ func (s *RuleService) ListEnabled() ([]*model.Rule, error) {
 
 // Update updates an existing rule.
 func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *SyncResult, error) {
+	// Fetch existing rule FIRST so decoder normalization (Update-path variant)
+	// can seed the IPv6 scope guard with the rule's actual target.
 	rule, err := s.repo.Get(id)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	// Phase 2/4 decoder sugar normalization (Update-path). Relaxes the
+	// "anomaly decoder requires explicit target" gate because the existing
+	// rule already has a tuple — but still runs IPv6 scope guard and
+	// protocol/tcp_flags mutex checks.
+	if err := normalizeDecoderForUpdate(req, rule); err != nil {
 		return nil, nil, err
 	}
 
@@ -235,6 +326,20 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 			rule.TcpFlags = "" // explicit clear
 		}
 	}
+	// v2.6.1 Phase 4 B5 (proposal §13.4.3 P4-UT-31): PUT **replaces** the
+	// match_anomaly bitmask rather than merging it. Merge semantics are
+	// Create-path only (§7.2.1); PUT is the explicit "I want this exact
+	// value" API. req.MatchAnomaly is set by normalizeDecoder (when Decoder
+	// field provided) or directly by the caller.
+	//
+	// Note: MatchAnomaly=0 in the request is ambiguous (0 = not set, or
+	// 0 = user wants to clear anomaly specialization?). For now we only
+	// apply when non-zero — matches tcp_flags's tri-state pattern loosely
+	// but not exactly. Explicit clear will land with a pointer-based
+	// tri-state if a user ever needs it; v2.6.1 scope stops here.
+	if req.MatchAnomaly != 0 {
+		rule.MatchAnomaly = req.MatchAnomaly
+	}
 	if req.Comment != "" {
 		rule.Comment = req.Comment
 	}
@@ -279,6 +384,13 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 	seenKeys := make(map[string]bool)
 
 	for _, req := range reqs {
+		// Phase 2 decoder sugar (per-item; failure increments `failed` per the
+		// existing partial-success semantics, matches proposal §5.4 P2-UT-10).
+		if err := normalizeDecoder(&req); err != nil {
+			failed++
+			continue
+		}
+
 		// Validate
 		if req.Action == "" {
 			req.Action = "drop"
@@ -388,21 +500,22 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			SrcIP:     req.SrcIP,
 			DstIP:     req.DstIP,
 			SrcCIDR:   req.SrcCIDR,
-			DstCIDR:   req.DstCIDR,
-			SrcPort:   req.SrcPort,
-			DstPort:   req.DstPort,
-			Protocol:  protocol,
-			Action:    req.Action,
-			RateLimit: req.RateLimit,
-			PktLenMin: req.PktLenMin,
-			PktLenMax: req.PktLenMax,
-			TcpFlags:  derefString(req.TcpFlags),
-			Source:    req.Source,
-			Comment:   req.Comment,
-			Enabled:   true,
-			CreatedAt: time.Now(),
-			ExpiresAt: expiresAt,
-			UpdatedAt: time.Now(),
+			DstCIDR:      req.DstCIDR,
+			SrcPort:      req.SrcPort,
+			DstPort:      req.DstPort,
+			Protocol:     protocol,
+			Action:       req.Action,
+			RateLimit:    req.RateLimit,
+			PktLenMin:    req.PktLenMin,
+			PktLenMax:    req.PktLenMax,
+			TcpFlags:     derefString(req.TcpFlags),
+			MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
+			Source:       req.Source,
+			Comment:      req.Comment,
+			Enabled:      true,
+			CreatedAt:    time.Now(),
+			ExpiresAt:    expiresAt,
+			UpdatedAt:    time.Now(),
 		}
 		if rule.Source == "" {
 			rule.Source = "api"
@@ -503,14 +616,23 @@ func findCIDROverlap(newCIDR string, existing []string) string {
 }
 
 // validProtocols is the set of protocol values supported by the BPF datapath.
+// v2.6 Phase 1: added gre / esp / igmp (IANA protocol numbers 47 / 50 / 2).
 var validProtocols = map[string]bool{
-	"all": true, "tcp": true, "udp": true, "icmp": true, "icmpv6": true, "": true,
+	"all":    true,
+	"tcp":    true,
+	"udp":    true,
+	"icmp":   true,
+	"icmpv6": true,
+	"igmp":   true,
+	"gre":    true,
+	"esp":    true,
+	"":       true,
 }
 
 // validateProtocol rejects protocol values outside the supported set.
 func validateProtocol(protocol string) error {
 	if !validProtocols[protocol] {
-		return fmt.Errorf("invalid protocol %q: allowed values are all, tcp, udp, icmp, icmpv6", protocol)
+		return fmt.Errorf("invalid protocol %q: allowed values are all, tcp, udp, icmp, icmpv6, igmp, gre, esp", protocol)
 	}
 	return nil
 }

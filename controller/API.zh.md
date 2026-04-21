@@ -65,7 +65,7 @@ X-API-Key: <external_api_key>
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.5.0",
+  "version": "2.6.1",
   "status": "running"
 }
 ```
@@ -261,12 +261,20 @@ X-API-Key: <external_api_key>
 | `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
 | `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
 | `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
-| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`RST`），需 `protocol=tcp` |
-| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
+| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
+| `decoder` | string | 否 | **v2.6+ 语义糖。** 落库前自动展开为 `protocol` / `tcp_flags` / `match_anomaly` 底层字段。可选值：`tcp_ack`、`tcp_rst`、`tcp_fin`（Phase 2）、`bad_fragment`、`invalid`（Phase 4 anomaly）。与 `protocol`、`tcp_flags`、`match_anomaly` 互斥——同时设置任一 → 400。`GET /rules` 响应体**不**返回本字段（展开后的底层字段才返）。 |
+| `match_anomaly` | integer | 否 | **v2.6+ anomaly 位图** —— `bit0=bad_fragment (0x01)`、`bit1=invalid (0x02)`。通常通过 `decoder` 糖下发；与 `decoder` 同时设置时显式 `match_anomaly` 输入会被拒。`0` = 不检查 anomaly（老语义）。 |
 | `name` | string | 否 | 规则名称 |
 | `comment` | string | 否 | 备注 |
 | `source` | string | 否 | 来源标记 |
 | `expires_in` | string | 否 | 相对过期时间，如 `1h`、`30m`、`24h` |
+
+**v2.6+ decoder / anomaly 语义**：
+
+- **Anomaly action 限制**：anomaly 规则（任何 `match_anomaly` 非零，无论是直接设置还是通过 `decoder=bad_fragment|invalid`）仅支持 `action=drop`。anomaly + `rate_limit` → 400，错误体含稳定子串 `does not support action=rate_limit` / `anomaly rules are drop-only`。
+- **IPv6 scope guard**：`decoder=bad_fragment` 配合任何 IPv6 target 字段（`src_ip`/`dst_ip`/`src_cidr`/`dst_cidr`）→ 400 拒绝，v1.3 BPF 不检测 IPv6 fragment anomaly。错误体含稳定子串 `not supported for IPv6 target in v1.3` / `deferred to v1.4`。`decoder=invalid` 在 IPv6 上允许（直连 TCP doff<5 检测生效）。
+- **Anomaly 规则合并**：同 5-tuple + 同 `action=drop` 的两次 anomaly 下发（如先 `bad_fragment`、再 `invalid`）自动把 `match_anomaly` bitmap OR 合并到既有规则（`0x01 | 0x02 = 0x03`），返回**同一** rule ID，不 409 冲突、不新增行。BatchCreate **不**做合并（沿用老 UNIQUE 冲突语义）。`PUT` 为**替换**语义，不合并。
+- **Anomaly 与非-anomaly 规则共存**：在已有非-anomaly 规则的 tuple 上再下发 anomaly → 409（需显式解决意图）。
 
 **响应 `200`：**
 

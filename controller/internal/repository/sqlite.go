@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS rules (
     pkt_len_min INTEGER DEFAULT 0,
     pkt_len_max INTEGER DEFAULT 0,
     tcp_flags TEXT DEFAULT '',
+    match_anomaly INTEGER DEFAULT 0,
     source      TEXT DEFAULT 'manual',
     comment     TEXT,
     enabled     INTEGER DEFAULT 1,
@@ -128,6 +129,9 @@ func runMigrations(db *sql.DB) {
 		"ALTER TABLE rules ADD COLUMN src_cidr TEXT DEFAULT ''",
 		"ALTER TABLE rules ADD COLUMN dst_cidr TEXT DEFAULT ''",
 		"ALTER TABLE rules ADD COLUMN tcp_flags TEXT DEFAULT ''",
+		// v2.6 Phase 4 — anomaly post-match (bit0=bad_fragment bit1=invalid).
+		// Pre-v2.6 rules land at 0 ("don't check"), preserving semantics.
+		"ALTER TABLE rules ADD COLUMN match_anomaly INTEGER DEFAULT 0",
 	}
 
 	for _, m := range addColumns {
@@ -203,6 +207,7 @@ func rebuildUniqueConstraint(db *sql.DB) {
 			pkt_len_min INTEGER DEFAULT 0,
 			pkt_len_max INTEGER DEFAULT 0,
     tcp_flags TEXT DEFAULT '',
+			match_anomaly INTEGER DEFAULT 0,
 			source      TEXT DEFAULT 'manual',
 			comment     TEXT,
 			enabled     INTEGER DEFAULT 1,
@@ -216,6 +221,7 @@ func rebuildUniqueConstraint(db *sql.DB) {
 			src_port, dst_port, protocol, action, rate_limit,
 			COALESCE(pkt_len_min, 0), COALESCE(pkt_len_max, 0),
 			COALESCE(tcp_flags, ''),
+			COALESCE(match_anomaly, 0),
 			source, comment, enabled, created_at, expires_at, updated_at
 		 FROM rules`,
 		"DROP TABLE rules",
@@ -258,12 +264,12 @@ func NewSQLiteRuleRepo(db *SQLiteDB) *SQLiteRuleRepo {
 func (r *SQLiteRuleRepo) Create(rule *model.Rule) error {
 	_, err := r.db.Exec(`
 		INSERT INTO rules (id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		                   action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                   action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, rule.ID, rule.Name, nullString(rule.SrcIP), nullString(rule.DstIP),
 		rule.SrcCIDR, rule.DstCIDR,
 		rule.SrcPort, rule.DstPort, rule.Protocol, rule.Action, rule.RateLimit,
-		rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt))
+		rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.MatchAnomaly, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt))
 	return err
 }
 
@@ -276,8 +282,8 @@ func (r *SQLiteRuleRepo) BatchCreate(rules []*model.Rule) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO rules (id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		                   action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                   action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -289,7 +295,7 @@ func (r *SQLiteRuleRepo) BatchCreate(rules []*model.Rule) error {
 			rule.ID, rule.Name, nullString(rule.SrcIP), nullString(rule.DstIP),
 			rule.SrcCIDR, rule.DstCIDR,
 			rule.SrcPort, rule.DstPort, rule.Protocol, rule.Action, rule.RateLimit,
-			rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt),
+			rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.MatchAnomaly, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt),
 		)
 		if err != nil {
 			return err
@@ -302,7 +308,7 @@ func (r *SQLiteRuleRepo) BatchCreate(rules []*model.Rule) error {
 func (r *SQLiteRuleRepo) Get(id string) (*model.Rule, error) {
 	row := r.db.QueryRow(`
 		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
 		FROM rules WHERE id = ?
 	`, id)
 	return scanRule(row)
@@ -311,7 +317,7 @@ func (r *SQLiteRuleRepo) Get(id string) (*model.Rule, error) {
 func (r *SQLiteRuleRepo) List() ([]*model.Rule, error) {
 	rows, err := r.db.Query(`
 		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
 		FROM rules ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -376,7 +382,7 @@ func (r *SQLiteRuleRepo) ListPaginated(params PaginationParams) ([]*model.Rule, 
 	offset := (params.Page - 1) * params.Limit
 
 	query := fmt.Sprintf(`SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
+		action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
 		FROM rules%s ORDER BY %s %s, id %s LIMIT ? OFFSET ?`, where, col, order, order)
 
 	pageArgs := append(args, params.Limit, offset)
@@ -407,7 +413,7 @@ func (r *SQLiteRuleRepo) ListPaginated(params PaginationParams) ([]*model.Rule, 
 func (r *SQLiteRuleRepo) ListEnabled() ([]*model.Rule, error) {
 	rows, err := r.db.Query(`
 		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
 		FROM rules WHERE enabled = 1 ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -424,7 +430,7 @@ func (r *SQLiteRuleRepo) ListExpired() ([]*model.Rule, error) {
 	// Scope is small (only rules with expires_at set) so the overhead is fine.
 	rows, err := r.db.Query(`
 		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
-		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, source, comment, enabled, created_at, expires_at, updated_at
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
 		FROM rules WHERE expires_at IS NOT NULL
 	`)
 	if err != nil {
@@ -448,13 +454,13 @@ func (r *SQLiteRuleRepo) ListExpired() ([]*model.Rule, error) {
 func (r *SQLiteRuleRepo) Update(rule *model.Rule) error {
 	_, err := r.db.Exec(`
 		UPDATE rules SET name=?, src_ip=?, dst_ip=?, src_cidr=?, dst_cidr=?, src_port=?, dst_port=?, protocol=?,
-		                 action=?, rate_limit=?, pkt_len_min=?, pkt_len_max=?, tcp_flags=?, source=?, comment=?, enabled=?,
+		                 action=?, rate_limit=?, pkt_len_min=?, pkt_len_max=?, tcp_flags=?, match_anomaly=?, source=?, comment=?, enabled=?,
 		                 expires_at=?, updated_at=CURRENT_TIMESTAMP
 		WHERE id = ?
 	`, rule.Name, nullString(rule.SrcIP), nullString(rule.DstIP),
 		rule.SrcCIDR, rule.DstCIDR,
 		rule.SrcPort, rule.DstPort, rule.Protocol, rule.Action, rule.RateLimit,
-		rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt), rule.ID)
+		rule.PktLenMin, rule.PktLenMax, rule.TcpFlags, rule.MatchAnomaly, rule.Source, rule.Comment, rule.Enabled, nullTime(rule.ExpiresAt), rule.ID)
 	return err
 }
 
@@ -526,6 +532,44 @@ func (r *SQLiteRuleRepo) CIDRExists(srcCIDR, dstCIDR string, srcPort, dstPort in
 		  AND src_port = ? AND dst_port = ? AND protocol = ?
 	`, srcCIDR, dstCIDR, srcPort, dstPort, protocol).Scan(&count)
 	return count > 0, err
+}
+
+// GetByTuple returns the rule matching the given exact-IP 5-tuple, or
+// (nil, nil) when no rule matches. v2.6.1 Phase 4 B5 anomaly merge
+// (proposal §7.2.1 方案 a) needs the full rule to inspect MatchAnomaly
+// and Action fields before deciding merge vs 409.
+func (r *SQLiteRuleRepo) GetByTuple(srcIP, dstIP string, srcPort, dstPort int, protocol string) (*model.Rule, error) {
+	row := r.db.QueryRow(`
+		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
+		FROM rules
+		WHERE COALESCE(src_ip, '') = COALESCE(?, '')
+		  AND COALESCE(dst_ip, '') = COALESCE(?, '')
+		  AND src_cidr = '' AND dst_cidr = ''
+		  AND src_port = ? AND dst_port = ? AND protocol = ?
+	`, nullString(srcIP), nullString(dstIP), srcPort, dstPort, protocol)
+	rule, err := scanRule(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return rule, err
+}
+
+// GetByCIDRTuple is the CIDR-path equivalent of GetByTuple. Returns the
+// rule matching the given CIDR tuple, or (nil, nil) when no rule matches.
+func (r *SQLiteRuleRepo) GetByCIDRTuple(srcCIDR, dstCIDR string, srcPort, dstPort int, protocol string) (*model.Rule, error) {
+	row := r.db.QueryRow(`
+		SELECT id, name, src_ip, dst_ip, src_cidr, dst_cidr, src_port, dst_port, protocol,
+		       action, rate_limit, pkt_len_min, pkt_len_max, tcp_flags, match_anomaly, source, comment, enabled, created_at, expires_at, updated_at
+		FROM rules
+		WHERE src_cidr = ? AND dst_cidr = ?
+		  AND src_port = ? AND dst_port = ? AND protocol = ?
+	`, srcCIDR, dstCIDR, srcPort, dstPort, protocol)
+	rule, err := scanRule(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return rule, err
 }
 
 func (r *SQLiteRuleRepo) ListSrcCIDRs() ([]string, error) {
@@ -745,7 +789,7 @@ func scanRule(row *sql.Row) (*model.Rule, error) {
 	var expiresAt sql.NullTime
 
 	err := row.Scan(&r.ID, &name, &srcIP, &dstIP, &srcCIDR, &dstCIDR, &r.SrcPort, &r.DstPort, &r.Protocol,
-		&r.Action, &r.RateLimit, &r.PktLenMin, &r.PktLenMax, &r.TcpFlags, &source, &comment, &r.Enabled, &r.CreatedAt, &expiresAt, &r.UpdatedAt)
+		&r.Action, &r.RateLimit, &r.PktLenMin, &r.PktLenMax, &r.TcpFlags, &r.MatchAnomaly, &source, &comment, &r.Enabled, &r.CreatedAt, &expiresAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +816,7 @@ func scanRules(rows *sql.Rows) ([]*model.Rule, error) {
 		var expiresAt sql.NullTime
 
 		err := rows.Scan(&r.ID, &name, &srcIP, &dstIP, &srcCIDR, &dstCIDR, &r.SrcPort, &r.DstPort, &r.Protocol,
-			&r.Action, &r.RateLimit, &r.PktLenMin, &r.PktLenMax, &r.TcpFlags, &source, &comment, &r.Enabled, &r.CreatedAt, &expiresAt, &r.UpdatedAt)
+			&r.Action, &r.RateLimit, &r.PktLenMin, &r.PktLenMax, &r.TcpFlags, &r.MatchAnomaly, &source, &comment, &r.Enabled, &r.CreatedAt, &expiresAt, &r.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
