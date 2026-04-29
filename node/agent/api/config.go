@@ -213,6 +213,24 @@ func (h *Handlers) countAnomalyRulesLocked() uint64 {
 	return count
 }
 
+// countAnomalyRulesIn returns the number of anomaly rules in the given maps.
+// Used by DoAtomicSync to compute the absolute anomaly count for the new
+// ruleset before flip — must NOT use h.rules/h.cidrRules (old state).
+func countAnomalyRulesIn(rules map[string]StoredRule, cidrRules map[string]StoredCIDRRule) uint64 {
+	var n uint64
+	for _, r := range rules {
+		if r.MatchAnomaly != 0 {
+			n++
+		}
+	}
+	for _, r := range cidrRules {
+		if r.MatchAnomaly != 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // activeBlacklist returns the currently active blacklist BPF map (Phase 4.2 dual rule map)
 func (h *Handlers) activeBlacklist() *ebpf.Map {
 	if h.activeRuleSlot == 0 {

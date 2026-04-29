@@ -14,7 +14,7 @@ bootstrapTheme()
 // Tree-shaken icon imports (24 icons used)
 import {
     Aim, ArrowDown, Brush, ChatLineSquare, CircleCheck,
-    CircleCloseFilled, Delete, DocumentAdd, Fold, InfoFilled, Key,
+    CircleCloseFilled, Delete, DocumentAdd, Edit, Fold, InfoFilled, Key,
     List, Lock, Monitor, Moon, Odometer, Plus, Promotion,
     Refresh, Search, Setting, Sunny, SwitchButton, User, View
 } from '@element-plus/icons-vue'
@@ -24,7 +24,7 @@ const app = createApp(App)
 // Register only used icons
 const icons = {
     Aim, ArrowDown, Brush, ChatLineSquare, CircleCheck,
-    CircleCloseFilled, Delete, DocumentAdd, Fold, InfoFilled, Key,
+    CircleCloseFilled, Delete, DocumentAdd, Edit, Fold, InfoFilled, Key,
     List, Lock, Monitor, Moon, Odometer, Plus, Promotion,
     Refresh, Search, Setting, Sunny, SwitchButton, User, View
 }

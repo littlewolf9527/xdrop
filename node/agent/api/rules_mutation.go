@@ -101,6 +101,13 @@ func (h *Handlers) AddRule(c *gin.Context) {
 		return
 	}
 
+	// Validate match_anomaly semantics (defence-in-depth: Controller enforces
+	// the same constraints, but Node guards against direct API access).
+	if err := validateNodeAnomalyFields(req.MatchAnomaly, req.Action, req.SrcIP, req.DstIP, req.SrcCIDR, req.DstCIDR); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	value := RuleValue{
 		Action:        action,
 		TcpFlagsMask:  flagsMask,
@@ -212,9 +219,7 @@ func (h *Handlers) AddRule(c *gin.Context) {
 			h.ruleKeyIndex[oldStored.Key] = id
 			// Re-insert old BPF entry (best-effort restore)
 			if oldStored.Key != key {
-				oldAction, _ := parseAction(oldStored.Action)
-				oldFlagsMask, oldFlagsValue, _ := parseTcpFlags(oldStored.TcpFlags)
-				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFlagsMask, TcpFlagsValue: oldFlagsValue, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+				oldValue := ruleValueFromStored(*oldStored) // AUD-008
 				if insErr := bl.Update(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddRule] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
@@ -358,19 +363,20 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 	// Process CIDR rules individually (typically few, complex trie logic)
 	for _, r := range cidrRules {
 		syncRule := SyncRule{
-			ID:        r.ID,
-			SrcIP:     r.SrcIP,
-			DstIP:     r.DstIP,
-			SrcCIDR:   r.SrcCIDR,
-			DstCIDR:   r.DstCIDR,
-			SrcPort:   r.SrcPort,
-			DstPort:   r.DstPort,
-			Protocol:  r.Protocol,
-			Action:    r.Action,
-			RateLimit: r.RateLimit,
-			PktLenMin: r.PktLenMin,
-			PktLenMax: r.PktLenMax,
-			TcpFlags:  r.TcpFlags,
+			ID:           r.ID,
+			SrcIP:        r.SrcIP,
+			DstIP:        r.DstIP,
+			SrcCIDR:      r.SrcCIDR,
+			DstCIDR:      r.DstCIDR,
+			SrcPort:      r.SrcPort,
+			DstPort:      r.DstPort,
+			Protocol:     r.Protocol,
+			Action:       r.Action,
+			RateLimit:    r.RateLimit,
+			PktLenMin:    r.PktLenMin,
+			PktLenMax:    r.PktLenMax,
+			TcpFlags:     r.TcpFlags,
+			MatchAnomaly: r.MatchAnomaly, // AUD-005
 		}
 		if err := h.addCIDRRuleFromSync(syncRule); err != nil {
 			log.Printf("[AddRulesBatch] CIDR rule %s failed: %v", r.ID, err)
@@ -402,6 +408,12 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 	for _, r := range exactRules {
 		// Validate rule (check for pure-length rules and length range)
 		if err := validateRule(r.SrcIP, r.DstIP, r.Protocol, r.SrcPort, r.DstPort, r.PktLenMin, r.PktLenMax); err != nil {
+			failed++
+			continue
+		}
+		// Anomaly semantic guard (defence-in-depth for batch exact path)
+		if err := validateNodeAnomalyFields(r.MatchAnomaly, r.Action, r.SrcIP, r.DstIP, r.SrcCIDR, r.DstCIDR); err != nil {
+			log.Printf("[AddRulesBatch] rejecting rule %s anomaly: %v", r.ID, err)
 			failed++
 			continue
 		}
@@ -586,8 +598,7 @@ func (h *Handlers) AddRulesBatch(c *gin.Context) {
 					h.ruleKeyIndex[item.oldStored.Key] = item.id
 					// Re-insert old BPF entry if it was deleted (best-effort restore)
 					if item.oldStored.Key != item.key {
-						oldAction, _ := parseAction(item.oldStored.Action)
-						oldValue := RuleValue{Action: oldAction, RateLimit: item.oldStored.RateLimit, PktLenMin: item.oldStored.PktLenMin, PktLenMax: item.oldStored.PktLenMax}
+						oldValue := ruleValueFromStored(*item.oldStored) // AUD-008
 						if insErr := bl.Update(ruleKeyToBytes(item.oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 							log.Printf("[AddRulesBatch] WARN: best-effort rollback re-insert of old BPF entry failed (id=%s): %v", item.id, insErr)
 						}

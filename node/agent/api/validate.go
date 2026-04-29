@@ -164,5 +164,49 @@ func validateRule(srcIP, dstIP, protocol string, srcPort, dstPort, pktLenMin, pk
 		return fmt.Errorf("invalid length range: min (%d) > max (%d)", pktLenMin, pktLenMax)
 	}
 
+	// B-10 (rev11 codex round 9 P2): Node-side portless+port guard. The BPF
+	// data plane (xdrop.c parse_l4) only fills key.src_port/dst_port for
+	// PROTO_TCP and PROTO_UDP — every other protocol leaves the key ports
+	// at 0. Storing a rule with src_port=500 + protocol=gre would create a
+	// permanent BPF lookup miss (rule key port=500 ≠ packet key port=0).
+	// Reject at every Node write entry — direct API, batch, FromSync,
+	// AtomicSync — defending against direct-Node clients and any Controller
+	// regression. Mirrors Controller's validatePortProtocolCompat.
+	if err := validatePortProtocolCompatNode(protocol, srcPort, dstPort); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// portlessProtocolsNode mirrors Controller's portlessProtocols set. ICMP /
+// ICMPv6 / IGMP / GRE / ESP do not carry L4 ports.
+var portlessProtocolsNode = map[string]bool{
+	"icmp":   true,
+	"icmpv6": true,
+	"igmp":   true,
+	"gre":    true,
+	"esp":    true,
+}
+
+// validatePortProtocolCompatNode is the Node-side mirror of Controller's
+// validatePortProtocolCompat. Empty protocol and "all" are wildcard semantics
+// that may match TCP/UDP packets, so port stays valid; only the explicit
+// portless set is rejected when ports are non-zero.
+//
+// rev12 (codex round 11 P3): normalize via strings.ToLower so direct-Node
+// clients sending mixed/upper case (e.g. "GRE") still hit the guard.
+// Controller's validateProtocol enforces lowercase before sync, but Node
+// is meant to be a strong direct defense — this closes the gap where
+// `parseProtocol("GRE")` would fall through to ProtoAll and bypass B-10.
+func validatePortProtocolCompatNode(protocol string, srcPort, dstPort uint16) error {
+	if !portlessProtocolsNode[strings.ToLower(protocol)] {
+		return nil
+	}
+	if srcPort == 0 && dstPort == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"protocol=%s does not carry ports (src_port/dst_port must be 0); got src_port=%d dst_port=%d",
+		protocol, srcPort, dstPort)
 }

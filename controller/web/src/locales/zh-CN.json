@@ -1,6 +1,7 @@
 {
   "common": {
     "add": "添加",
+    "save": "保存",
     "delete": "删除",
     "cancel": "取消",
     "confirm": "确定",
@@ -167,6 +168,7 @@
     "protocol": "协议",
     "pktLen": "包长度",
     "tcpFlags": "TCP 标志",
+    "decoder": "特征",
     "action": "动作",
     "matchCount": "匹配数",
     "dropPPS": "丢包速率",
@@ -188,15 +190,28 @@
     "atLeastOneIP": "请输入至少一个 IP",
     "batchResult": "添加完成: {success} 成功, {fail} 失败",
     "batchSuccess": "成功添加 {n} 条",
+    "batchPartialSync": "完成: {success} 条 Controller 操作成功，但 {syncFailed} 条未同步到数据面",
     "pktLenHint": "L3 (IP层) 包长度，单位字节。0 表示不限制",
     "tcpFlagsHint": "例如 SYN,!ACK（匹配不含 ACK 的 SYN 包）。支持: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "decoderHint": "语法糖，由 Controller 展开。选择后协议/TCP 标志字段会被清空且不能再手填。bad_fragment 与 invalid 需要显式指定源/目标 IP 或 CIDR；bad_fragment 在 v1.3 仅支持 IPv4。",
     "pktLenOnlyNotAllowed": "纯长度规则不允许：请至少指定一个五元组字段（IP/端口/协议）",
     "invalidLenRange": "长度范围无效：最小值不能大于最大值",
-    "invalidCIDR": "CIDR 格式无效，请使用如: 10.0.0.0/8"
+    "invalidCIDR": "CIDR 格式无效，请使用如: 10.0.0.0/8",
+    "partialSync": "操作已写入 Controller，但 {failed}/{total} 节点同步失败（{nodes}）",
+    "batchMixed": "完成: {success} 条成功, {fail} 条失败, {syncFailed} 条已入库但未同步到数据面",
+    "anomalyRequiresTarget": "anomaly 规则需要指定具体的源/目标 IP 或 CIDR（不能用 0.0.0.0 / :: 等通配）",
+    "badFragmentNoIPv6": "bad_fragment 在 v1.3 仅支持 IPv4 target",
+    "anomalyNoRateLimit": "anomaly 规则（bad_fragment / invalid）仅支持 drop 动作",
+    "anomalyToTcpRequiresRecreate": "当前规则是 anomaly 类型（bad_fragment / invalid）。如需切换到 TCP flags decoder，请删除规则后重建。",
+    "portlessProtocolNoPort": "ICMP / ICMPv6 / IGMP / GRE / ESP 不携带 L4 端口字段，端口已自动锁为 0。",
+    "cidrInIPField": "请切换到 CIDR 模式输入网段，IP 字段只接受单个 IP 地址",
+    "pktLenEditHint": "编辑时设为 0/0 不会清除已有包长过滤，需删除重建规则才能清除。",
+    "updateSuccess": "修改成功",
+    "updateFailed": "修改失败"
   },
   "dialog": {
     "addRule": "添加规则",
+    "editRule": "编辑规则",
     "addWhitelist": "添加白名单",
     "batchAddRule": "批量添加规则",
     "batchAddWhitelist": "批量添加白名单",
@@ -206,6 +221,7 @@
   "placeholder": {
     "optional": "可选",
     "leaveEmptyForAny": "留空表示任意",
+    "clearToRemove": "留空表示清除",
     "searchIP": "搜索 IP 地址...",
     "ipListHint": "每行一个 IP 或 CIDR\n192.168.1.0/24\n10.0.0.1",
     "cidrExample": "如: 10.0.0.0/8"

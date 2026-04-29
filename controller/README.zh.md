@@ -205,8 +205,6 @@ nodes:
 | `GET` | `/api/v1/whitelist` | 条目列表 |
 | `POST` | `/api/v1/whitelist` | 创建条目 |
 | `DELETE` | `/api/v1/whitelist/:id` | 删除条目 |
-| `POST` | `/api/v1/whitelist/batch` | 批量创建 |
-| `DELETE` | `/api/v1/whitelist/batch` | 批量删除 |
 
 ### 节点
 

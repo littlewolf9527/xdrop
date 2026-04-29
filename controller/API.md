@@ -276,6 +276,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 - **IPv6 scope guard**: `decoder=bad_fragment` is rejected with 400 when any target field (`src_ip`/`dst_ip`/`src_cidr`/`dst_cidr`) is IPv6 — v1.3 BPF does not detect IPv6 fragment anomalies. Stable diagnosis substring: `not supported for IPv6 target in v1.3` / `deferred to v1.4`. `decoder=invalid` is allowed on IPv6 (direct-TCP doff<5 check works).
 - **Anomaly rule merge**: POSTing two anomaly rules with the same 5-tuple + same `action=drop` but different `decoder` (e.g. first `bad_fragment`, then `invalid`) merges the `match_anomaly` bitmask onto the existing rule (`0x01 | 0x02 = 0x03`) and returns the same rule ID — no 409 conflict, no duplicate row. BatchCreate does NOT merge (falls back to legacy UNIQUE conflict semantics). `PUT` replaces `match_anomaly` atomically, does not merge.
 - **Anomaly + non-anomaly on same tuple**: creating an anomaly rule on a tuple that already has a non-anomaly rule → 409 conflict (operator must resolve the intent explicitly).
+- **Portless protocol + port (B-10)**: ICMP, ICMPv6, IGMP, GRE, ESP do not carry L4 ports. Specifying a non-zero `src_port` or `dst_port` together with one of these protocols returns `400` with diagnosis `protocol=<name> does not carry ports (src_port/dst_port must be 0)`. The BPF data plane only fills `key.src_port/dst_port` for TCP and UDP; storing a portless+port rule would create a permanent lookup miss (a "ghost" rule that never matches). `protocol=all` and empty protocol allow ports — `all` is a wildcard that may match TCP/UDP traffic. The same rule applies to `WhitelistService.Create`.
 
 **Response `200`:**
 
@@ -287,7 +288,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 }
 ```
 
-The `sync` field is only included when one or more node syncs failed.
+The `sync` field is **always present**. `success: true` only indicates the Controller DB mutation succeeded; check `sync.failed > 0` to determine whether the rule reached the data plane on all nodes.
 
 **Response `400`:** Validation error (e.g., `src_ip` and `src_cidr` both set; missing `rate_limit`).
 
@@ -296,6 +297,21 @@ The `sync` field is only included when one or more node syncs failed.
 ### `PUT /api/v1/rules/:id`
 
 Update an existing rule. Same request body as `POST`. Triggers sync.
+
+**Key fields are immutable**: `src_ip`, `dst_ip`, `src_cidr`, `dst_cidr`, `protocol`, `src_port`, `dst_port`. Sending a different non-empty/non-zero value returns `400` with diagnosis `<field> is a key field and cannot be modified`. Delete and recreate the rule instead. Sending the same value as currently stored is accepted as a no-op (this allows decoder sugar like `decoder=tcp_rst` on an existing tcp rule, which expands to `protocol=tcp` matching the stored value).
+
+**Zero-value PUT limitation**: `protocol`, `src_port`, `dst_port` use scalar (`string` / `int`) request schema, so the server cannot distinguish "field omitted" from "field explicitly set to empty/zero". A request like `PUT {"dst_port": 0}` against an `dst_port=80` rule is treated as **omit/no-op**, not as a clear-to-zero. To change a key field to a different value (including zero), delete and recreate the rule. Pointer-based tri-state schema for these fields is on the v2.7 backlog (see plan §6 R3-002); v2.6.2 keeps the existing scalar contract. Same pattern applies to `rate_limit`, `pkt_len_min/max`, `match_anomaly` — see "Explicit-clear limitation" above.
+
+**Explicit-clear limitation**: `rate_limit`, `pkt_len_min/max`, and `match_anomaly` use `int` schema; sending `0` is treated as "omit/keep existing" rather than "clear". The one exception is `action=drop` in the PUT body — this automatically zeroes `rate_limit`. To clear `pkt_len_*` or `match_anomaly` entirely, delete and recreate the rule.
+
+`tcp_flags` and `comment` use pointer tri-state: omitting the field keeps the existing value, sending `""` clears it, sending a non-empty string sets it.
+
+**Decoder switching contract (v2.6.2+)**: `tcp_flags` and `match_anomaly` are mutually exclusive at the data plane. When using PUT to switch a rule's decoder type, the client must explicitly clear the conflicting field — the server does NOT auto-clear:
+
+- **tcp_flags rule → anomaly decoder** (e.g. `decoder=bad_fragment` / `invalid`): the request must also send `tcp_flags: ""` to explicitly clear the existing `tcp_flags`. Sending only `decoder=bad_fragment` (without `tcp_flags: ""`) returns `400` with diagnosis substring `cannot have both tcp_flags and match_anomaly`.
+- **anomaly rule → tcp_* decoder** (e.g. `decoder=tcp_rst`): `match_anomaly` cannot be explicit-cleared via PUT (its `int` schema has no tri-state). Switching is rejected; delete and recreate the rule instead.
+
+Rationale: v2.6.2 keeps PUT semantics strictly explicit — the server does not implicitly mutate fields the client didn't send. This is symmetric across both directions and consistent with `tcp_flags`'s pointer tri-state contract.
 
 **Response `200`:** Same as `POST`.
 
@@ -458,50 +474,6 @@ Delete a whitelist entry. Triggers sync.
 ```
 
 ---
-
-### `POST /api/v1/whitelist/batch`
-
-Bulk create whitelist entries.
-
-**Request body:**
-
-```json
-{
-  "entries": [ { ...WhitelistRequest }, ... ]
-}
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "added": 5,
-  "failed": 0
-}
-```
-
----
-
-### `DELETE /api/v1/whitelist/batch`
-
-Bulk delete whitelist entries.
-
-**Request body:**
-
-```json
-{ "ids": ["uuid1", "uuid2"] }
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "deleted": 5,
-  "failed": 0
-}
-```
 
 ---
 

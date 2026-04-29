@@ -218,9 +218,10 @@ func (h *RulesHandler) TopRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"rules": result})
 }
 
-// syncToResponse adds sync result fields to a gin.H response map.
+// syncToResponse always includes the sync result so callers can distinguish
+// "DB mutation succeeded" from "data-plane sync succeeded". B-2.
 func syncToResponse(resp gin.H, sr *service.SyncResult) gin.H {
-	if sr != nil && sr.Failed > 0 {
+	if sr != nil {
 		resp["sync"] = sr
 	}
 	return resp

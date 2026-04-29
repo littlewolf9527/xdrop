@@ -11,7 +11,8 @@
     "error": "エラー",
     "warning": "警告",
     "any": "*",
-    "operations": "操作"
+    "operations": "操作",
+    "save": "保存"
   },
   "nav": {
     "dashboard": "ダッシュボード",
@@ -19,14 +20,14 @@
     "whitelist": "ホワイトリスト",
     "nodes": "ノード",
     "settings": "設定",
-    "logout": "ログアウト"
-  ,
+    "logout": "ログアウト",
     "groupFirewall": "FIREWALL",
     "groupSystem": "SYSTEM"
   },
   "theme": {
     "classic": "Classic",
-    "amber": "Amber"},
+    "amber": "Amber"
+  },
   "dashboard": {
     "stats": {
       "rules": "ルール",
@@ -65,7 +66,7 @@
       "action": "アクション",
       "rateLimit": "レート制限 (pps)",
       "pktLen": "パケット長 (バイト)",
-    "tcpFlags": "TCP Flags",
+      "tcpFlags": "TCP Flags",
       "pktLenRange": "パケット長範囲 (バイト)",
       "comment": "コメント",
       "ipType": "タイプ"
@@ -180,11 +181,23 @@
     "atLeastOneIP": "少なくとも1つのIPを入力してください",
     "batchResult": "完了: {success}件成功、{fail}件失敗",
     "batchSuccess": "{n}件のエントリが追加されました",
+    "batchPartialSync": "完了: {success}件のController操作が成功、{syncFailed}件はデータプレーンに同期できませんでした",
     "pktLenHint": "L3（IP層）パケット長（バイト）。0は制限なし",
     "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "長さのみのルールは許可されていません：少なくとも1つの5タプルフィールド（IP/ポート/プロトコル）を指定してください",
     "invalidLenRange": "無効な長さ範囲：最小値は最大値より大きくできません",
-    "invalidCIDR": "CIDRフォーマットが無効です。例: 10.0.0.0/8"
+    "invalidCIDR": "CIDRフォーマットが無効です。例: 10.0.0.0/8",
+    "updateSuccess": "更新しました",
+    "updateFailed": "更新に失敗しました",
+    "pktLenEditHint": "0/0 にしても既存のフィルタは削除されません。削除して再作成してください。",
+    "partialSync": "操作はControllerに書き込まれましたが、{failed}/{total} ノードの同期に失敗しました ({nodes})",
+    "batchMixed": "完了: {success}件成功、{fail}件失敗、{syncFailed}件はDB登録済みですがデータプレーン同期に失敗",
+    "anomalyRequiresTarget": "anomalyルールには具体的な送信元/宛先IP/CIDRが必要です（ワイルドカード不可）",
+    "badFragmentNoIPv6": "bad_fragment は v1.3 では IPv4 ターゲットのみサポートしています",
+    "anomalyNoRateLimit": "anomalyルールはdropアクションのみサポートしています",
+    "anomalyToTcpRequiresRecreate": "このルールはanomaly型（bad_fragment / invalid）です。TCP flags decoderに切り替えるには、ルールを削除して再作成してください。",
+    "portlessProtocolNoPort": "ICMP / ICMPv6 / IGMP / GRE / ESP はL4ポートを持たないため、ポート欄は自動的に0に固定されます。",
+    "cidrInIPField": "ネットワーク範囲はCIDRモードに切り替えて入力してください"
   },
   "dialog": {
     "addRule": "ルール追加",
@@ -192,14 +205,16 @@
     "batchAddRule": "ルール一括追加",
     "batchAddWhitelist": "ホワイトリスト一括追加",
     "confirmDelete": "削除確認",
-    "batchDelete": "一括削除"
+    "batchDelete": "一括削除",
+    "editRule": "ルールの編集"
   },
   "placeholder": {
     "optional": "任意",
     "leaveEmptyForAny": "空欄の場合はすべて許可",
     "searchIP": "IPアドレスを検索...",
     "ipListHint": "1行に1つのIPまたはCIDR\n192.168.1.0/24\n10.0.0.1",
-    "cidrExample": "例: 10.0.0.0/8"
+    "cidrExample": "例: 10.0.0.0/8",
+    "clearToRemove": "空にするとクリア"
   },
   "login": {
     "title": "ログイン",

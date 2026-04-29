@@ -240,3 +240,111 @@ func rejectIPv6AnomalyTarget(req *model.RuleRequest, decoderName string) error {
 			"use BGP null-route or rate-limit instead",
 		decoderName)
 }
+
+// ---- AUD-001: direct match_anomaly validation ----
+// These functions enforce the same invariants as normalizeDecoder's anomaly
+// expansion path, but for callers who POST match_anomaly directly (without
+// using decoder sugar). xSight v1.3 controller pushes raw match_anomaly bits
+// via gRPC, so we cannot reject the raw field — instead we validate it here.
+
+// validateAnomalyFields validates match_anomaly for Create / BatchCreate paths.
+func validateAnomalyFields(req *model.RuleRequest) error {
+	return validateAnomalyEffective(
+		req.MatchAnomaly, req.Action,
+		req.SrcIP, req.DstIP, req.SrcCIDR, req.DstCIDR,
+	)
+}
+
+// validateAnomalyFieldsForUpdate validates match_anomaly for the Update path.
+// Key fields (src_ip, dst_ip, src_cidr, dst_cidr) cannot be changed via PUT,
+// so we merge effective target from the existing rule before validating.
+func validateAnomalyFieldsForUpdate(req *model.RuleRequest, existing *model.Rule) error {
+	effAnomaly := existing.MatchAnomaly
+	if req.MatchAnomaly != 0 {
+		effAnomaly = req.MatchAnomaly
+	}
+	effAction := existing.Action
+	if req.Action != "" {
+		effAction = req.Action
+	}
+	return validateAnomalyEffective(
+		effAnomaly, effAction,
+		existing.SrcIP, existing.DstIP, existing.SrcCIDR, existing.DstCIDR,
+	)
+}
+
+func validateAnomalyEffective(matchAnomaly int, action, srcIP, dstIP, srcCIDR, dstCIDR string) error {
+	if matchAnomaly == 0 {
+		return nil
+	}
+	// 1. bitmask: reject negatives and unknown bits
+	validBits := int(AnomalyBadFragment | AnomalyInvalid)
+	if matchAnomaly < 0 || matchAnomaly&^validBits != 0 {
+		return fmt.Errorf("invalid match_anomaly bits: %d (valid bits: 0x%x)", matchAnomaly, validBits)
+	}
+	// 2. anomaly rules are drop-only
+	if action == "rate_limit" {
+		return fmt.Errorf("anomaly rules are drop-only (match_anomaly != 0 requires action=drop)")
+	}
+	// 3. must have a bounded target (wildcard IPs and default routes are rejected
+	//    because Node ruleToKey treats 0.0.0.0 / :: as unset, leaving the rule
+	//    effectively unbounded at the BPF level)
+	if !hasBoundedAnomalyTarget(srcIP, dstIP, srcCIDR, dstCIDR) {
+		return fmt.Errorf(
+			"anomaly rule requires a bounded target: " +
+				"src/dst IP must not be empty/0.0.0.0/::, " +
+				"src/dst CIDR must not be 0.0.0.0/0 or ::/0")
+	}
+	// 4. bad_fragment does not support IPv6 targets in v1.3
+	if matchAnomaly&int(AnomalyBadFragment) != 0 {
+		if isIPv6String(srcIP) || isIPv6String(dstIP) || isIPv6CIDR(srcCIDR) || isIPv6CIDR(dstCIDR) {
+			return fmt.Errorf(
+				"decoder \"bad_fragment\" not supported for IPv6 target in v1.3 " +
+					"(IPv6 fragment detection deferred to v1.4); " +
+					"use BGP null-route or rate-limit instead")
+		}
+	}
+	return nil
+}
+
+// isDefaultRoute reports whether cidr is the IPv4 or IPv6 default route (/0).
+func isDefaultRoute(cidr string) bool {
+	if cidr == "" {
+		return false
+	}
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false
+	}
+	ones, _ := n.Mask.Size()
+	return ones == 0
+}
+
+// hasBoundedAnomalyTarget returns true only when at least one target field
+// provides a genuine key constraint at the BPF level.
+// Aligns with Node ruleToKey (convert.go) which treats 0.0.0.0/:: as unset.
+// NOTE: must be called after IP/CIDR normalize so inputs are canonical.
+func hasBoundedAnomalyTarget(srcIP, dstIP, srcCIDR, dstCIDR string) bool {
+	boundedExact := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		ip := net.ParseIP(s)
+		return ip != nil && !ip.IsUnspecified()
+	}
+	// boundedCIDR validates and checks prefix length itself — does not rely on
+	// isDefaultRoute's parse-error fallback.
+	boundedCIDR := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		_, n, err := net.ParseCIDR(s)
+		if err != nil {
+			return false // invalid CIDR → not bounded
+		}
+		ones, _ := n.Mask.Size()
+		return ones > 0
+	}
+	return boundedExact(srcIP) || boundedExact(dstIP) ||
+		boundedCIDR(srcCIDR) || boundedCIDR(dstCIDR)
+}

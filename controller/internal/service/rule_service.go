@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"strings"
 	"time"
@@ -43,9 +44,24 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 	if req.Action == "rate_limit" && req.RateLimit <= 0 {
 		return nil, nil, fmt.Errorf("rate_limit must be > 0 for rate_limit action")
 	}
+	// B-1: IP format validation + IPv4-mapped normalize (before CIDR/anomaly checks)
+	if err := validateIPFields(req); err != nil {
+		return nil, nil, err
+	}
+
+	// AUD-006: scalar bounds (Create path: drop+rate_limit>0 is also rejected)
+	if err := validateRuleScalarBounds(req); err != nil {
+		return nil, nil, err
+	}
 
 	// Validate protocol
 	if err := validateProtocol(req.Protocol); err != nil {
+		return nil, nil, err
+	}
+
+	// B-10: portless protocols (icmp/icmpv6/igmp/gre/esp) cannot carry ports;
+	// reject up front to avoid silent BPF dead rules.
+	if err := validatePortProtocolCompat(req.Protocol, req.SrcPort, req.DstPort); err != nil {
 		return nil, nil, err
 	}
 
@@ -54,7 +70,8 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		return nil, nil, err
 	}
 
-	// Validate CIDR rule
+	// Validate CIDR rule (normalizes req.SrcCIDR / req.DstCIDR to network address)
+	// Must run before anomaly validation so hasBoundedAnomalyTarget sees normalized CIDRs.
 	isCIDR := req.SrcCIDR != "" || req.DstCIDR != ""
 	if isCIDR {
 		if err := validateCIDRRule(req); err != nil {
@@ -64,6 +81,21 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		if err := s.checkCIDROverlap(req.SrcCIDR, req.DstCIDR); err != nil {
 			return nil, nil, err
 		}
+	}
+
+	// AUD-001: anomaly invariants — run after IP normalize (validateIPFields above)
+	// and CIDR normalize (validateCIDRRule above) so hasBoundedAnomalyTarget sees
+	// canonical strings.
+	if err := validateAnomalyFields(req); err != nil {
+		return nil, nil, err
+	}
+
+	// R6-001: tcp_flags and match_anomaly are mutually exclusive at the data
+	// plane (anomaly_verify is a separate XDP program with its own combo
+	// lookup; mixing fields produces a hybrid rule that no path actually
+	// matches). Reject up front rather than letting it through.
+	if derefString(req.TcpFlags) != "" && req.MatchAnomaly != 0 {
+		return nil, nil, fmt.Errorf("rule cannot have both tcp_flags and match_anomaly: clear one before setting the other")
 	}
 
 	// Check for duplicates. v2.6.1 Phase 4 B5 (proposal §7.2.1 committed
@@ -135,7 +167,7 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		TcpFlags:     derefString(req.TcpFlags),
 		MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
 		Source:       req.Source,
-		Comment:      req.Comment,
+		Comment:      derefString(req.Comment),
 		Enabled:      true,
 		CreatedAt:    time.Now(),
 		ExpiresAt:    expiresAt,
@@ -254,9 +286,49 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if req.SrcCIDR != "" || req.DstCIDR != "" {
 		return nil, nil, fmt.Errorf("CIDR key fields (src_cidr, dst_cidr) cannot be modified; delete and recreate the rule instead")
 	}
+	// B-1: validate IP format before the "key fields cannot be modified" check so
+	// the caller gets a useful diagnosis instead of "cannot be modified" for garbage input.
+	if err := validateIPFields(req); err != nil {
+		return nil, nil, err
+	}
 	// IP key fields cannot be modified either
 	if req.SrcIP != "" || req.DstIP != "" {
 		return nil, nil, fmt.Errorf("IP key fields (src_ip, dst_ip) cannot be modified; delete and recreate the rule instead")
+	}
+
+	// rev11 / codex round 9 P2: protocol and src_port/dst_port are also key
+	// fields and cannot be modified. Previously these were implicitly
+	// immutable (the field merge below never assigned them to the stored
+	// rule), but client requests like `PUT protocol=gre` were silently
+	// accepted as no-ops. Reject explicitly so callers get clear feedback
+	// and so plan's `TestUpdateRule_PortToPortlessProto_Reject` matches.
+	// This also obviates the B-10 effective-value validation for Update —
+	// since key fields can't change, the existing rule's stored
+	// (protocol, ports) was already validated at Create time.
+	if req.Protocol != "" {
+		// normalizeDecoderForUpdate sets req.Protocol when a tcp_* decoder is
+		// applied, but it ALWAYS sets it to "tcp" for tcp_* decoders; if the
+		// rule's existing protocol matches that's a no-op via decoder sugar.
+		// Reject only when the request would change the protocol.
+		if req.Protocol != rule.Protocol {
+			return nil, nil, fmt.Errorf("protocol is a key field and cannot be modified (current: %s, requested: %s); delete and recreate the rule instead", rule.Protocol, req.Protocol)
+		}
+	}
+	if req.SrcPort != 0 && req.SrcPort != rule.SrcPort {
+		return nil, nil, fmt.Errorf("src_port is a key field and cannot be modified (current: %d, requested: %d); delete and recreate the rule instead", rule.SrcPort, req.SrcPort)
+	}
+	if req.DstPort != 0 && req.DstPort != rule.DstPort {
+		return nil, nil, fmt.Errorf("dst_port is a key field and cannot be modified (current: %d, requested: %d); delete and recreate the rule instead", rule.DstPort, req.DstPort)
+	}
+
+	// AUD-006: scalar bounds on updatable fields
+	if err := validateRuleScalarBounds(req); err != nil {
+		return nil, nil, err
+	}
+
+	// AUD-001: anomaly invariants using effective values (existing rule provides target)
+	if err := validateAnomalyFieldsForUpdate(req, rule); err != nil {
+		return nil, nil, err
 	}
 
 	// Validate packet length rule using updated values
@@ -295,6 +367,10 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if effectiveAction == "rate_limit" && effectiveRateLimit <= 0 {
 		return nil, nil, fmt.Errorf("rate_limit must be > 0 for rate_limit action")
 	}
+	// AUD-006 / R4-003: explicit positive rate_limit with effective drop is a conflict
+	if req.RateLimit > 0 && effectiveAction == "drop" {
+		return nil, nil, fmt.Errorf("rate_limit > 0 conflicts with action=drop; remove rate_limit or change action to rate_limit")
+	}
 
 	// Apply field updates
 	if req.Name != "" {
@@ -303,7 +379,10 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if req.Action != "" {
 		rule.Action = req.Action
 	}
-	if req.RateLimit > 0 {
+	// AUD-006 / R3-002: auto-clear rate_limit when action transitions to drop
+	if effectiveAction == "drop" {
+		rule.RateLimit = 0
+	} else if req.RateLimit > 0 {
 		rule.RateLimit = req.RateLimit
 	}
 	if req.PktLenMin > 0 || req.PktLenMax > 0 {
@@ -340,8 +419,22 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if req.MatchAnomaly != 0 {
 		rule.MatchAnomaly = req.MatchAnomaly
 	}
-	if req.Comment != "" {
-		rule.Comment = req.Comment
+	// B-9: Comment is pointer tri-state — nil means "keep existing", non-nil
+	// (including "") means "set to this value", so explicit clear works.
+	if req.Comment != nil {
+		rule.Comment = *req.Comment
+	}
+
+	// R6-001 / R6-002: tcp_flags and match_anomaly are mutually exclusive at the
+	// data plane. Catches both edit directions:
+	//   A. existing tcp_flags rule + decoder=bad_fragment: req.TcpFlags must be
+	//      explicitly cleared (frontend sends tcp_flags=""), or this rejects
+	//   B. existing anomaly rule + decoder=tcp_rst: match_anomaly's int schema
+	//      can't be explicit-cleared via PUT, so we reject here. Frontend
+	//      should disable tcp_* decoders for anomaly rows + hint
+	//      "delete and recreate to switch type"
+	if rule.TcpFlags != "" && rule.MatchAnomaly != 0 {
+		return nil, nil, fmt.Errorf("rule cannot have both tcp_flags and match_anomaly: clear one before setting the other (set tcp_flags=\"\" in the request, or for anomaly→tcp_flags switch, delete and recreate the rule)")
 	}
 
 	rule.UpdatedAt = time.Now()
@@ -404,8 +497,26 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			continue
 		}
 
+		// B-1: IP format validation + normalize
+		if err := validateIPFields(&req); err != nil {
+			failed++
+			continue
+		}
+
+		// AUD-006: scalar bounds
+		if err := validateRuleScalarBounds(&req); err != nil {
+			failed++
+			continue
+		}
+
 		// Validate protocol
 		if err := validateProtocol(req.Protocol); err != nil {
+			failed++
+			continue
+		}
+
+		// B-10: portless protocol + port → BPF dead rule. Reject up front.
+		if err := validatePortProtocolCompat(req.Protocol, req.SrcPort, req.DstPort); err != nil {
 			failed++
 			continue
 		}
@@ -416,7 +527,7 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			continue
 		}
 
-		// Validate CIDR rule
+		// Validate CIDR rule (normalizes CIDRs — must run before anomaly check)
 		if req.SrcCIDR != "" || req.DstCIDR != "" {
 			if err := validateCIDRRule(&req); err != nil {
 				failed++
@@ -440,6 +551,18 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 					continue
 				}
 			}
+		}
+
+		// AUD-001: anomaly invariants — after IP and CIDR normalize
+		if err := validateAnomalyFields(&req); err != nil {
+			failed++
+			continue
+		}
+
+		// R6-001: tcp_flags + match_anomaly are mutually exclusive (see Create path)
+		if derefString(req.TcpFlags) != "" && req.MatchAnomaly != 0 {
+			failed++
+			continue
 		}
 
 		protocol := req.Protocol
@@ -511,7 +634,7 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			TcpFlags:     derefString(req.TcpFlags),
 			MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
 			Source:       req.Source,
-			Comment:      req.Comment,
+			Comment:      derefString(req.Comment),
 			Enabled:      true,
 			CreatedAt:    time.Now(),
 			ExpiresAt:    expiresAt,
@@ -548,7 +671,10 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 // BatchDelete removes multiple rules by ID.
 func (s *RuleService) BatchDelete(ids []string) (int, int, *SyncResult, error) {
 	if len(ids) == 0 {
-		return 0, 0, nil, nil
+		// rev9 codex round 8 P3: keep `sync` always-present in handler response
+		// (B-2 contract). Return an empty SyncResult instead of nil so
+		// syncToResponse() emits the field with zero counters.
+		return 0, 0, &SyncResult{}, nil
 	}
 
 	// 1. Delete from local database first (transactional)
@@ -629,6 +755,39 @@ var validProtocols = map[string]bool{
 	"":       true,
 }
 
+// portlessProtocols are L4 protocols that don't carry source/destination
+// ports. The BPF datapath (xdrop.c parse_l4) only fills key.src_port /
+// key.dst_port for PROTO_TCP and PROTO_UDP — every other protocol leaves
+// the key ports at 0. Storing a rule with src_port=500 + protocol=gre
+// makes the rule a permanent BPF lookup miss (rule key port=500 ≠ packet
+// key port=0). B-10 rejects such ghost rules at the API boundary.
+//
+// "all" is NOT portless — it's a wildcard that may match TCP/UDP traffic,
+// so the data plane will fill ports for those packets. Allowing port on
+// "all" preserves the existing semantics.
+var portlessProtocols = map[string]bool{
+	"icmp":   true,
+	"icmpv6": true,
+	"igmp":   true,
+	"gre":    true,
+	"esp":    true,
+}
+
+// validatePortProtocolCompat rejects port values when the protocol cannot
+// carry them. Empty protocol and "all" are allowed with ports (legacy
+// wildcard semantics; see portlessProtocols comment).
+func validatePortProtocolCompat(protocol string, srcPort, dstPort int) error {
+	if !portlessProtocols[protocol] {
+		return nil
+	}
+	if srcPort == 0 && dstPort == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"protocol=%s does not carry ports (src_port/dst_port must be 0); got src_port=%d dst_port=%d",
+		protocol, srcPort, dstPort)
+}
+
 // validateProtocol rejects protocol values outside the supported set.
 func validateProtocol(protocol string) error {
 	if !validProtocols[protocol] {
@@ -707,6 +866,98 @@ func derefString(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// validateRuleScalarBounds checks that numeric fields fit Node-side types
+// (uint16 for ports/pkt_len, uint32 for rate_limit) and rejects nonsensical
+// combinations such as action=drop with a positive rate_limit. AUD-006.
+func validateRuleScalarBounds(req *model.RuleRequest) error {
+	if req.SrcPort < 0 || req.SrcPort > 65535 {
+		return fmt.Errorf("src_port out of range [0,65535]: %d", req.SrcPort)
+	}
+	if req.DstPort < 0 || req.DstPort > 65535 {
+		return fmt.Errorf("dst_port out of range [0,65535]: %d", req.DstPort)
+	}
+	if req.PktLenMin < 0 || req.PktLenMin > 65535 {
+		return fmt.Errorf("pkt_len_min out of range [0,65535]: %d", req.PktLenMin)
+	}
+	if req.PktLenMax < 0 || req.PktLenMax > 65535 {
+		return fmt.Errorf("pkt_len_max out of range [0,65535]: %d", req.PktLenMax)
+	}
+	if req.RateLimit < 0 {
+		return fmt.Errorf("rate_limit must be non-negative: %d", req.RateLimit)
+	}
+	if req.RateLimit > math.MaxUint32 {
+		return fmt.Errorf("rate_limit exceeds uint32 max: %d", req.RateLimit)
+	}
+	// action=drop with a positive rate_limit is a contradictory/redundant field.
+	if req.Action == "drop" && req.RateLimit > 0 {
+		return fmt.Errorf("rate_limit must be 0 when action=drop (got %d)", req.RateLimit)
+	}
+	return nil
+}
+
+// validateWhitelistScalarBounds checks port ranges for whitelist entries. AUD-006.
+func validateWhitelistScalarBounds(req *model.WhitelistRequest) error {
+	if req.SrcPort < 0 || req.SrcPort > 65535 {
+		return fmt.Errorf("src_port out of range [0,65535]: %d", req.SrcPort)
+	}
+	if req.DstPort < 0 || req.DstPort > 65535 {
+		return fmt.Errorf("dst_port out of range [0,65535]: %d", req.DstPort)
+	}
+	return nil
+}
+
+// validateAndNormalizeIPField validates and optionally normalizes a single IP
+// string. Accepts empty string (means "any"). Rejects non-IP values (e.g.
+// CIDR notation) with a diagnostic. IPv4-mapped IPv6 addresses are normalized
+// to their IPv4 form to match Node ruleToKey behaviour. B-1.
+func validateAndNormalizeIPField(field, value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	ip := net.ParseIP(value)
+	if ip == nil {
+		return "", fmt.Errorf("%s %q is not a valid IP address (for CIDR ranges use %s_cidr)", field, value, field[:3])
+	}
+	// Normalize IPv4-mapped IPv6 (e.g. ::ffff:1.2.3.4) → plain IPv4 to match
+	// Node-side ip.To4() behaviour and avoid display format drift.
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4.String(), nil
+	}
+	return ip.String(), nil
+}
+
+// validateIPFields validates and normalizes src_ip / dst_ip on a RuleRequest. B-1.
+func validateIPFields(req *model.RuleRequest) error {
+	normalized, err := validateAndNormalizeIPField("src_ip", req.SrcIP)
+	if err != nil {
+		return err
+	}
+	req.SrcIP = normalized
+
+	normalized, err = validateAndNormalizeIPField("dst_ip", req.DstIP)
+	if err != nil {
+		return err
+	}
+	req.DstIP = normalized
+	return nil
+}
+
+// validateWhitelistIPFields validates src_ip / dst_ip on a WhitelistRequest. B-1.
+func validateWhitelistIPFields(req *model.WhitelistRequest) error {
+	normalized, err := validateAndNormalizeIPField("src_ip", req.SrcIP)
+	if err != nil {
+		return err
+	}
+	req.SrcIP = normalized
+
+	normalized, err = validateAndNormalizeIPField("dst_ip", req.DstIP)
+	if err != nil {
+		return err
+	}
+	req.DstIP = normalized
+	return nil
 }
 
 // validateAndNormalizeTcpFlags validates tcp_flags syntax and returns canonical form.

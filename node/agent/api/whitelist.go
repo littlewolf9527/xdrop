@@ -59,6 +59,16 @@ func (h *Handlers) AddWhitelist(c *gin.Context) {
 		return
 	}
 
+	// B-10 (rev13 codex round 12 P2): same portless+port guard as rules. BPF
+	// whitelist matching uses the same key-port semantics as the rule path
+	// (only TCP/UDP packets get key.src_port/dst_port filled), so a
+	// `protocol=gre + src_port=500` whitelist entry would never match —
+	// silent ghost whitelist. Reject at every Node whitelist write entry.
+	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	key, err := h.whitelistToKey(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -233,6 +243,11 @@ func (h *Handlers) AddWhitelistBatch(c *gin.Context) {
 			continue
 		}
 		if hasPortOrProto && !hasBothIPs {
+			failed++
+			continue
+		}
+		// B-10 (rev13 codex round 12 P2): portless+port guard for batch.
+		if err := validatePortProtocolCompatNode(entry.Protocol, entry.SrcPort, entry.DstPort); err != nil {
 			failed++
 			continue
 		}

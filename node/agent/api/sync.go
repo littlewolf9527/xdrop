@@ -58,6 +58,10 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 	if action == ActionRateLimit && req.RateLimit <= 0 {
 		return fmt.Errorf("rate_limit must be > 0 for rate_limit action")
 	}
+	// Anomaly semantic guard
+	if err := validateNodeAnomalyFields(req.MatchAnomaly, req.Action, req.SrcIP, req.DstIP, req.SrcCIDR, req.DstCIDR); err != nil {
+		return err
+	}
 
 	fm, fv, fErr := parseTcpFlags(req.TcpFlags)
 	if fErr != nil {
@@ -173,9 +177,7 @@ func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
 			h.ruleKeyIndex[oldStored.Key] = id
 			// Re-insert old BPF entry if it was deleted (best-effort restore)
 			if oldStored.Key != key {
-				oldAction, _ := parseAction(oldStored.Action)
-				oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
-				oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+				oldValue := ruleValueFromStored(*oldStored) // AUD-008
 				if insErr := bl.Update(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 					log.Printf("[AddRuleFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
 				}
@@ -302,14 +304,27 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				}
 			}
 
-			// Validate tcp_flags + protocol BEFORE CIDR allocation so a rejection
-			// here does not leave freshly-allocated trie IDs leaked (AUD-V240-001).
+			// Validate tcp_flags + protocol + anomaly semantics BEFORE CIDR allocation
+			// so a rejection here does not leave freshly-allocated trie IDs leaked.
 			cfm, cfv, cfErr := parseTcpFlags(r.TcpFlags)
 			if cfErr != nil {
 				failed++
 				continue
 			}
 			if cfm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
+				failed++
+				continue
+			}
+			if err := validateNodeAnomalyFields(r.MatchAnomaly, r.Action, r.SrcIP, r.DstIP, r.SrcCIDR, r.DstCIDR); err != nil {
+				log.Printf("[AtomicSync] CIDR rule %s anomaly guard rejected: %v", id, err)
+				failed++
+				continue
+			}
+			// B-10 (rev11 codex round 9 P2): portless+port guard for CIDR
+			// AtomicSync path. Rejected items count toward `failed` so the
+			// Controller's DiffSync dual-failure contract sees the reject.
+			if err := validatePortProtocolCompatNode(r.Protocol, r.SrcPort, r.DstPort); err != nil {
+				log.Printf("[AtomicSync] CIDR rule %s portless+port rejected: %v", id, err)
 				failed++
 				continue
 			}
@@ -395,6 +410,11 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		} else {
 			// --- Exact rule ---
 			if err := validateRule(r.SrcIP, r.DstIP, r.Protocol, r.SrcPort, r.DstPort, r.PktLenMin, r.PktLenMax); err != nil {
+				failed++
+				continue
+			}
+			if err := validateNodeAnomalyFields(r.MatchAnomaly, r.Action, r.SrcIP, r.DstIP, r.SrcCIDR, r.DstCIDR); err != nil {
+				log.Printf("[AtomicSync] rule %s anomaly guard rejected: %v", id, err)
 				failed++
 				continue
 			}
@@ -503,6 +523,11 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 
 	newRuleMapSel := 1 - h.activeRuleSlot
 
+	// AUD-003: count anomaly rules from the NEW ruleset being installed.
+	// Must NOT call countAnomalyRulesLocked() — that reads h.rules/h.cidrRules
+	// (old state). We need the absolute count for the shadow config before flip.
+	anomalyCount := countAnomalyRulesIn(newRules, newCidrRules)
+
 	configUpdates := []struct {
 		idx uint32
 		val uint64
@@ -512,6 +537,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		{ConfigCIDRBitmap, cidrBitmap},
 		{ConfigCIDRRuleCount, uint64(shadowCidrCount)},
 		{ConfigRuleMapSelector, uint64(newRuleMapSel)},
+		{ConfigAnomalyRuleCount, uint64(anomalyCount)},
 	}
 	for _, u := range configUpdates {
 		key := make([]byte, 4)
@@ -635,6 +661,10 @@ func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
 	}
 	if hasIP && !hasBothIPs && hasPortOrProto {
 		return fmt.Errorf("whitelist with port/protocol requires both src_ip and dst_ip (exact 5-tuple)")
+	}
+	// B-10 (rev13 codex round 12 P2): portless+port guard for whitelist sync.
+	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
+		return err
 	}
 
 	key, err := h.whitelistToKey(req)

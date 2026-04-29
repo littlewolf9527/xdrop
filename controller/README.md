@@ -205,8 +205,6 @@ All routes are under `/api/v1/`. The controller also exposes `/health` and `/api
 | `GET` | `/api/v1/whitelist` | List entries |
 | `POST` | `/api/v1/whitelist` | Create entry |
 | `DELETE` | `/api/v1/whitelist/:id` | Delete entry |
-| `POST` | `/api/v1/whitelist/batch` | Bulk create |
-| `DELETE` | `/api/v1/whitelist/batch` | Bulk delete |
 
 ### Nodes
 

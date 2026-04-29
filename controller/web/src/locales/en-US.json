@@ -1,6 +1,7 @@
 {
   "common": {
     "add": "Add",
+    "save": "Save",
     "delete": "Delete",
     "cancel": "Cancel",
     "confirm": "Confirm",
@@ -167,6 +168,7 @@
     "protocol": "Proto",
     "pktLen": "Pkt Len",
     "tcpFlags": "TCP Flags",
+    "decoder": "Decoder",
     "action": "Action",
     "matchCount": "Matched",
     "dropPPS": "Drop PPS",
@@ -188,15 +190,28 @@
     "atLeastOneIP": "Please enter at least one IP",
     "batchResult": "Completed: {success} succeeded, {fail} failed",
     "batchSuccess": "Successfully added {n} entries",
+    "batchPartialSync": "Completed: {success} Controller operations succeeded, but {syncFailed} did not reach the data plane (sync failed)",
     "pktLenHint": "L3 (IP layer) packet length in bytes. 0 means no limit",
     "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid flags: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "decoderHint": "Syntactic sugar expanded server-side. When set, Protocol/TCP Flags selectors are cleared and must not be specified. bad_fragment and invalid require an explicit IP/CIDR target; bad_fragment is IPv4-only in v1.3.",
     "pktLenOnlyNotAllowed": "Length-only rules not allowed: please specify at least one 5-tuple field (IP/Port/Protocol)",
     "invalidLenRange": "Invalid length range: minimum cannot be greater than maximum",
-    "invalidCIDR": "Invalid CIDR format, use e.g.: 10.0.0.0/8"
+    "invalidCIDR": "Invalid CIDR format, use e.g.: 10.0.0.0/8",
+    "partialSync": "Operation written to Controller, but {failed}/{total} node(s) failed to sync ({nodes})",
+    "batchMixed": "Completed: {success} succeeded, {fail} failed, {syncFailed} stored but failed to sync to data plane",
+    "anomalyRequiresTarget": "Anomaly rules require a specific src/dst IP or CIDR (wildcards like 0.0.0.0 / :: are not allowed)",
+    "badFragmentNoIPv6": "bad_fragment only supports IPv4 targets in v1.3",
+    "anomalyNoRateLimit": "Anomaly rules (bad_fragment / invalid) only support drop action",
+    "anomalyToTcpRequiresRecreate": "This rule is anomaly-typed (bad_fragment / invalid). To switch to a TCP flags decoder, please delete and recreate the rule.",
+    "portlessProtocolNoPort": "ICMP / ICMPv6 / IGMP / GRE / ESP do not carry L4 ports — port fields are forced to 0.",
+    "cidrInIPField": "Please switch to CIDR mode to enter a network range; the IP field only accepts a single IP address",
+    "pktLenEditHint": "Setting to 0/0 does not clear existing length filters; delete and recreate the rule to remove them.",
+    "updateSuccess": "Updated successfully",
+    "updateFailed": "Update failed"
   },
   "dialog": {
     "addRule": "Add Rule",
+    "editRule": "Edit Rule",
     "addWhitelist": "Add Whitelist Entry",
     "batchAddRule": "Batch Add Rules",
     "batchAddWhitelist": "Batch Add Whitelist",
@@ -206,6 +221,7 @@
   "placeholder": {
     "optional": "Optional",
     "leaveEmptyForAny": "Leave empty for any",
+    "clearToRemove": "Leave empty to clear",
     "searchIP": "Search IP address...",
     "ipListHint": "One IP or CIDR per line\n192.168.1.0/24\n10.0.0.1",
     "cidrExample": "e.g. 10.0.0.0/8"

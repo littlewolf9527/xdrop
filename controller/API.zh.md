@@ -275,6 +275,7 @@ X-API-Key: <external_api_key>
 - **IPv6 scope guard**：`decoder=bad_fragment` 配合任何 IPv6 target 字段（`src_ip`/`dst_ip`/`src_cidr`/`dst_cidr`）→ 400 拒绝，v1.3 BPF 不检测 IPv6 fragment anomaly。错误体含稳定子串 `not supported for IPv6 target in v1.3` / `deferred to v1.4`。`decoder=invalid` 在 IPv6 上允许（直连 TCP doff<5 检测生效）。
 - **Anomaly 规则合并**：同 5-tuple + 同 `action=drop` 的两次 anomaly 下发（如先 `bad_fragment`、再 `invalid`）自动把 `match_anomaly` bitmap OR 合并到既有规则（`0x01 | 0x02 = 0x03`），返回**同一** rule ID，不 409 冲突、不新增行。BatchCreate **不**做合并（沿用老 UNIQUE 冲突语义）。`PUT` 为**替换**语义，不合并。
 - **Anomaly 与非-anomaly 规则共存**：在已有非-anomaly 规则的 tuple 上再下发 anomaly → 409（需显式解决意图）。
+- **Portless 协议 + 端口（B-10）**：ICMP、ICMPv6、IGMP、GRE、ESP 不携带 L4 端口字段。这些协议配合 `src_port` 或 `dst_port` 非零 → 400，错误体含 `protocol=<名> does not carry ports (src_port/dst_port must be 0)`。BPF 数据面只对 TCP/UDP 填 `key.src_port/dst_port`，存储 portless+port 规则会成为永远不命中的 ghost rule。`protocol=all` 和空协议允许带端口（`all` 是通配，可匹配 TCP/UDP 流量）。同款约束也用于 `WhitelistService.Create`。
 
 **响应 `200`：**
 
@@ -286,7 +287,7 @@ X-API-Key: <external_api_key>
 }
 ```
 
-`sync` 字段仅在有节点同步失败时包含在响应中。
+`sync` 字段**始终返回**。`success: true` 仅表示 Controller DB mutation 成功；若要确认规则已到达数据面，需检查 `sync.failed > 0`。
 
 **响应 `400`：** 校验错误（如同时设置了 `src_ip` 和 `src_cidr`；缺少 `rate_limit` 等）。
 
@@ -295,6 +296,21 @@ X-API-Key: <external_api_key>
 ### `PUT /api/v1/rules/:id`
 
 更新已有规则。请求体与 `POST` 相同。触发同步。
+
+**Key 字段不可修改**：`src_ip`、`dst_ip`、`src_cidr`、`dst_cidr`、`protocol`、`src_port`、`dst_port`。发送不同**非空/非零**值会返回 `400`，诊断字符串 `<字段> is a key field and cannot be modified`。请删除后重建。发送与当前存储相同的值视为 no-op 接受（这让 decoder sugar 如 `decoder=tcp_rst` 在已是 tcp 协议的规则上展开成 `protocol=tcp` 与存储值相等可正常工作）。
+
+**零值 PUT 限制**：`protocol`、`src_port`、`dst_port` 使用 scalar（`string` / `int`）请求 schema，服务端无法区分"字段省略"和"字段显式置空/0"。`PUT {"dst_port": 0}` 对一个 `dst_port=80` 的规则被视为 **omit/no-op**，**不**会清空。要把 key 字段改成另一个值（包括 0/空），需要删除规则后重建。这些字段的 pointer 三态 schema 改造在 v2.7 backlog（plan §6 R3-002）；v2.6.2 保留 scalar 契约。同款限制也适用于 `rate_limit`、`pkt_len_min/max`、`match_anomaly`——见上文"显式清空限制"。
+
+**显式清空限制**：`rate_limit`、`pkt_len_min/max`、`match_anomaly` 使用 `int` schema，发 `0` 视为"省略/保留原值"而非"清空"。唯一例外：PUT body 包含 `action=drop` 时会自动将 `rate_limit` 清零。如需完整清除 `pkt_len_*` 或 `match_anomaly`，请删除规则后重建。
+
+`tcp_flags` 和 `comment` 使用 pointer 三态：字段省略表示保留原值，发 `""` 表示清空，发非空字符串表示设置新值。
+
+**Decoder 切换契约（v2.6.2+）**：`tcp_flags` 和 `match_anomaly` 在数据面互斥。用 PUT 切换规则 decoder 类型时，客户端必须**显式**清空冲突字段——服务端**不**做隐式自动清空：
+
+- **tcp_flags 规则 → anomaly decoder**（如 `decoder=bad_fragment` / `invalid`）：请求必须同时带 `tcp_flags: ""` 显式清空旧的 `tcp_flags`。只发 `decoder=bad_fragment` 不带 `tcp_flags: ""` 会返回 `400`，诊断字符串包含 `cannot have both tcp_flags and match_anomaly`。
+- **anomaly 规则 → tcp_* decoder**（如 `decoder=tcp_rst`）：`match_anomaly` 是 `int` schema 无 tri-state，PUT 无法显式清空。这种切换会被拒绝；请删除规则后重建。
+
+理由：v2.6.2 保持 PUT 语义严格显式——服务端不会隐式 mutate 客户端没送的字段。两个方向行为对称，与 `tcp_flags` 的 pointer 三态契约保持一致。
 
 **响应 `200`：** 同 `POST`。
 
@@ -457,50 +473,6 @@ X-API-Key: <external_api_key>
 ```
 
 ---
-
-### `POST /api/v1/whitelist/batch`
-
-批量创建白名单条目。
-
-**请求体：**
-
-```json
-{
-  "entries": [ { ...白名单请求体 }, ... ]
-}
-```
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "added": 5,
-  "failed": 0
-}
-```
-
----
-
-### `DELETE /api/v1/whitelist/batch`
-
-批量删除白名单条目。
-
-**请求体：**
-
-```json
-{ "ids": ["uuid1", "uuid2"] }
-```
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "deleted": 5,
-  "failed": 0
-}
-```
 
 ---
 

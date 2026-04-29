@@ -48,18 +48,20 @@ func NewControllerSync(config SyncConfig) *ControllerSync {
 
 // Rule represents a rule from Controller (matches Controller format)
 type Rule struct {
-	ID        string `json:"id"`
-	SrcIP     string `json:"src_ip,omitempty"`
-	DstIP     string `json:"dst_ip,omitempty"`
-	SrcCIDR   string `json:"src_cidr,omitempty"`
-	DstCIDR   string `json:"dst_cidr,omitempty"`
-	SrcPort   uint16 `json:"src_port,omitempty"`
-	DstPort   uint16 `json:"dst_port,omitempty"`
-	Protocol  string `json:"protocol,omitempty"`
-	Action    string `json:"action"`
-	RateLimit uint32 `json:"rate_limit,omitempty"`
-	PktLenMin uint16 `json:"pkt_len_min,omitempty"`
-	PktLenMax uint16 `json:"pkt_len_max,omitempty"`
+	ID           string `json:"id"`
+	SrcIP        string `json:"src_ip,omitempty"`
+	DstIP        string `json:"dst_ip,omitempty"`
+	SrcCIDR      string `json:"src_cidr,omitempty"`
+	DstCIDR      string `json:"dst_cidr,omitempty"`
+	SrcPort      uint16 `json:"src_port,omitempty"`
+	DstPort      uint16 `json:"dst_port,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	Action       string `json:"action"`
+	RateLimit    uint32 `json:"rate_limit,omitempty"`
+	PktLenMin    uint16 `json:"pkt_len_min,omitempty"`
+	PktLenMax    uint16 `json:"pkt_len_max,omitempty"`
+	TcpFlags     string `json:"tcp_flags,omitempty"`     // AUD-002
+	MatchAnomaly uint8  `json:"match_anomaly,omitempty"` // AUD-002
 }
 
 // WhitelistEntry represents a whitelist entry from Controller
@@ -205,18 +207,20 @@ func (s *ControllerSync) SyncOnStartup(handlers *api.Handlers) error {
 		var apiRules []api.Rule
 		for _, rule := range rules {
 			apiRules = append(apiRules, api.Rule{
-				ID:        rule.ID,
-				SrcIP:     rule.SrcIP,
-				DstIP:     rule.DstIP,
-				SrcCIDR:   rule.SrcCIDR,
-				DstCIDR:   rule.DstCIDR,
-				SrcPort:   rule.SrcPort,
-				DstPort:   rule.DstPort,
-				Protocol:  rule.Protocol,
-				Action:    rule.Action,
-				RateLimit: rule.RateLimit,
-				PktLenMin: rule.PktLenMin,
-				PktLenMax: rule.PktLenMax,
+				ID:           rule.ID,
+				SrcIP:        rule.SrcIP,
+				DstIP:        rule.DstIP,
+				SrcCIDR:      rule.SrcCIDR,
+				DstCIDR:      rule.DstCIDR,
+				SrcPort:      rule.SrcPort,
+				DstPort:      rule.DstPort,
+				Protocol:     rule.Protocol,
+				Action:       rule.Action,
+				RateLimit:    rule.RateLimit,
+				PktLenMin:    rule.PktLenMin,
+				PktLenMax:    rule.PktLenMax,
+				TcpFlags:     rule.TcpFlags,     // AUD-002
+				MatchAnomaly: rule.MatchAnomaly, // AUD-002
 			})
 		}
 		result, err := handlers.DoAtomicSync(apiRules)

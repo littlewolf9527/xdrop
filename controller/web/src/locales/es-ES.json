@@ -11,7 +11,8 @@
     "error": "Error",
     "warning": "Advertencia",
     "any": "*",
-    "operations": "Operaciones"
+    "operations": "Operaciones",
+    "save": "Guardar"
   },
   "nav": {
     "dashboard": "Panel",
@@ -19,14 +20,14 @@
     "whitelist": "Lista Blanca",
     "nodes": "Nodos",
     "settings": "Configuración",
-    "logout": "Cerrar Sesión"
-  ,
+    "logout": "Cerrar Sesión",
     "groupFirewall": "FIREWALL",
     "groupSystem": "SYSTEM"
   },
   "theme": {
     "classic": "Classic",
-    "amber": "Amber"},
+    "amber": "Amber"
+  },
   "dashboard": {
     "stats": {
       "rules": "Reglas",
@@ -65,7 +66,7 @@
       "action": "Acción",
       "rateLimit": "Límite (pps)",
       "pktLen": "Longitud Paquete (bytes)",
-    "tcpFlags": "TCP Flags",
+      "tcpFlags": "TCP Flags",
       "pktLenRange": "Rango Longitud Paquete (bytes)",
       "comment": "Comentario",
       "ipType": "Tipo"
@@ -180,11 +181,23 @@
     "atLeastOneIP": "Por favor ingrese al menos una IP",
     "batchResult": "Completado: {success} exitosos, {fail} fallidos",
     "batchSuccess": "Se agregaron {n} entradas exitosamente",
+    "batchPartialSync": "Completado: {success} operaciones del Controller exitosas, pero {syncFailed} no llegaron al data plane (sync falló)",
     "pktLenHint": "Longitud de paquete L3 (capa IP) en bytes. 0 significa sin límite",
     "tcpFlagsHint": "e.g. SYN,!ACK (match SYN without ACK). Valid: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR",
     "pktLenOnlyNotAllowed": "No se permiten reglas solo de longitud: especifique al menos un campo de 5-tupla (IP/Puerto/Protocolo)",
     "invalidLenRange": "Rango de longitud inválido: el mínimo no puede ser mayor que el máximo",
-    "invalidCIDR": "Formato CIDR inválido, use ej.: 10.0.0.0/8"
+    "invalidCIDR": "Formato CIDR inválido, use ej.: 10.0.0.0/8",
+    "updateSuccess": "Actualizado con éxito",
+    "updateFailed": "Error al actualizar",
+    "pktLenEditHint": "Poner 0/0 no elimina filtros existentes; elimine y recree la regla.",
+    "partialSync": "Operación escrita en el Controller, pero {failed}/{total} nodo(s) fallaron al sincronizar ({nodes})",
+    "batchMixed": "Completado: {success} exitosos, {fail} fallidos, {syncFailed} guardados pero no sincronizados al data plane",
+    "anomalyRequiresTarget": "Las reglas anomaly requieren un objetivo específico (no se permiten comodines)",
+    "badFragmentNoIPv6": "bad_fragment solo soporta objetivos IPv4 en v1.3",
+    "anomalyNoRateLimit": "Las reglas anomaly solo soportan la acción drop",
+    "anomalyToTcpRequiresRecreate": "Esta regla es de tipo anomaly. Para cambiar a un decoder TCP flags, elimine y vuelva a crear la regla.",
+    "portlessProtocolNoPort": "ICMP / ICMPv6 / IGMP / GRE / ESP no llevan puertos L4 — los campos de puerto se fijan a 0.",
+    "cidrInIPField": "Cambie al modo CIDR para introducir rangos de red"
   },
   "dialog": {
     "addRule": "Agregar Regla",
@@ -192,14 +205,16 @@
     "batchAddRule": "Agregar Reglas por Lotes",
     "batchAddWhitelist": "Agregar Lista Blanca por Lotes",
     "confirmDelete": "Confirmar Eliminación",
-    "batchDelete": "Eliminación por Lotes"
+    "batchDelete": "Eliminación por Lotes",
+    "editRule": "Editar Regla"
   },
   "placeholder": {
     "optional": "Opcional",
     "leaveEmptyForAny": "Deje vacío para cualquiera",
     "searchIP": "Buscar dirección IP...",
     "ipListHint": "Una IP o CIDR por línea\n192.168.1.0/24\n10.0.0.1",
-    "cidrExample": "ej. 10.0.0.0/8"
+    "cidrExample": "ej. 10.0.0.0/8",
+    "clearToRemove": "Dejar vacío para eliminar"
   },
   "login": {
     "title": "Iniciar sesión",

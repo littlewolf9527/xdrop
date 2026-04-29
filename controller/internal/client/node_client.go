@@ -459,14 +459,20 @@ func (c *NodeClient) DiffSync(endpoint, apiKey string,
 	}
 
 	// Execute: DELETE first, then ADD (avoid CIDR overlap / duplicate key conflicts)
+	// AUD-007: dual-failure contract — transport error OR resp.Failed > 0 both
+	// return error so the caller can trigger FullSync fallback.
 	if len(rulesToDelete) > 0 {
 		for i := 0; i < len(rulesToDelete); i += 1000 {
 			end := i + 1000
 			if end > len(rulesToDelete) {
 				end = len(rulesToDelete)
 			}
-			if _, err := c.DeleteRulesBatch(endpoint, apiKey, rulesToDelete[i:end]); err != nil {
+			resp, err := c.DeleteRulesBatch(endpoint, apiKey, rulesToDelete[i:end])
+			if err != nil {
 				return fmt.Errorf("diff sync: failed to delete rules batch: %w", err)
+			}
+			if resp != nil && resp.Failed > 0 {
+				return fmt.Errorf("diff sync: node rejected %d/%d rule deletes", resp.Failed, len(rulesToDelete[i:end]))
 			}
 		}
 	}
@@ -477,8 +483,12 @@ func (c *NodeClient) DiffSync(endpoint, apiKey string,
 			if end > len(rulesToAdd) {
 				end = len(rulesToAdd)
 			}
-			if _, err := c.AddRulesBatch(endpoint, apiKey, rulesToAdd[i:end]); err != nil {
+			resp, err := c.AddRulesBatch(endpoint, apiKey, rulesToAdd[i:end])
+			if err != nil {
 				return fmt.Errorf("diff sync: failed to add rules batch: %w", err)
+			}
+			if resp != nil && resp.Failed > 0 {
+				return fmt.Errorf("diff sync: node rejected %d/%d rule adds", resp.Failed, len(rulesToAdd[i:end]))
 			}
 		}
 	}
@@ -515,15 +525,19 @@ func (c *NodeClient) DiffSync(endpoint, apiKey string,
 		}
 	}
 
-	// Execute whitelist diff: DELETE → ADD
+	// Execute whitelist diff: DELETE → ADD (AUD-007 dual-failure contract)
 	if len(wlToDelete) > 0 {
 		for i := 0; i < len(wlToDelete); i += 1000 {
 			end := i + 1000
 			if end > len(wlToDelete) {
 				end = len(wlToDelete)
 			}
-			if _, err := c.DeleteWhitelistBatch(endpoint, apiKey, wlToDelete[i:end]); err != nil {
+			resp, err := c.DeleteWhitelistBatch(endpoint, apiKey, wlToDelete[i:end])
+			if err != nil {
 				return fmt.Errorf("diff sync: failed to delete whitelist batch: %w", err)
+			}
+			if resp != nil && resp.Failed > 0 {
+				return fmt.Errorf("diff sync: node rejected %d/%d whitelist deletes", resp.Failed, len(wlToDelete[i:end]))
 			}
 		}
 	}
@@ -534,8 +548,12 @@ func (c *NodeClient) DiffSync(endpoint, apiKey string,
 			if end > len(wlToAdd) {
 				end = len(wlToAdd)
 			}
-			if _, err := c.AddWhitelistBatch(endpoint, apiKey, wlToAdd[i:end]); err != nil {
+			resp, err := c.AddWhitelistBatch(endpoint, apiKey, wlToAdd[i:end])
+			if err != nil {
 				return fmt.Errorf("diff sync: failed to add whitelist batch: %w", err)
+			}
+			if resp != nil && resp.Failed > 0 {
+				return fmt.Errorf("diff sync: node rejected %d/%d whitelist adds", resp.Failed, len(wlToAdd[i:end]))
 			}
 		}
 	}

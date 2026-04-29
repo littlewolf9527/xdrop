@@ -28,6 +28,15 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rate_limit must be > 0 for rate_limit action"})
 		return
 	}
+	if err := validateNodeAnomalyFields(req.MatchAnomaly, req.Action, req.SrcIP, req.DstIP, req.SrcCIDR, req.DstCIDR); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// B-10 (rev11 codex round 9 P2): portless+port guard for CIDR direct path.
+	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// Normalize CIDRs
 	var srcCIDR, dstCIDR string
@@ -237,9 +246,7 @@ func (h *Handlers) addCIDRRule(c *gin.Context, req Rule, flagsMask, flagsValue u
 		// Old CIDR IDs were never released, so oldStored.Key still has valid trie IDs
 		if oldStored != nil {
 			oldKeyBytes := cidrRuleKeyToBytes(oldStored.Key)
-			oldAction, _ := parseAction(oldStored.Action)
-			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
-			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+			oldValue := ruleValueFromStoredCIDR(*oldStored) // AUD-008
 			if insErr := cbl.Update(oldKeyBytes, ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 				log.Printf("[addCIDRRule] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
 			}
@@ -286,6 +293,13 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 	}
 	if action == ActionRateLimit && rule.RateLimit <= 0 {
 		return fmt.Errorf("rate_limit must be > 0 for rate_limit action")
+	}
+	if err := validateNodeAnomalyFields(rule.MatchAnomaly, rule.Action, rule.SrcIP, rule.DstIP, rule.SrcCIDR, rule.DstCIDR); err != nil {
+		return err
+	}
+	// B-10 (rev11 codex round 9 P2): portless+port guard for CIDR sync path.
+	if err := validatePortProtocolCompatNode(rule.Protocol, rule.SrcPort, rule.DstPort); err != nil {
+		return err
 	}
 
 	// Normalize CIDRs
@@ -492,9 +506,7 @@ func (h *Handlers) addCIDRRuleFromSync(rule SyncRule) error {
 		// Old CIDR IDs were never released, so oldStored.Key still has valid trie IDs
 		if oldStored != nil {
 			oldKeyBytes := cidrRuleKeyToBytes(oldStored.Key)
-			oldAction, _ := parseAction(oldStored.Action)
-			oldFM, oldFV, _ := parseTcpFlags(oldStored.TcpFlags)
-			oldValue := RuleValue{Action: oldAction, TcpFlagsMask: oldFM, TcpFlagsValue: oldFV, RateLimit: oldStored.RateLimit, PktLenMin: oldStored.PktLenMin, PktLenMax: oldStored.PktLenMax}
+			oldValue := ruleValueFromStoredCIDR(*oldStored) // AUD-008
 			if insErr := cbl.Update(oldKeyBytes, ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
 				log.Printf("[addCIDRRuleFromSync] WARN: best-effort rollback re-insert of old CIDR BPF entry failed: %v", insErr)
 			}

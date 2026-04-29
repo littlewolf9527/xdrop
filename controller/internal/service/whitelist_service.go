@@ -42,7 +42,19 @@ func validateWhitelistCombo(req *model.WhitelistRequest) error {
 
 // Create adds a new whitelist entry.
 func (s *WhitelistService) Create(req *model.WhitelistRequest) (*model.Whitelist, *SyncResult, error) {
+	// B-1: IP format validation + normalize
+	if err := validateWhitelistIPFields(req); err != nil {
+		return nil, nil, err
+	}
+	// AUD-006: scalar bounds
+	if err := validateWhitelistScalarBounds(req); err != nil {
+		return nil, nil, err
+	}
 	if err := validateProtocol(req.Protocol); err != nil {
+		return nil, nil, err
+	}
+	// B-10: portless protocols cannot carry ports — same BPF reason as rules.
+	if err := validatePortProtocolCompat(req.Protocol, req.SrcPort, req.DstPort); err != nil {
 		return nil, nil, err
 	}
 	if err := validateWhitelistCombo(req); err != nil {

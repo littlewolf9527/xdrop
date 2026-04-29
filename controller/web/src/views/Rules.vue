@@ -91,6 +91,15 @@
             <span v-else class="no-filter">-</span>
           </template>
         </el-table-column>
+        <el-table-column :label="$t('table.decoder')" width="130">
+          <template #default="{ row }">
+            <template v-if="row.match_anomaly">
+              <el-tag v-if="row.match_anomaly & 1" size="small" type="danger" effect="dark" style="margin-right:2px">bad_frag</el-tag>
+              <el-tag v-if="row.match_anomaly & 2" size="small" type="warning" effect="dark">invalid</el-tag>
+            </template>
+            <span v-else class="no-filter">-</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('table.matchCount')" width="120">
           <template #default="{ row }">
             <div class="stats-cell match-stats" v-if="row.stats">
@@ -113,8 +122,17 @@
             <span class="comment-text">{{ row.comment || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('table.operations')" width="100" fixed="right" align="center">
+        <el-table-column :label="$t('table.operations')" width="130" fixed="right" align="center">
           <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              @click="showEditDialog(row)"
+              circle
+              style="margin-right:4px"
+            >
+              <el-icon><Edit /></el-icon>
+            </el-button>
             <el-button
               type="danger"
               size="small"
@@ -188,15 +206,20 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item :label="$t('rules.form.srcPort')">
-              <el-input-number v-model="form.src_port" :min="0" :max="65535" style="width: 100%" />
+              <el-input-number v-model="form.src_port" :min="0" :max="65535" style="width: 100%"
+                               :disabled="isPortlessProtocol(form.protocol)" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="$t('rules.form.dstPort')">
-              <el-input-number v-model="form.dst_port" :min="0" :max="65535" style="width: 100%" />
+              <el-input-number v-model="form.dst_port" :min="0" :max="65535" style="width: 100%"
+                               :disabled="isPortlessProtocol(form.protocol)" />
             </el-form-item>
           </el-col>
         </el-row>
+        <div v-if="isPortlessProtocol(form.protocol)" class="form-hint" style="margin-top: -8px; margin-bottom: 12px; color: var(--xs-warning, #e6a23c);">
+          {{ $t('messages.portlessProtocolNoPort') }}
+        </div>
         <el-form-item :label="$t('rules.form.protocol')">
           <el-select v-model="form.protocol" :placeholder="$t('rules.protocols.all')" style="width: 100%"
                      :disabled="!!form.decoder">
@@ -224,7 +247,10 @@
         <el-form-item :label="$t('rules.form.action')">
           <el-radio-group v-model="form.action">
             <el-radio-button value="drop">{{ $t('rules.actions.drop') }}</el-radio-button>
-            <el-radio-button value="rate_limit">{{ $t('rules.actions.rateLimit') }}</el-radio-button>
+            <el-radio-button value="rate_limit"
+              :disabled="form.decoder === 'bad_fragment' || form.decoder === 'invalid'">
+              {{ $t('rules.actions.rateLimit') }}
+            </el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.action === 'rate_limit'" :label="$t('rules.form.rateLimit')">
@@ -242,7 +268,7 @@
           </el-row>
           <div class="form-hint">{{ $t('messages.pktLenHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="form.protocol === 'tcp'" :label="$t('rules.form.tcpFlags')">
+        <el-form-item v-if="form.protocol === 'tcp' && !form.decoder" :label="$t('rules.form.tcpFlags')">
           <el-input v-model="form.tcp_flags" placeholder="e.g. SYN,!ACK" />
           <div class="form-hint">{{ $t('messages.tcpFlagsHint') }}</div>
         </el-form-item>
@@ -253,6 +279,76 @@
       <template #footer>
         <el-button @click="dialogVisible = false" round>{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="addRule" :loading="submitting" round>{{ $t('common.add') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Edit rule dialog -->
+    <el-dialog v-model="editDialogVisible" :title="$t('dialog.editRule')" width="520px" center>
+      <el-form :model="editForm" label-width="80px">
+        <!-- Read-only key fields -->
+        <el-form-item :label="$t('table.source')">
+          <span class="edit-readonly">{{ editRow.src_cidr || editRow.src_ip || '*' }}{{ editRow.src_port ? ':' + editRow.src_port : '' }}</span>
+        </el-form-item>
+        <el-form-item :label="$t('table.destination')">
+          <span class="edit-readonly">{{ editRow.dst_cidr || editRow.dst_ip || '*' }}{{ editRow.dst_port ? ':' + editRow.dst_port : '' }}</span>
+        </el-form-item>
+        <el-form-item :label="$t('table.protocol')">
+          <span class="edit-readonly">{{ editRow.protocol || 'ALL' }}</span>
+        </el-form-item>
+        <el-divider />
+        <!-- Editable fields -->
+        <el-form-item :label="$t('rules.form.decoder')">
+          <el-select v-model="editForm.decoder" :placeholder="$t('rules.decoders.none')" clearable style="width: 100%">
+            <el-option :label="$t('rules.decoders.none')" value="" />
+            <!-- R6-002: tcp_* decoders disabled when existing rule is anomaly-typed.
+                 match_anomaly's int schema can't be explicit-cleared via PUT, so the
+                 backend would reject. Force the user to delete+recreate. -->
+            <el-option label="tcp_ack" value="tcp_ack" :disabled="editRow.protocol !== 'tcp' || !!editRow.match_anomaly" />
+            <el-option label="tcp_rst" value="tcp_rst" :disabled="editRow.protocol !== 'tcp' || !!editRow.match_anomaly" />
+            <el-option label="tcp_fin" value="tcp_fin" :disabled="editRow.protocol !== 'tcp' || !!editRow.match_anomaly" />
+            <el-option label="bad_fragment" value="bad_fragment" />
+            <el-option label="invalid" value="invalid" />
+          </el-select>
+          <div class="form-hint">{{ $t('messages.decoderHint') }}</div>
+          <div v-if="editRow.match_anomaly" class="form-hint" style="color: var(--xs-warning, #e6a23c);">
+            {{ $t('messages.anomalyToTcpRequiresRecreate') }}
+          </div>
+        </el-form-item>
+        <el-form-item :label="$t('rules.form.action')">
+          <el-radio-group v-model="editForm.action">
+            <el-radio-button value="drop">{{ $t('rules.actions.drop') }}</el-radio-button>
+            <el-radio-button value="rate_limit"
+              :disabled="editForm.decoder === 'bad_fragment' || editForm.decoder === 'invalid'">
+              {{ $t('rules.actions.rateLimit') }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="editForm.action === 'rate_limit'" :label="$t('rules.form.rateLimit')">
+          <el-input-number v-model="editForm.rate_limit" :min="1" :max="1000000" /> pps
+        </el-form-item>
+        <el-form-item :label="$t('rules.form.pktLenRange')">
+          <el-row :gutter="10" align="middle">
+            <el-col :span="10">
+              <el-input-number v-model="editForm.pkt_len_min" :min="0" :max="65535" controls-position="right" style="width: 100%" />
+            </el-col>
+            <el-col :span="4" style="text-align: center; color: var(--xs-text-secondary);">-</el-col>
+            <el-col :span="10">
+              <el-input-number v-model="editForm.pkt_len_max" :min="0" :max="65535" controls-position="right" style="width: 100%" />
+            </el-col>
+          </el-row>
+          <div class="form-hint">{{ $t('messages.pktLenHint') }} {{ $t('messages.pktLenEditHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="editRow.protocol === 'tcp' && !editForm.decoder" :label="$t('rules.form.tcpFlags')">
+          <el-input v-model="editForm.tcp_flags" :placeholder="$t('placeholder.clearToRemove')" />
+          <div class="form-hint">{{ $t('messages.tcpFlagsHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="$t('rules.form.comment')">
+          <el-input v-model="editForm.comment" :placeholder="$t('placeholder.optional')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false" round>{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="updateRule" :loading="submitting" round>{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -323,6 +419,9 @@ const search = ref('')
 const selectedIds = ref([])
 const dialogVisible = ref(false)
 const batchDialogVisible = ref(false)
+const editDialogVisible = ref(false)
+const editRow = ref({})
+const editForm = ref({ decoder: '', action: 'drop', rate_limit: 1000, pkt_len_min: 0, pkt_len_max: 0, tcp_flags: '', comment: '' })
 const refreshInterval = 5000 // refresh every 5 seconds
 let refreshTimer = null
 
@@ -436,6 +535,65 @@ const handleSizeChange = (size) => {
   refresh()
 }
 
+// B-10: portless protocols (icmp/icmpv6/igmp/gre/esp) cannot carry ports —
+// the BPF datapath only fills key.src_port/dst_port for TCP/UDP. Disable
+// port inputs and auto-clear when one of these is selected. Backend also
+// rejects the request for safety.
+const PORTLESS_PROTOCOLS = ['icmp', 'icmpv6', 'igmp', 'gre', 'esp']
+const isPortlessProtocol = (proto) => PORTLESS_PROTOCOLS.includes(proto)
+
+watch(() => form.value.protocol, (newVal) => {
+  if (isPortlessProtocol(newVal)) {
+    form.value.src_port = 0
+    form.value.dst_port = 0
+  }
+})
+
+// B-4: decoder selection clears and locks coupled fields
+watch(() => form.value.decoder, (newVal) => {
+  if (!newVal) return
+  // All decoders: clear tcp_flags (backend mutual-exclusion rejects decoder + tcp_flags)
+  form.value.tcp_flags = ''
+  if (newVal === 'tcp_ack' || newVal === 'tcp_rst' || newVal === 'tcp_fin') {
+    // tcp_* sugar maps to protocol=tcp; lock visually
+    form.value.protocol = 'tcp'
+  } else {
+    // anomaly sugar (bad_fragment / invalid): backend also rejects decoder + protocol
+    form.value.protocol = ''
+  }
+  // B-5: anomaly decoders do not support rate_limit
+  if ((newVal === 'bad_fragment' || newVal === 'invalid') && form.value.action === 'rate_limit') {
+    form.value.action = 'drop'
+  }
+})
+
+// B-9: same decoder watcher for edit dialog
+watch(() => editForm.value.decoder, (newVal) => {
+  if (!newVal) return
+  editForm.value.tcp_flags = ''
+  if (newVal === 'tcp_ack' || newVal === 'tcp_rst' || newVal === 'tcp_fin') {
+    // tcp_* only valid on tcp rules; protocol is read-only in edit, so
+    // this option is already disabled when editRow.protocol !== 'tcp'
+  } else {
+    // anomaly sugar: clear tcp_flags only (protocol is read-only in edit)
+  }
+  if ((newVal === 'bad_fragment' || newVal === 'invalid') && editForm.value.action === 'rate_limit') {
+    editForm.value.action = 'drop'
+  }
+})
+
+// Helpers for anomaly target validation
+const isWildcardIP = (s) => !s || s === '0.0.0.0' || s === '::'
+// Match default routes including non-canonical forms: 0.0.0.0/0, 0.0.0.0/00, ::/0, ::/00, etc.
+const isDefaultRouteCIDR = (s) => {
+  if (!s) return true
+  const trimmed = s.trim()
+  const slashIdx = trimmed.lastIndexOf('/')
+  if (slashIdx < 0) return false
+  const prefix = trimmed.slice(slashIdx + 1).trim()
+  return Number(prefix) === 0
+}
+
 // Search debounce: reset to page 1 and fetch after 300ms
 watch(search, () => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
@@ -444,6 +602,102 @@ watch(search, () => {
     refresh()
   }, 300)
 })
+
+const showEditDialog = (row) => {
+  editRow.value = row
+  // Pre-populate with current values; decoder is not returned by API (it's sugar),
+  // so leave decoder empty — user can optionally re-apply sugar on save.
+  editForm.value = {
+    decoder: '',
+    action: row.action || 'drop',
+    rate_limit: row.rate_limit || 1000,
+    pkt_len_min: row.pkt_len_min || 0,
+    pkt_len_max: row.pkt_len_max || 0,
+    tcp_flags: row.tcp_flags || '',
+    comment: row.comment || ''
+  }
+  editDialogVisible.value = true
+}
+
+const updateRule = async () => {
+  const f = editForm.value
+  const row = editRow.value
+
+  // P3: Pre-validate anomaly constraints based on existing target (key fields are read-only).
+  // Equivalent to addRule's B-5/B-6/B-7 checks; spares user a round-trip on common errors.
+  const isAnomaly = f.decoder === 'bad_fragment' || f.decoder === 'invalid'
+  if (isAnomaly && f.action === 'rate_limit') {
+    ElMessage.error(t('messages.anomalyNoRateLimit'))
+    return
+  }
+  if (isAnomaly) {
+    const srcTarget = row.src_cidr || row.src_ip
+    const dstTarget = row.dst_cidr || row.dst_ip
+    const srcWild = !srcTarget || (row.src_cidr ? isDefaultRouteCIDR(srcTarget) : isWildcardIP(srcTarget))
+    const dstWild = !dstTarget || (row.dst_cidr ? isDefaultRouteCIDR(dstTarget) : isWildcardIP(dstTarget))
+    if (srcWild && dstWild) {
+      ElMessage.error(t('messages.anomalyRequiresTarget'))
+      return
+    }
+    if (f.decoder === 'bad_fragment') {
+      const v6Like = (s) => s && s.includes(':')
+      if (v6Like(srcTarget) || v6Like(dstTarget)) {
+        ElMessage.error(t('messages.badFragmentNoIPv6'))
+        return
+      }
+    }
+  }
+
+  const data = {}
+
+  // Only send fields that actually changed or are explicitly being set
+  data.action = f.action
+  if (f.action === 'rate_limit') data.rate_limit = f.rate_limit
+
+  if (f.pkt_len_min > 0 || f.pkt_len_max > 0) {
+    data.pkt_len_min = f.pkt_len_min
+    data.pkt_len_max = f.pkt_len_max
+  }
+
+  if (f.decoder) {
+    data.decoder = f.decoder
+    // R6-001: when applying any decoder we must explicitly clear tcp_flags so
+    // backend Update doesn't preserve the existing value. The decoder will
+    // re-apply its own tcp_flags expansion (tcp_*) or leave empty (anomaly).
+    // normalizeDecoder allows decoder + tcp_flags="" (only non-empty triggers
+    // mutual-exclusion).
+    data.tcp_flags = ''
+  } else {
+    // tcp_flags: send empty string to clear, or value to set
+    // Only send if protocol is tcp (backend validates)
+    if (editRow.value.protocol === 'tcp') {
+      data.tcp_flags = f.tcp_flags  // "" = clear, "RST" = set
+    }
+  }
+
+  if (f.comment !== (editRow.value.comment || '')) {
+    data.comment = f.comment
+  }
+
+  submitting.value = true
+  try {
+    const resp = await rulesApi.update(editRow.value.id, data)
+    if (resp.sync && resp.sync.failed > 0) {
+      const nodes = Object.keys(resp.sync.errors || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: resp.sync.failed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.updateSuccess'))
+    }
+    editDialogVisible.value = false
+    refresh()
+  } catch (e) {
+    ElMessage.error(t('messages.updateFailed') + ': ' + (e.response?.data?.error || e.message))
+  } finally {
+    submitting.value = false
+  }
+}
 
 const showAddDialog = () => {
   form.value = {
@@ -493,6 +747,43 @@ const addRule = async () => {
     return
   }
 
+  // B-7: reject CIDR written into IP field
+  const srcVal = f.src_mode === 'ip' ? f.src_ip : ''
+  const dstVal = f.dst_mode === 'ip' ? f.dst_ip : ''
+  if ((srcVal && srcVal.includes('/')) || (dstVal && dstVal.includes('/'))) {
+    ElMessage.error(t('messages.cidrInIPField'))
+    return
+  }
+
+  const isAnomaly = f.decoder === 'bad_fragment' || f.decoder === 'invalid'
+  const srcTarget = f.src_mode === 'ip' ? f.src_ip : f.src_cidr
+  const dstTarget = f.dst_mode === 'ip' ? f.dst_ip : f.dst_cidr
+
+  // B-6: anomaly rules need a bounded (non-wildcard) target
+  const srcIsWild = f.src_mode === 'ip' ? isWildcardIP(srcTarget) : isDefaultRouteCIDR(srcTarget)
+  const dstIsWild = f.dst_mode === 'ip' ? isWildcardIP(dstTarget) : isDefaultRouteCIDR(dstTarget)
+  if (isAnomaly && (!srcTarget && !dstTarget)) {
+    ElMessage.error(t('messages.anomalyRequiresTarget'))
+    return
+  }
+  if (isAnomaly && ((srcTarget && srcIsWild) || (dstTarget && dstIsWild))) {
+    ElMessage.error(t('messages.anomalyRequiresTarget'))
+    return
+  }
+
+  // B-5: anomaly + rate_limit (belt-and-suspenders, watcher already prevents this)
+  if (isAnomaly && f.action === 'rate_limit') {
+    ElMessage.error(t('messages.anomalyNoRateLimit'))
+    return
+  }
+
+  // B-7: bad_fragment + IPv6 target
+  const isIPv6 = (s) => s && s.includes(':')
+  if (f.decoder === 'bad_fragment' && (isIPv6(srcTarget) || isIPv6(dstTarget))) {
+    ElMessage.error(t('messages.badFragmentNoIPv6'))
+    return
+  }
+
   submitting.value = true
   try {
     const data = {}
@@ -519,8 +810,16 @@ const addRule = async () => {
     if (f.pkt_len_max) data.pkt_len_max = f.pkt_len_max
     if (f.comment) data.comment = f.comment
 
-    await rulesApi.create(data)
-    ElMessage.success(t('messages.addSuccess'))
+    // B-2: sync field is always present; show warning if any node failed
+    const resp = await rulesApi.create(data)
+    if (resp.sync && resp.sync.failed > 0) {
+      const nodes = Object.keys(resp.sync.errors || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: resp.sync.failed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.addSuccess'))
+    }
     dialogVisible.value = false
     refresh()
   } catch (e) {
@@ -563,11 +862,27 @@ const batchAdd = async () => {
     const result = await rulesApi.batchCreate(rules)
     const added = result.added || 0
     const failed = result.failed || 0
+    // rev15 codex round 14 P2: B-2 — must surface sync.failed for batch create.
+    // sync.failed counts items the Controller stored but couldn't sync to nodes.
+    const syncFailed = (result.sync && result.sync.failed) || 0
 
-    if (failed === 0) {
+    // rev16 codex round 15 P2: mixed-failure branch must NOT hide syncFailed.
+    // batchResult only carries (success, fail); when sync is also failing the
+    // user needs to see the data-plane gap too.
+    if (failed === 0 && syncFailed === 0) {
       ElMessage.success(t('messages.batchSuccess', { n: added }))
-    } else {
+    } else if (failed === 0 && syncFailed > 0) {
+      const nodes = Object.keys((result.sync && result.sync.errors) || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: syncFailed, total: result.sync.total, nodes
+      }))
+    } else if (failed > 0 && syncFailed === 0) {
       ElMessage.warning(t('messages.batchResult', { success: added, fail: failed }))
+    } else {
+      // Mixed: validation failed + sync failed — surface all three numbers.
+      ElMessage.warning(t('messages.batchMixed', {
+        success: added, fail: failed, syncFailed: syncFailed,
+      }))
     }
     batchDialogVisible.value = false
     refresh()  // full refresh after batch add
@@ -581,8 +896,16 @@ const batchAdd = async () => {
 const deleteRule = async (id) => {
   try {
     await ElMessageBox.confirm(t('messages.confirmDelete'), t('dialog.confirmDelete'), { type: 'warning' })
-    await rulesApi.delete(id)
-    ElMessage.success(t('messages.deleteSuccess'))
+    // rev15 codex round 14 P2: B-2 — single delete must surface sync.failed.
+    const resp = await rulesApi.delete(id)
+    if (resp && resp.sync && resp.sync.failed > 0) {
+      const nodes = Object.keys(resp.sync.errors || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: resp.sync.failed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.deleteSuccess'))
+    }
     refresh()  // full refresh after delete
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(t('messages.deleteFailed'))
@@ -592,8 +915,17 @@ const deleteRule = async (id) => {
 const batchDelete = async () => {
   try {
     await ElMessageBox.confirm(t('messages.confirmBatchDelete', { n: selectedIds.value.length }), t('dialog.batchDelete'), { type: 'warning' })
-    await rulesApi.batchDelete(selectedIds.value)
-    ElMessage.success(t('messages.deleteSuccess'))
+    // rev15 codex round 14 P2: B-2 — batch delete must surface sync.failed too.
+    const resp = await rulesApi.batchDelete(selectedIds.value)
+    const syncFailed = (resp && resp.sync && resp.sync.failed) || 0
+    if (syncFailed > 0) {
+      const nodes = Object.keys((resp.sync && resp.sync.errors) || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: syncFailed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.deleteSuccess'))
+    }
     selectedIds.value = []
     refresh()  // full refresh after batch delete
   } catch (e) {
@@ -721,6 +1053,15 @@ onUnmounted(() => {
 .no-filter {
   color: var(--xs-text-secondary);
   opacity: 0.5;
+}
+
+.edit-readonly {
+  color: var(--xs-text-secondary);
+  font-family: 'SF Mono', monospace;
+  font-size: 0.85rem;
+  background: var(--xs-bg-secondary, #f5f5f5);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .pkt-len {

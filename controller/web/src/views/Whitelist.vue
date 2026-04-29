@@ -90,12 +90,14 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item :label="$t('rules.form.srcPort')">
-              <el-input-number v-model="form.src_port" :min="0" :max="65535" style="width: 100%" />
+              <el-input-number v-model="form.src_port" :min="0" :max="65535" style="width: 100%"
+                               :disabled="isPortlessProtocol(form.protocol)" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="$t('rules.form.dstPort')">
-              <el-input-number v-model="form.dst_port" :min="0" :max="65535" style="width: 100%" />
+              <el-input-number v-model="form.dst_port" :min="0" :max="65535" style="width: 100%"
+                               :disabled="isPortlessProtocol(form.protocol)" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -106,7 +108,14 @@
             <el-option :label="$t('rules.protocols.udp')" value="udp" />
             <el-option :label="$t('rules.protocols.icmp')" value="icmp" />
             <el-option :label="$t('rules.protocols.icmpv6')" value="icmpv6" />
+            <!-- rev11 codex round 10 P3: align UI with backend support -->
+            <el-option :label="$t('rules.protocols.igmp')" value="igmp" />
+            <el-option :label="$t('rules.protocols.gre')" value="gre" />
+            <el-option :label="$t('rules.protocols.esp')" value="esp" />
           </el-select>
+          <div v-if="isPortlessProtocol(form.protocol)" class="form-hint" style="color: var(--xs-warning, #e6a23c);">
+            {{ $t('messages.portlessProtocolNoPort') }}
+          </div>
         </el-form-item>
         <el-form-item :label="$t('rules.form.comment')">
           <el-input v-model="form.comment" :placeholder="$t('placeholder.optional')" />
@@ -162,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { whitelistApi } from '../api'
@@ -181,6 +190,18 @@ let refreshTimer = null
 
 const form = ref({ src_ip: '', dst_ip: '', src_port: 0, dst_port: 0, protocol: '', comment: '' })
 const batchForm = ref({ ips: '', protocol: '', type: 'src' })
+
+// B-10: portless protocols can't carry ports — disable + auto-clear on selection.
+// Shared with Rules.vue; kept inline here to avoid pulling a util file just for this.
+const PORTLESS_PROTOCOLS = ['icmp', 'icmpv6', 'igmp', 'gre', 'esp']
+const isPortlessProtocol = (proto) => PORTLESS_PROTOCOLS.includes(proto)
+
+watch(() => form.value.protocol, (newVal) => {
+  if (isPortlessProtocol(newVal)) {
+    form.value.src_port = 0
+    form.value.dst_port = 0
+  }
+})
 
 const parsedIPs = computed(() => {
   return batchForm.value.ips
@@ -232,8 +253,17 @@ const addEntry = async () => {
     if (!data.protocol) delete data.protocol
     if (!data.comment) delete data.comment
 
-    await whitelistApi.create(data)
-    ElMessage.success(t('messages.addSuccess'))
+    // rev14 codex round 13 P2: consume B-2 sync.failed — Controller DB success
+    // ≠ data plane success. Show partial-sync warning when any node failed.
+    const resp = await whitelistApi.create(data)
+    if (resp.sync && resp.sync.failed > 0) {
+      const nodes = Object.keys(resp.sync.errors || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: resp.sync.failed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.addSuccess'))
+    }
     dialogVisible.value = false
     refresh()
   } catch (e) {
@@ -252,6 +282,7 @@ const batchAdd = async () => {
   submitting.value = true
   let successCount = 0
   let failCount = 0
+  let syncFailedCount = 0  // rev14: partial-sync items (DB success but data plane failed)
 
   try {
     for (const ip of parsedIPs.value) {
@@ -266,17 +297,33 @@ const batchAdd = async () => {
           data.protocol = batchForm.value.protocol
         }
 
-        await whitelistApi.create(data)
+        // rev14 codex round 13 P2: count partial-sync as a failure mode separately
+        // from HTTP error. DB-success-but-sync-failed is a quiet ghost-rule risk.
+        const resp = await whitelistApi.create(data)
+        if (resp && resp.sync && resp.sync.failed > 0) {
+          syncFailedCount++
+        }
         successCount++
       } catch (e) {
         failCount++
       }
     }
 
-    if (failCount === 0) {
+    // rev15 codex round 14 P2: don't hide syncFailedCount when there are also
+    // HTTP failures. When both happen, surface all three numbers so the user
+    // sees both validation/network failures and data-plane sync failures.
+    if (failCount === 0 && syncFailedCount === 0) {
       ElMessage.success(t('messages.batchSuccess', { n: successCount }))
-    } else {
+    } else if (failCount === 0 && syncFailedCount > 0) {
+      ElMessage.warning(t('messages.batchPartialSync', {
+        success: successCount, syncFailed: syncFailedCount,
+      }))
+    } else if (failCount > 0 && syncFailedCount === 0) {
       ElMessage.warning(t('messages.batchResult', { success: successCount, fail: failCount }))
+    } else {
+      ElMessage.warning(t('messages.batchMixed', {
+        success: successCount, fail: failCount, syncFailed: syncFailedCount,
+      }))
     }
     batchDialogVisible.value = false
     refresh()
@@ -288,8 +335,16 @@ const batchAdd = async () => {
 const deleteEntry = async (id) => {
   try {
     await ElMessageBox.confirm(t('messages.confirmDelete'), t('dialog.confirmDelete'), { type: 'warning' })
-    await whitelistApi.delete(id)
-    ElMessage.success(t('messages.deleteSuccess'))
+    // rev14 codex round 13 P2: consume B-2 sync.failed on whitelist delete.
+    const resp = await whitelistApi.delete(id)
+    if (resp && resp.sync && resp.sync.failed > 0) {
+      const nodes = Object.keys(resp.sync.errors || {}).join(', ')
+      ElMessage.warning(t('messages.partialSync', {
+        failed: resp.sync.failed, total: resp.sync.total, nodes
+      }))
+    } else {
+      ElMessage.success(t('messages.deleteSuccess'))
+    }
     refresh()
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(t('messages.deleteFailed'))
@@ -301,15 +356,34 @@ const batchDelete = async () => {
   try {
     await ElMessageBox.confirm(t('messages.confirmBatchDelete', { n: selectedIds.value.length }), t('dialog.batchDelete'), { type: 'warning' })
     let successCount = 0
+    let failCount = 0
+    let syncFailedCount = 0
     for (const id of selectedIds.value) {
       try {
-        await whitelistApi.delete(id)
+        // rev14 codex round 13 P2: track partial-sync separately from HTTP error.
+        // rev15 codex round 14 P2: also count HTTP failures (was silently dropped).
+        const resp = await whitelistApi.delete(id)
+        if (resp && resp.sync && resp.sync.failed > 0) {
+          syncFailedCount++
+        }
         successCount++
       } catch (e) {
-        // ignore individual failures
+        failCount++
       }
     }
-    ElMessage.success(t('messages.deleteSuccess'))
+    if (failCount === 0 && syncFailedCount === 0) {
+      ElMessage.success(t('messages.deleteSuccess'))
+    } else if (failCount === 0 && syncFailedCount > 0) {
+      ElMessage.warning(t('messages.batchPartialSync', {
+        success: successCount, syncFailed: syncFailedCount,
+      }))
+    } else if (failCount > 0 && syncFailedCount === 0) {
+      ElMessage.warning(t('messages.batchResult', { success: successCount, fail: failCount }))
+    } else {
+      ElMessage.warning(t('messages.batchMixed', {
+        success: successCount, fail: failCount, syncFailed: syncFailedCount,
+      }))
+    }
     selectedIds.value = []
     refresh()
   } catch (e) {

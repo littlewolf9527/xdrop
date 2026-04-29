@@ -60,7 +60,9 @@ type RuleRequest struct {
 	MatchAnomaly int     `json:"match_anomaly,omitempty"`
 	ExpiresIn    string  `json:"expires_in,omitempty"` // "1h", "30m", "24h"
 	Source       string  `json:"source,omitempty"`
-	Comment      string  `json:"comment,omitempty"`
+	// Comment uses pointer tri-state: nil=omit (keep existing), ""=clear, "x"=set.
+	// Required so PUT can explicitly clear comment (B-9 edit dialog).
+	Comment *string `json:"comment,omitempty"`
 }
 
 // ToNodeRule converts to Node API format
