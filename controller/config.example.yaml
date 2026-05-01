@@ -63,3 +63,28 @@ rules:
 
 logging:
   level: info   # One of: debug, info, warn, error
+
+# Stats cache (v2.6.3) — periodically aggregates per-rule stats from nodes
+# in the background, so /api/v1/rules?page=... returns rules WITH stats
+# without fanning out on every request.
+#
+# Tradeoff: introduces a new periodic Controller→Node GET /api/v1/rules call
+# (every refresh_interval_seconds). Default settings are sized for ≤10 nodes
+# and ≤1000 rules. Tune up the interval or set disabled=true if your scale
+# is much larger.
+#
+# Operational fields are exposed at /api/v1/stats/cache_health for diagnosing
+# stuck refresh loops, partial fan-out failures, etc.
+#
+# All fields are optional — leaving stats_cache: out entirely also works,
+# defaults are applied during config load.
+stats_cache:
+  refresh_interval_seconds: 5      # How often to refresh. 1-60.
+  stale_threshold_seconds: 15      # Snapshot considered stale after this. Must be > refresh_interval.
+  per_node_timeout_seconds: 2      # Per-node HTTP timeout. Must be < refresh_interval.
+  max_concurrency: 4               # Max concurrent node fetches per refresh.
+  backoff_on_all_fail_seconds: 30  # Delay added to next tick when ALL nodes fail.
+  top_n_cache_size: 50             # Top-N rules pre-computed at refresh. Must be >= 50 (matches /rules/top max limit).
+  disabled: false                  # Set true to skip the cache entirely.
+                                   # listAll falls back to old realtime fan-out;
+                                   # paginated /rules and /rules/top return without stats.

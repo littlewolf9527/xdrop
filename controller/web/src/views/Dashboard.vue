@@ -91,7 +91,16 @@
         <h2 class="section-title">{{ $t('dashboard.topRulesChart') }}</h2>
       </div>
       <div class="xs-card chart-container">
-        <TopRulesChart :rules="topRules" />
+        <!--
+          v2.6.3: pass the cache state so the chart can show the right
+          empty-state message and stale/partial badges. Old Dashboard
+          wirings can omit stats-status; TopRulesChart falls back to the
+          legacy "No drop data" message.
+        -->
+        <TopRulesChart
+          :rules="topRules"
+          :stats-status="topRulesStatus"
+        />
       </div>
     </div>
 
@@ -136,6 +145,14 @@ const animatedStats = reactive({
 
 const nodes = ref([])
 const topRules = ref([])
+// v2.6.3: cache state propagated from /rules/top response. Keeping these
+// as separate refs (rather than nested in topRules) so a refresh that
+// returns "rules: []" can still update only the status without forcing a
+// rerender of the chart's data prop.
+const topRulesStatus = ref('')
+// stats_freshness_ms is read but not yet rendered — keeping the ref out
+// avoids dead state. If we ever surface "snapshot age 12s" in the chart
+// header, reintroduce a topRulesFreshnessMs ref alongside topRulesStatus.
 
 // Traffic history — ring buffer of 60 data points (3 min at 3s interval)
 const trafficHistory = ref([])
@@ -210,11 +227,23 @@ const fetchTopRules = async () => {
   try {
     const data = await rulesApi.top(10)
     topRules.value = data.rules || []
+    // v2.6.3: capture the 6 stats meta fields so the chart can render
+    // partial / stale / disabled states correctly. Defaults to '' so the
+    // chart falls back to its legacy empty message if a Controller in
+    // disabled / no-cache mode returns the old shape.
+    topRulesStatus.value = data.stats_status || ''
+    // stats_freshness_ms is available on `data` but the chart doesn't
+    // currently render it — see Dashboard.vue ref comment for context.
   } catch (e) {
     console.error('Failed to fetch top rules:', e)
   }
 }
 
+// v2.6.3: softRefresh now ALWAYS includes top rules. Without this the
+// Dashboard would freeze on whatever stats_status it pulled at first
+// page-load (round-3 P2-4): a node going Offline mid-session would never
+// surface as partial / stats_offline_nodes until the user manually hit
+// the refresh button.
 const doRefresh = (includeTopRules = false) => {
   fetchStats()
   fetchNodes()
@@ -230,8 +259,13 @@ const refresh = async () => {
   loading.value = false
 }
 
+// v2.6.3: softRefresh used to skip top rules to keep the chart steady, but
+// that meant any cache-state changes (partial, disabled, refresh stuck)
+// were invisible until full page reload. Always include top rules now —
+// the cache-side fan-out cost is unaffected because TopRules reads from
+// the in-process cache, not Nodes.
 const softRefresh = () => {
-  doRefresh(false)
+  doRefresh(true)
 }
 
 const formatPPS = (pps) => {

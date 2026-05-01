@@ -1,9 +1,26 @@
 <template>
   <div class="top-rules-chart">
-    <v-chart v-if="topRules.length > 0" :option="chartOption" autoresize style="height: 300px" />
-    <div v-else class="no-data">
-      <span>{{ $t('dashboard.noDropData') || 'No drop data' }}</span>
+    <!--
+      Render order:
+        1. statsStatus says "definitely no usable snapshot"
+           → show the appropriate empty-state message (loading / disabled /
+             failed). Do NOT show the chart.
+        2. statsStatus is ok / partial / stale / partial_stale and there ARE
+           top rules → render the chart, optionally with a stale/partial
+           badge above it.
+        3. statsStatus is ok / partial / stale / partial_stale but the
+           top-rules array is empty → show the contextual empty message
+           ("no drops yet" vs "partial — no drops from succeeded nodes").
+    -->
+    <div v-if="emptyStateKey" class="no-data" :class="emptyStateClass">
+      <span>{{ $t(emptyStateKey) }}</span>
     </div>
+    <template v-else>
+      <div v-if="badgeKey" class="status-badge" :class="badgeClass">
+        {{ $t(badgeKey) }}
+      </div>
+      <v-chart :option="chartOption" autoresize style="height: 300px" />
+    </template>
   </div>
 </template>
 
@@ -16,21 +33,102 @@ import { themeKey } from '../composables/useTheme'
 const { theme } = inject(themeKey)
 
 const props = defineProps({
-  // Full rules array — component sorts by drop_pps internally
-  rules: { type: Array, default: () => [] }
+  // Top rules array; backend now pre-sorts by (DropPPS desc, DropCount desc,
+  // RuleID asc) — we keep a defensive client-side resort for the legacy
+  // contract path where the backend doesn't pre-sort, but the result is
+  // identical for v2.6.3 responses.
+  rules: { type: Array, default: () => [] },
+  // v2.6.3 cache state. When undefined / null, fall back to the legacy
+  // "no drop data" message so older Dashboard wirings keep working.
+  statsStatus: { type: String, default: '' }
+  // freshnessMs intentionally NOT a prop here — earlier rev advertised it
+  // for the stale badge, but the badge is driven entirely by statsStatus
+  // (D.4 only requires the qualitative "stale" / "partial" tag, not an
+  // age in seconds). If we ever want to surface freshness, do it via a
+  // tooltip on the badge rather than a separate prop.
 })
 
 const emit = defineEmits(['ruleClick'])
 
 const topRules = computed(() => {
+  // Defensive sort retained: production backends pre-sort, but tests /
+  // legacy paths might not. The deterministic tie-break here matches the
+  // backend's RuleID-ascending rule.
   return [...props.rules]
     .filter(r => r.stats && r.stats.drop_pps > 0)
-    .sort((a, b) => (b.stats?.drop_pps || 0) - (a.stats?.drop_pps || 0))
+    .sort((a, b) => {
+      const dp = (b.stats?.drop_pps || 0) - (a.stats?.drop_pps || 0)
+      if (dp !== 0) return dp
+      const dc = (b.stats?.drop_count || 0) - (a.stats?.drop_count || 0)
+      if (dc !== 0) return dc
+      return (a.id || '').localeCompare(b.id || '')
+    })
     .slice(0, 10)
 })
 
+// emptyStateKey: which i18n key to render when there's no chart to show.
+// Returns '' when the chart should render. The key set lines up with the
+// backend's stats_status enum so the front-end and contract docs share
+// one vocabulary.
+const emptyStateKey = computed(() => {
+  if (topRules.value.length > 0) return ''
+
+  switch (props.statsStatus) {
+    case 'initializing':       return 'stats.initializing'
+    case 'waiting_for_health': return 'stats.waitingForHealth'
+    case 'no_nodes':           return 'stats.noNodes'
+    case 'failed_no_snapshot': return 'stats.failedNoSnapshot'
+    case 'disabled':           return 'stats.disabled'
+    case 'partial':            return 'stats.partialNoData'
+    case 'partial_stale':      return 'stats.partialStaleNoData'
+    case 'failed':             return 'stats.failed'
+    case 'stale':              return 'stats.stale'
+    default:                   return 'dashboard.noDropData'
+  }
+})
+
+const emptyStateClass = computed(() => {
+  switch (props.statsStatus) {
+    case 'failed':
+    case 'failed_no_snapshot':
+    case 'partial_stale':
+      return 'is-error'
+    case 'disabled':
+    case 'no_nodes':
+      return 'is-muted'
+    default:
+      return ''
+  }
+})
+
+// badgeKey: rendered above the chart when displayed data is partial / stale.
+// Empty string means "no badge".
+const badgeKey = computed(() => {
+  switch (props.statsStatus) {
+    case 'partial':       return 'stats.badgePartial'
+    case 'partial_stale': return 'stats.badgePartialStale'
+    case 'stale':         return 'stats.badgeStale'
+    case 'failed':        return 'stats.badgeFailed'
+    default:              return ''
+  }
+})
+
+const badgeClass = computed(() => {
+  switch (props.statsStatus) {
+    case 'partial':       return 'badge-warn'
+    case 'partial_stale': return 'badge-error'
+    case 'stale':         return 'badge-warn'
+    case 'failed':        return 'badge-error'
+    default:              return ''
+  }
+})
+
+// chartOption: only consulted when emptyStateKey === '' (i.e. we have rules).
+// We still defensively guard against an empty rules array because Vue may
+// recompute briefly during state transitions.
 const chartOption = computed(() => {
   const rules = topRules.value
+  if (rules.length === 0) return {}
   const labels = rules.map(r => {
     const src = r.src_ip || r.src_cidr || '*'
     const dst = r.dst_ip || r.dst_cidr || '*'
@@ -135,5 +233,32 @@ function formatCount(count) {
   color: var(--xs-text-secondary);
   opacity: 0.5;
   font-size: 0.9rem;
+}
+.no-data.is-error {
+  color: var(--xs-danger, #ef4444);
+  opacity: 0.8;
+}
+.no-data.is-muted {
+  opacity: 0.35;
+}
+
+/* Status badge above the chart for partial / stale / failed-with-snapshot.
+   Sits inside the chart container; small, unobtrusive, color-coded. */
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.status-badge.badge-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+.status-badge.badge-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
 }
 </style>

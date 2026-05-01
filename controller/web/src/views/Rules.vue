@@ -100,21 +100,32 @@
             <span v-else class="no-filter">-</span>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('table.matchCount')" width="120">
+        <el-table-column :label="$t('table.matchCount')" width="140">
           <template #default="{ row }">
-            <div class="stats-cell match-stats" v-if="row.stats">
+            <!--
+              v2.6.3 stats column rendering:
+                - row.stats present → show the number, optionally with a
+                  per-row badge that mirrors the cluster-level statsStatus.
+                - row.stats missing → show the contextual placeholder for
+                  the current cluster status, NOT a bare "-".
+              The cluster status drives whether a missing row.stats means
+              "loading", "disabled", "stuck", etc. Without that context the
+              UI would be ambiguous (round-2 P2-3).
+            -->
+            <div v-if="row.stats" class="stats-cell match-stats">
               <span class="match-count">{{ formatCount(row.stats.match_count) }}</span>
+              <span v-if="statsRowBadge" class="row-badge" :class="statsRowBadgeClass">{{ $t(statsRowBadge) }}</span>
             </div>
-            <span class="no-stats" v-else>-</span>
+            <span v-else class="no-stats" :class="missingStatsClass">{{ $t(missingStatsKey) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('table.dropPPS')" width="140">
+        <el-table-column :label="$t('table.dropPPS')" width="160">
           <template #default="{ row }">
-            <div class="stats-cell" v-if="row.stats">
+            <div v-if="row.stats" class="stats-cell">
               <span class="pps">{{ formatPPS(row.stats.drop_pps) }} pps</span>
               <span class="total">({{ formatCount(row.stats.drop_count) }})</span>
             </div>
-            <span class="no-stats" v-else>-</span>
+            <span v-else class="no-stats" :class="missingStatsClass">{{ $t(missingStatsKey) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="comment" :label="$t('table.comment')" min-width="150">
@@ -430,6 +441,94 @@ const currentPage = ref(1)
 const pageSize = ref(50)
 const totalRules = ref(0)
 
+// v2.6.3: cluster-level stats meta from /api/v1/rules?page=... response.
+// Drives the table's "loading / disabled / stuck" placeholders so a missing
+// per-row .stats no longer shows a bare "-" when the meaning is actually
+// "stats cache hasn't refreshed yet". See D.4 contract table.
+const statsMeta = ref({
+  status: '',
+  freshnessMs: null,
+  nodeFailures: {},
+  offlineNodes: [],
+  unknownNodes: [],
+  syncingNodes: []
+})
+
+// Missing-stats placeholder: when row.stats is undefined, what should the
+// cell show? Maps the cluster stats_status to an i18n key. Defaults back
+// to "-" (legacy "stats.noStats") for older Controllers that don't return
+// stats_status, or for the rare case the meta hasn't loaded yet.
+//
+// Note partial / partial_stale are intentional cases here: backend now
+// (after round-N P2 fix) omits stats for rules whose only data was a
+// zero-value entry from a succeeded node, because under partial we can't
+// tell if absent nodes had hits. Falling back to a bare "-" would hide
+// that nuance — operators can't distinguish "rule has no data because we
+// haven't heard from it yet" from "rule had hits we couldn't aggregate".
+const missingStatsKey = computed(() => {
+  switch (statsMeta.value.status) {
+    case 'initializing':       return 'stats.initializing'
+    case 'waiting_for_health': return 'stats.waitingForHealth'
+    case 'no_nodes':           return 'stats.noNodes'
+    case 'failed_no_snapshot': return 'stats.failedNoSnapshot'
+    case 'disabled':           return 'stats.disabled'
+    case 'partial':            return 'stats.partialMissingShort'
+    case 'partial_stale':      return 'stats.partialStaleMissingShort'
+    case 'stale':              return 'stats.staleMissingShort'
+    case 'failed':             return 'stats.failedMissingShort'
+    default:                   return 'stats.noStats'
+  }
+})
+
+const missingStatsClass = computed(() => {
+  switch (statsMeta.value.status) {
+    case 'failed_no_snapshot':
+    case 'failed':
+    case 'partial_stale':      return 'is-error'
+    case 'disabled':
+    case 'no_nodes':           return 'is-muted'
+    case 'partial':
+    case 'stale':              return 'is-warn'
+    default:                   return ''
+  }
+})
+
+// Per-row badge: when the cluster is partial/stale we tag every visible
+// row so users don't read "match=10" as "definitely 10 across the cluster".
+const statsRowBadge = computed(() => {
+  switch (statsMeta.value.status) {
+    case 'partial':       return 'stats.badgePartialShort'
+    case 'partial_stale': return 'stats.badgePartialStaleShort'
+    case 'stale':         return 'stats.badgeStaleShort'
+    case 'failed':        return 'stats.badgeFailedShort'
+    default:              return ''
+  }
+})
+
+const statsRowBadgeClass = computed(() => {
+  switch (statsMeta.value.status) {
+    case 'partial':       return 'badge-warn'
+    case 'partial_stale': return 'badge-error'
+    case 'stale':         return 'badge-warn'
+    case 'failed':        return 'badge-error'
+    default:              return ''
+  }
+})
+
+// captureStatsMeta extracts the 6 v2.6.3 meta fields from any rules-list
+// response. Used by both refresh() and refreshStatsOnly() so the meta
+// stays in sync regardless of which code path landed last.
+const captureStatsMeta = (data) => {
+  statsMeta.value = {
+    status: data?.stats_status || '',
+    freshnessMs: data?.stats_freshness_ms ?? null,
+    nodeFailures: data?.stats_node_failures || {},
+    offlineNodes: data?.stats_offline_nodes || [],
+    unknownNodes: data?.stats_unknown_nodes || [],
+    syncingNodes: data?.stats_syncing_nodes || []
+  }
+}
+
 // Search debounce
 let searchDebounceTimer = null
 
@@ -480,6 +579,7 @@ const refresh = async () => {
     const data = await rulesApi.list(buildListParams())
     rules.value = data.rules || []
     totalRules.value = data.count || 0
+    captureStatsMeta(data)
   } catch (e) {
     console.error('Failed to load rules:', e)
   } finally {
@@ -487,7 +587,14 @@ const refresh = async () => {
   }
 }
 
-// Lightweight refresh: update stats only, preserve selection state
+// Lightweight refresh: update stats only, preserve selection state.
+//
+// v2.6.3 fix (round-3 P2-4): the previous version only mutated rule.stats
+// when the new response carried a stats key. That meant transitions like
+// ok → disabled or ok → failed_no_snapshot left the OLD stat numbers
+// visible — the row would show "match=42" while the cluster was actually
+// "stats disabled". Now we ALWAYS overwrite (or delete) rule.stats so the
+// table accurately reflects the current cluster state.
 const refreshStatsOnly = async () => {
   if (rules.value.length === 0) {
     await refresh()
@@ -498,24 +605,28 @@ const refreshStatsOnly = async () => {
     const data = await rulesApi.list(buildListParams())
     const newRules = data.rules || []
     const newCount = data.count || 0
+    captureStatsMeta(data)
 
-    // Detect changes: count changed or current-page rule ID list changed
     const currentIds = rules.value.map(r => r.id).join(',')
     const newIds = newRules.map(r => r.id).join(',')
 
     if (newCount !== totalRules.value || currentIds !== newIds) {
-      // Rules changed: replace entire page data
       rules.value = newRules
       totalRules.value = newCount
       return
     }
 
-    // Update stats only
+    // Reconcile stats UNCONDITIONALLY: if the new response omits .stats
+    // for a rule (e.g. cluster flipped to disabled), strip the stale
+    // numbers from our cached row.
     const newRulesMap = new Map(newRules.map(r => [r.id, r]))
     rules.value.forEach(rule => {
       const newRule = newRulesMap.get(rule.id)
-      if (newRule && newRule.stats) {
+      if (!newRule) return
+      if (newRule.stats) {
         rule.stats = newRule.stats
+      } else if (rule.stats) {
+        delete rule.stats
       }
     })
   } catch (e) {
@@ -1053,6 +1164,39 @@ onUnmounted(() => {
 .no-filter {
   color: var(--xs-text-secondary);
   opacity: 0.5;
+  font-size: 12px;
+}
+.no-stats.is-error {
+  color: var(--xs-danger, #ef4444);
+  opacity: 0.85;
+}
+.no-stats.is-muted {
+  opacity: 0.35;
+}
+.no-stats.is-warn {
+  color: var(--xs-warning, #b45309);
+  opacity: 0.85;
+}
+
+/* v2.6.3 stats-row badges — small color-coded label rendered inside each
+   stats cell when the cluster is in a degraded state. Keeps "100" from
+   reading as "definitely 100 across all nodes" when only some succeeded. */
+.row-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 6px;
+}
+.row-badge.badge-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+.row-badge.badge-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
 }
 
 .edit-readonly {

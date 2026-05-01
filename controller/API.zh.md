@@ -65,7 +65,7 @@ X-API-Key: <external_api_key>
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.6.1",
+  "version": "2.6.3",
   "status": "running"
 }
 ```
@@ -171,34 +171,47 @@ X-API-Key: <external_api_key>
 | `action` | string | — | 按动作过滤：`drop` 或 `rate_limit` |
 
 **行为说明：**
-- **不传任何分页参数**：返回全部规则，并附带每条规则的 `drop_pps` 统计（兼容旧版，查询开销较大）。
-- **传入任意分页参数**：返回分页结果，不含每条规则统计。
+- **传入任意分页参数**：返回分页结果。v2.6.3+：每条规则的 `stats` 现在通过控制器进程内的 stats cache 返回（早先 AUD-001 优化下被忽略）。
+- **不传任何分页参数**：返回全部规则。v2.6.3+：默认从 stats cache 读取，因此响应可能滞后最多 `stats_cache.refresh_interval_seconds`。当 `stats_cache.disabled=true` 时回退到 v2.6.3 之前的行为（请求时同步向 Node 拉取，不附带 `stats_*` meta 字段）。
+
+**Stats cache meta 字段（v2.6.3+）：** 所有分页响应——以及启用 cache 时的全量响应——都附带 6 个顶层 `stats_*` 字段，描述集群级聚合状态。详见下方 [Stats cache 契约](#stats-cache-契约-v263)。
 
 **响应 `200`（分页）：**
 
 ```json
 {
-  "rules": [ { ...规则对象 } ],
+  "rules": [ { ...规则对象, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
   "count": 42,
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 42,
-    "pages": 5
-  }
+  "pagination": { "page": 1, "limit": 50, "total": 42, "pages": 1 },
+  "stats_status": "ok",
+  "stats_freshness_ms": 1234,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
 }
 ```
 
-**响应 `200`（全量，不含分页参数）：**
+**响应 `200`（全量，cache 启用）：**
 
 ```json
 {
-  "rules": [
-    {
-      ...规则对象,
-      "stats": { "drop_pps": 12.5 }
-    }
-  ],
+  "rules": [ { ...规则对象, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
+  "count": 42,
+  "stats_status": "ok",
+  "stats_freshness_ms": 1234,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
+}
+```
+
+**响应 `200`（`stats_cache.disabled=true`）：** 保留 v2.6.3 之前的响应结构，无 `stats_*` 字段，stats 来自请求时同步 fan-out。
+
+```json
+{
+  "rules": [ { ...规则对象, "stats": { ... } } ],
   "count": 42
 }
 ```
@@ -217,18 +230,23 @@ X-API-Key: <external_api_key>
 |------|------|--------|------|
 | `limit` | integer | `10` | 返回条数，最大 50 |
 
+**v2.6.3 行为变化：** 不再请求时 fan-out。从 refresh 时预排好的 top-N 切片读取，请求时延与集群规模/规则数无关。响应附带与 `/api/v1/rules` 相同的 6 个 `stats_*` meta 字段。
+
 **响应 `200`：**
 
 ```json
 {
-  "rules": [
-    {
-      ...规则对象,
-      "stats": { "drop_pps": 1200.5 }
-    }
-  ]
+  "rules": [ { ...规则对象, "stats": { "drop_pps": 1200.5 } } ],
+  "stats_status": "ok",
+  "stats_freshness_ms": 567,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
 }
 ```
+
+当 cache 处于"无可用快照"状态（`initializing` / `waiting_for_health` / `no_nodes` / `failed_no_snapshot` / `disabled`）时，`rules` 返回空数组，前端依据 `stats_status` 渲染对应的状态文案。
 
 ---
 
@@ -648,6 +666,75 @@ X-API-Key: <external_api_key>
   "total_passed_pps": 5000.5
 }
 ```
+
+此 endpoint **不**经过 v2.6.3 stats cache，PPS 汇总走独立的轻量 node-stats 路径。
+
+---
+
+### `GET /api/v1/stats/cache_health` *(v2.6.3+)*
+
+运维诊断 endpoint，暴露进程内规则 stats cache 的状态，用于区分"Node fan-out 失败"与"refresh ticker 卡死"。
+
+**响应 `200`：** 见英文文档 `API.md` 中相同 endpoint 的字段说明。关键点：
+
+- `status` 是 **派生**状态（读取时基于 `now - last_snapshot_unix_ms` 推算，可能含 `stale` / `partial_stale`）。
+- `last_refresh_status` 是上次 refresh 的 **base outcome**（永不为 stale / partial_stale）。
+- 当 `status=partial_stale` 但 `last_refresh_status=partial` 时，refresh ticker 已卡住——上次 refresh 还成功了 partial，但之后没有新一轮 refresh 落地。
+
+**响应 `503`：** Cache 未配置（构建时未注入）。
+
+---
+
+## Stats cache 契约 (v2.6.3+)
+
+所有 stats-aware endpoint（`/rules?page=...`、`/rules/top`、启用 cache 时的 `/rules` listAll）顶层固定附带 6 个 `stats_*` 字段。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `stats_status` | string | 10 状态枚举之一，见下表 |
+| `stats_freshness_ms` | integer 或 `null` | 距上次可展示快照的毫秒数。无可展示数据时为 `null` |
+| `stats_node_failures` | object | `{节点名: 错误描述}`，仅含 **attempted Online** 失败节点；可能为空 |
+| `stats_offline_nodes` | string[] | health=`offline` 且本轮未发起请求的节点名 |
+| `stats_unknown_nodes` | string[] | 仍在 `unknown` 状态（HealthChecker 还未给出第一轮判断） |
+| `stats_syncing_nodes` | string[] | 当前在 `syncing` 状态 |
+
+### Status 状态值
+
+| `stats_status` | 单条 `stats` 字段 | 含义 |
+|----------------|-------------------|------|
+| `initializing` | 省略 | Cache 还没完成第一轮 refresh |
+| `waiting_for_health` | 省略 | 所有节点仍是 `unknown`/`syncing`，HealthChecker 还没给出有效结果 |
+| `no_nodes` | 省略 | `configured_nodes=0` |
+| `ok` | 总是返回（无命中合成 `0/0/0`） | 全部 configured 节点都成功，且未过期。**唯一**可以把 0 解读为"确定无命中"的状态 |
+| `partial` | 仅当该规则在成功节点上有命中时返回 | 有节点未参与成功（fail / offline / unknown / syncing），数值是 lower bound |
+| `stale` | 上次快照的 stats | 上次成功是 ok，但已超过 `stale_threshold_seconds` 未刷新（refresh 链路可能异常） |
+| `partial_stale` | 上次快照的 stats | partial 基线已过期（refresh 卡住） |
+| `failed` | 上次快照的 stats | 最近一轮所有节点都失败/被跳过，但 cache 仍有上次快照 |
+| `failed_no_snapshot` | 省略 | 全失败/全跳过，且从未有过快照 |
+| `disabled` | 省略 | `stats_cache.disabled=true` |
+
+### 单节点与多节点行为差异
+
+部分状态仅在多节点集群中可达：
+- `partial` / `partial_stale` 至少需要 2 个节点；单节点集群中节点失败 = `failed_no_snapshot`（或 `failed`，若有快照）。
+- `failed` 表示所有节点都失败，多节点集群中即所有节点同时失败。
+
+### `listAll` 语义变化
+
+v2.6.2 及之前 `GET /api/v1/rules`（无分页参数）每次请求都同步 fan-out Node，返回严格实时数据。v2.6.3 默认从进程内 cache 读取，最多滞后 `stats_cache.refresh_interval_seconds`。
+
+诊断脚本若依赖实时性，有两种选择：
+1. 直接调 Node 的 `/api/v1/rules`（Node API 一直是实时）。
+2. controller 配置 `stats_cache.disabled=true` 后重启——`listAll` 回退旧 fan-out。
+
+无 `?live_stats=true` query 参数；以上两条是仅有的逃生路径。
+
+### Node 端负载影响
+
+启用 cache（默认）会引入周期性 Controller→Node `GET /api/v1/rules` 调用（即使无人在用 UI）。默认 5s 间隔 + ≤1000 rules/node 时约 12 次/分钟/节点。规模较大时可考虑：
+- 调大 `stats_cache.refresh_interval_seconds`（最大 60）。
+- 调大 `stats_cache.per_node_timeout_seconds`（链路慢时）。
+- 直接 `stats_cache.disabled=true` 关闭。
 
 ---
 

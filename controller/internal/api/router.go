@@ -10,17 +10,23 @@ type Router struct {
 	whitelist      *WhitelistHandler
 	nodes          *NodesHandler
 	stats          *StatsHandler
+	cacheHealth    *CacheHealthHandler // v2.6.3 — may be nil for tests
 	auth           *AuthHandler
 	authMiddleware gin.HandlerFunc
 }
 
 // NewRouter creates a new Router.
-func NewRouter(rules *RulesHandler, whitelist *WhitelistHandler, nodes *NodesHandler, stats *StatsHandler, auth *AuthHandler, authMiddleware gin.HandlerFunc) *Router {
+//
+// cacheHealth is optional (nil in test setups that don't wire the stats
+// cache); the route is only registered when a non-nil handler is provided
+// so the endpoint surface stays accurate.
+func NewRouter(rules *RulesHandler, whitelist *WhitelistHandler, nodes *NodesHandler, stats *StatsHandler, cacheHealth *CacheHealthHandler, auth *AuthHandler, authMiddleware gin.HandlerFunc) *Router {
 	return &Router{
 		rules:          rules,
 		whitelist:      whitelist,
 		nodes:          nodes,
 		stats:          stats,
+		cacheHealth:    cacheHealth,
 		auth:           auth,
 		authMiddleware: authMiddleware,
 	}
@@ -34,7 +40,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/api/info", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"name":    "XDrop Controller",
-			"version": "2.6.1",
+			"version": "2.6.3",
 			"status":  "running",
 		})
 	})
@@ -90,5 +96,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Stats
 		v1.GET("/stats", r.stats.GetStats)
+
+		// Stats cache health (v2.6.3) — operator-facing diagnostic for
+		// the in-process aggregated rule-stats cache. Only registered
+		// when the cache is wired; without this guard a fresh deploy
+		// without the cache would silently expose a 0-everywhere endpoint.
+		if r.cacheHealth != nil {
+			v1.GET("/stats/cache_health", r.cacheHealth.Get)
+		}
 	}
 }

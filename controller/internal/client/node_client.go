@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -96,9 +97,24 @@ type NodeRulesResponse struct {
 	Count int        `json:"count"`
 }
 
-// GetRulesWithStats retrieves the node rule list with traffic statistics
+// GetRulesWithStats retrieves the node rule list with traffic statistics.
+// Delegates to GetRulesWithStatsContext with context.Background for back-compat.
 func (c *NodeClient) GetRulesWithStats(endpoint, apiKey string) (*NodeRulesResponse, error) {
-	req, _ := http.NewRequest("GET", endpoint+"/api/v1/rules", nil)
+	return c.GetRulesWithStatsContext(context.Background(), endpoint, apiKey)
+}
+
+// GetRulesWithStatsContext retrieves the node rule list with traffic statistics,
+// honoring the supplied context for cancellation and per-request timeout.
+//
+// Used by stats cache fan-out (v2.6.3): callers pass a per-node ctx.WithTimeout
+// to bound slow nodes; when ctx is canceled the underlying HTTP request is
+// aborted via http.NewRequestWithContext, so the goroutine returns promptly
+// instead of hanging until the client-level timeout.
+func (c *NodeClient) GetRulesWithStatsContext(ctx context.Context, endpoint, apiKey string) (*NodeRulesResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint+"/api/v1/rules", nil)
+	if err != nil {
+		return nil, err
+	}
 	if apiKey != "" {
 		req.Header.Set("X-API-Key", apiKey)
 	}

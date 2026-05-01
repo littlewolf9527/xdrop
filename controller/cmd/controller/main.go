@@ -79,11 +79,22 @@ func main() {
 	ruleService := service.NewRuleService(ruleRepo, syncService)
 	wlService := service.NewWhitelistService(wlRepo, syncService)
 
+	// Stats cache (v2.6.3) — periodically aggregates per-rule stats from
+	// nodes in the background. Wired here (not in the config package) so
+	// the seconds→time.Duration conversion stays out of config and the
+	// service package doesn't import config back.
+	statsCache := service.NewStatsCache(
+		nodeService,
+		service.RealClock{},
+		buildStatsCacheConfig(cfg.StatsCache),
+	)
+
 	// Create API handlers
-	rulesHandler := api.NewRulesHandler(ruleService, nodeService)
+	rulesHandler := api.NewRulesHandler(ruleService, nodeService, statsCache)
 	wlHandler := api.NewWhitelistHandler(wlService)
 	nodesHandler := api.NewNodesHandler(nodeService)
 	statsHandler := api.NewStatsHandler(ruleService, wlService, nodeService)
+	cacheHealthHandler := api.NewCacheHealthHandler(statsCache)
 
 	// Validate auth configuration
 	if cfg.Auth.Enabled {
@@ -117,7 +128,7 @@ func main() {
 	authMiddleware := api.AuthMiddleware(cfg.Auth.ExternalAPIKey, cfg.Auth.SessionSecret, cfg.Auth.Enabled)
 
 	// Create router
-	router := api.NewRouter(rulesHandler, wlHandler, nodesHandler, statsHandler, authHandler, authMiddleware)
+	router := api.NewRouter(rulesHandler, wlHandler, nodesHandler, statsHandler, cacheHealthHandler, authHandler, authMiddleware)
 
 	// Set up Gin engine
 	engine := gin.New()
@@ -137,6 +148,16 @@ func main() {
 	healthChecker := scheduler.NewHealthChecker(nodeService, nodeClient, cfg.HealthCheck.Interval)
 	healthChecker.Start()
 	defer healthChecker.Stop()
+
+	// Stats cache (v2.6.3) lifecycle. The cache uses its own context so
+	// shutdown can interrupt an in-flight refresh; without it Stop() would
+	// have to wait for the longest per-node timeout to elapse.
+	statsCacheCtx, statsCacheCancel := context.WithCancel(context.Background())
+	statsCache.Start(statsCacheCtx)
+	defer func() {
+		statsCacheCancel()
+		statsCache.Stop()
+	}()
 
 	// Start sync checker (if enabled)
 	if cfg.SyncCheck.Enabled {
@@ -188,5 +209,27 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("HTTP server shutdown returned error", "error", err)
+	}
+}
+
+// buildStatsCacheConfig converts the user-facing int-seconds raw config into
+// the runtime time.Duration form consumed by the service package.
+//
+// Why this lives in main.go (not config or service):
+//   - service already imports config; if config returned service types we'd
+//     have an import cycle.
+//   - Keeping the conversion in the wiring layer is the smallest move that
+//     breaks the cycle without restructuring either package.
+//
+// All inputs are assumed to have been Validate()d already by config.Load().
+func buildStatsCacheConfig(raw config.StatsCacheRawConfig) service.StatsCacheConfig {
+	return service.StatsCacheConfig{
+		RefreshInterval:  time.Duration(raw.RefreshIntervalSeconds) * time.Second,
+		StaleThreshold:   time.Duration(raw.StaleThresholdSeconds) * time.Second,
+		PerNodeTimeout:   time.Duration(raw.PerNodeTimeoutSeconds) * time.Second,
+		MaxConcurrency:   raw.MaxConcurrency,
+		BackoffOnAllFail: time.Duration(raw.BackoffOnAllFailSeconds) * time.Second,
+		TopNCacheSize:    raw.TopNCacheSize,
+		Disabled:         raw.Disabled,
 	}
 }

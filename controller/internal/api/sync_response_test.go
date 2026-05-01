@@ -93,7 +93,9 @@ func newTestRulesHandler(t *testing.T) (*RulesHandler, func()) {
 	syncLogRepo := repository.NewSQLiteSyncLogRepo(db)
 	syncSvc := service.NewSyncService(fakeNodeProvider{}, syncLogRepo, repo, wlRepo, nil, 1, 0, time.Millisecond)
 	ruleSvc := service.NewRuleService(repo, syncSvc)
-	return NewRulesHandler(ruleSvc, nil), cleanup
+	// nodeSvc and statsCache both nil — sync_response_test only exercises
+	// mutation handlers (Create/Delete/...), which do not consume either.
+	return NewRulesHandler(ruleSvc, nil, nil), cleanup
 }
 
 func TestRulesHandler_CreateResponse_AlwaysIncludesSync(t *testing.T) {

@@ -65,7 +65,7 @@ Successful responses return `200 OK` with a JSON body. Errors return an appropri
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.6.1",
+  "version": "2.6.3",
   "status": "running"
 }
 ```
@@ -172,34 +172,47 @@ List rules.
 | `action` | string | — | Filter by `drop` or `rate_limit` |
 
 **Behavior:**
-- If **no pagination parameters** are provided: returns all rules with aggregated `drop_pps` stats per rule (legacy mode, more expensive).
-- If **any pagination parameter** is provided: returns a paginated slice without per-rule stats.
+- If **any pagination parameter** is provided: returns a paginated slice. v2.6.3+: per-rule `stats` is now included from the in-process stats cache (was previously omitted as the AUD-001 optimization).
+- If **no pagination parameters** are provided: returns all rules. v2.6.3+: by default reads from the same in-process stats cache (so the response can be up to `stats_cache.refresh_interval_seconds` stale). When `stats_cache.disabled=true`, falls back to the pre-v2.6.3 behavior (synchronous Node fan-out, no `stats_*` meta fields in the envelope).
+
+**Stats cache meta fields (v2.6.3+):** Every paginated response — and every full-list response when the cache is enabled — now carries six top-level `stats_*` fields describing the cluster-level aggregation state. See [Stats cache contract](#stats-cache-contract-v263) below.
 
 **Response `200` (paginated):**
 
 ```json
 {
-  "rules": [ { ...Rule } ],
+  "rules": [ { ...Rule, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
   "count": 42,
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 42,
-    "pages": 5
-  }
+  "pagination": { "page": 1, "limit": 50, "total": 42, "pages": 1 },
+  "stats_status": "ok",
+  "stats_freshness_ms": 1234,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
 }
 ```
 
-**Response `200` (full list, no pagination params):**
+**Response `200` (full list, no pagination params, cache enabled):**
 
 ```json
 {
-  "rules": [
-    {
-      ...Rule,
-      "stats": { "drop_pps": 12.5 }
-    }
-  ],
+  "rules": [ { ...Rule, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
+  "count": 42,
+  "stats_status": "ok",
+  "stats_freshness_ms": 1234,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
+}
+```
+
+**Response `200` (full list, `stats_cache.disabled=true`):** Pre-v2.6.3 envelope. No `stats_*` meta fields, stats come from a synchronous fan-out at request time.
+
+```json
+{
+  "rules": [ { ...Rule, "stats": { ... } } ],
   "count": 42
 }
 ```
@@ -218,18 +231,23 @@ Top rules by current drop rate.
 |-----------|------|---------|-------------|
 | `limit` | integer | `10` | Number of results. Max: 50 |
 
+**v2.6.3 behavior:** No more on-request fan-out. Reads from the pre-sorted top-N slice computed at refresh time, so request latency is bounded regardless of cluster size or rule count. Responses include the same six `stats_*` meta fields as `/api/v1/rules`.
+
 **Response `200`:**
 
 ```json
 {
-  "rules": [
-    {
-      ...Rule,
-      "stats": { "drop_pps": 1200.5 }
-    }
-  ]
+  "rules": [ { ...Rule, "stats": { "drop_pps": 1200.5 } } ],
+  "stats_status": "ok",
+  "stats_freshness_ms": 567,
+  "stats_node_failures": {},
+  "stats_offline_nodes": [],
+  "stats_unknown_nodes": [],
+  "stats_syncing_nodes": []
 }
 ```
+
+When the cache is in a "no usable snapshot" state (`initializing`, `waiting_for_health`, `no_nodes`, `failed_no_snapshot`, `disabled`), `rules` is an empty array and the front-end is expected to dispatch off `stats_status` to render the appropriate message.
 
 ---
 
@@ -649,6 +667,104 @@ Aggregated cluster-wide statistics.
   "total_passed_pps": 5000.5
 }
 ```
+
+This endpoint does NOT use the v2.6.3 stats cache. The PPS rollup is computed via a separate, lightweight node-stats path.
+
+---
+
+### `GET /api/v1/stats/cache_health` *(v2.6.3+)*
+
+Operator-facing diagnostic for the in-process aggregated rule-stats cache. Surfaces enough state to tell apart "Node fan-out is failing" vs "the refresh ticker has stalled" without reading logs.
+
+**Response `200`:**
+
+```json
+{
+  "status": "partial_stale",
+  "last_refresh_status": "partial",
+  "last_attempt_unix_ms": 1745988123456,
+  "last_snapshot_unix_ms": 1745988123100,
+  "last_full_success_unix_ms": 1745988123100,
+  "freshness_ms": 356,
+  "configured_nodes": 3,
+  "attempted_nodes": 2,
+  "succeeded_nodes": 2,
+  "failed_nodes": 0,
+  "skipped_offline_nodes": 1,
+  "skipped_unknown_nodes": 0,
+  "skipped_syncing_nodes": 0,
+  "offline_node_names": ["node-c"],
+  "unknown_node_names": [],
+  "syncing_node_names": [],
+  "node_errors": {},
+  "rule_count": 142,
+  "top_n_cache_size": 50,
+  "top_rules_cached": 12,
+  "last_refresh_duration_ms": 87,
+  "consecutive_all_fail": 0
+}
+```
+
+`status` and `last_refresh_status` may differ:
+- `status` is the **derived** state at read time (includes `stale` / `partial_stale` based on `now - last_snapshot_unix_ms`).
+- `last_refresh_status` is the **base outcome** of the most recent refresh (never `stale` / `partial_stale`).
+
+When `status=partial_stale` but `last_refresh_status=partial`, the refresh ticker is stuck — the last successful refresh produced a partial snapshot, but no newer round has landed since.
+
+**Response `503`:** Cache not configured (controller built without wiring the cache).
+
+---
+
+## Stats cache contract (v2.6.3+)
+
+Every stats-aware endpoint (`/rules?page=...`, `/rules/top`, `/rules` listAll when cache is enabled) returns six top-level `stats_*` fields describing the cluster-level cache state.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stats_status` | string | One of 10 states: see table below |
+| `stats_freshness_ms` | integer or `null` | Milliseconds since last displayable snapshot. `null` when the cache has no displayable data yet (initializing / disabled / etc.) |
+| `stats_node_failures` | object | `{node_name: error_string}` for **attempted Online** nodes that failed. May be empty even in partial / failed states |
+| `stats_offline_nodes` | array of strings | Nodes whose health status is `offline` and were not contacted this round |
+| `stats_unknown_nodes` | array of strings | Nodes still in `unknown` state (HealthChecker hasn't reached its first verdict) |
+| `stats_syncing_nodes` | array of strings | Nodes currently in `syncing` state |
+
+### Status values
+
+| `stats_status` | Per-rule `stats` field | Meaning |
+|----------------|------------------------|---------|
+| `initializing` | omitted | Cache hasn't completed its first refresh |
+| `waiting_for_health` | omitted | All nodes still `unknown`/`syncing`; HealthChecker hasn't promoted any yet |
+| `no_nodes` | omitted | `configured_nodes=0`. Cluster has no Node configured |
+| `ok` | always present (synth `0/0/0` for no-hits) | All configured nodes contributed successfully and the snapshot is fresh. The only state where `0/0/0` is safe to interpret as "definitely no hits" |
+| `partial` | only when the rule had hits on a succeeded node | One or more nodes were excluded (failed / offline / unknown / syncing). Numbers are a lower bound |
+| `stale` | last snapshot's stats | `ok` baseline that's now older than `stale_threshold_seconds` (refresh ticker likely stuck) |
+| `partial_stale` | last snapshot's stats | `partial` baseline that's now older than threshold (refresh ticker stuck) |
+| `failed` | last snapshot's stats | All nodes failed/skipped on the most recent refresh, but a previous snapshot is preserved |
+| `failed_no_snapshot` | omitted | All nodes failed/skipped and the cache has no fallback snapshot |
+| `disabled` | omitted | `stats_cache.disabled=true` |
+
+### Single-node vs multi-node behavior
+
+Some states are only reachable in multi-node clusters:
+- `partial` / `partial_stale` require the cluster to have ≥2 nodes — if one fails on a single-node cluster the result is `failed_no_snapshot` (or `failed` once a snapshot exists).
+- `failed` always means *every* node failed, so on a multi-node cluster it requires all nodes to fail simultaneously.
+
+### `listAll` semantics change
+
+In v2.6.2 and earlier, `GET /api/v1/rules` (no pagination params) performed a synchronous Node fan-out on every request — responses were always real-time. v2.6.3 changes the default to reading from the in-process cache, capped at `stats_cache.refresh_interval_seconds` lag.
+
+Diagnostic scripts that need real-time stats can:
+1. Hit the Node `/api/v1/rules` endpoint directly (Node API is unchanged).
+2. Set `stats_cache.disabled=true` in the controller config and restart — `listAll` falls back to the legacy fan-out behavior.
+
+There is no `?live_stats=true` query parameter; the two options above are the supported escape hatches.
+
+### Node-side load impact
+
+Enabling the cache (the default) adds a periodic background `GET /api/v1/rules` from Controller to every Online Node, regardless of whether anyone is using the UI. At default settings (5s interval, ≤1000 rules/node) this is ~12 calls/min/node. Larger deployments should consider:
+- Increasing `stats_cache.refresh_interval_seconds` (max 60).
+- Increasing `stats_cache.per_node_timeout_seconds` for slow links.
+- Setting `stats_cache.disabled=true` to opt out entirely.
 
 ---
 

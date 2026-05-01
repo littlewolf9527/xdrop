@@ -226,6 +226,33 @@ type AggregatedRuleStats struct {
 	DropPPS    float64 `json:"drop_pps"`
 }
 
+// SnapshotNodesForStats returns a value-copy slice of all configured nodes,
+// safe for use outside the service lock.
+//
+// HealthChecker.UpdateStatus mutates the underlying *model.Node under s.mu.
+// The legacy GetAggregatedRuleStats appends pointers and reads node.Status /
+// node.Endpoint after releasing the lock, which races under -race detection.
+//
+// This helper copies the small set of fields the stats-cache fan-out needs
+// (ID, Name, Endpoint, ApiKey, Status) inside the lock and returns values, so
+// downstream consumers can safely fan out, dispatch by status, etc., without
+// touching the live shared map.
+func (s *NodeService) SnapshotNodesForStats() []model.Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.Node, 0, len(s.nodes))
+	for _, n := range s.nodes {
+		out = append(out, model.Node{
+			ID:       n.ID,
+			Name:     n.Name,
+			Endpoint: n.Endpoint,
+			ApiKey:   n.ApiKey,
+			Status:   n.Status,
+		})
+	}
+	return out
+}
+
 // GetAggregatedRuleStats returns rule statistics aggregated across all nodes.
 func (s *NodeService) GetAggregatedRuleStats() (map[string]*AggregatedRuleStats, error) {
 	s.mu.RLock()
