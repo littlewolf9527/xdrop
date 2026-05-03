@@ -71,11 +71,14 @@ func (c *ExpireCleaner) cleanup() {
 	// recreation via UNIQUE constraint. Deleting locally first means node
 	// convergence is handled by SyncChecker / next sync cycle if SyncDeleteRule fails.
 	for _, rule := range expiredRules {
-		if err := c.ruleRepo.Delete(rule.ID); err != nil {
+		if _, err := c.ruleRepo.Delete(rule.ID); err != nil {
 			slog.Error("Failed to delete expired rule from DB; skipping node sync", "id", rule.ID, "error", err)
 			continue
 		}
-		c.syncSvc.SyncDeleteRule(rule.ID)
+		// Only push a Node delete for rules that were actually in BPF.
+		if rule.Enabled {
+			c.syncSvc.SyncDeleteRule(rule.ID)
+		}
 	}
 
 	slog.Info("Expired rules cleaned and synced", "count", len(expiredRules))

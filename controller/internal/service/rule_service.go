@@ -1,6 +1,8 @@
 package service
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -11,6 +13,11 @@ import (
 	"github.com/littlewolf9527/xdrop/controller/internal/model"
 	"github.com/littlewolf9527/xdrop/controller/internal/repository"
 )
+
+// ErrRuleNotFound is returned by Update when the target rule does not exist.
+// Callers can use errors.Is(err, ErrRuleNotFound) to distinguish from other errors
+// and return a 404 response instead of a generic 400.
+var ErrRuleNotFound = errors.New("rule not found")
 
 // RuleService is the rule management service.
 type RuleService struct {
@@ -34,9 +41,9 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		return nil, nil, err
 	}
 
-	// Validate
+	// Validate — B4: action is required; no silent default.
 	if req.Action == "" {
-		req.Action = "drop"
+		return nil, nil, fmt.Errorf("action is required: specify \"drop\" or \"rate_limit\"")
 	}
 	if req.Action != "drop" && req.Action != "rate_limit" {
 		return nil, nil, fmt.Errorf("invalid action: %s", req.Action)
@@ -149,7 +156,12 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		expiresAt = &t
 	}
 
-	// Build rule
+	// Build rule — B1: respect Enabled *bool (default true when nil).
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
 	rule := &model.Rule{
 		ID:           "rule_" + uuid.New().String()[:8],
 		Name:         req.Name,
@@ -162,13 +174,13 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		Protocol:     protocol,
 		Action:       req.Action,
 		RateLimit:    req.RateLimit,
-		PktLenMin:    req.PktLenMin,
-		PktLenMax:    req.PktLenMax,
+		PktLenMin:    derefInt(req.PktLenMin),
+		PktLenMax:    derefInt(req.PktLenMax),
 		TcpFlags:     derefString(req.TcpFlags),
 		MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
 		Source:       req.Source,
 		Comment:      derefString(req.Comment),
-		Enabled:      true,
+		Enabled:      enabled,
 		CreatedAt:    time.Now(),
 		ExpiresAt:    expiresAt,
 		UpdatedAt:    time.Now(),
@@ -182,8 +194,13 @@ func (s *RuleService) Create(req *model.RuleRequest) (*model.Rule, *SyncResult, 
 		return nil, nil, err
 	}
 
-	// Sync to nodes (waits for completion)
-	syncResult := s.syncService.SyncAddRule(rule)
+	// Only sync to BPF when the rule is enabled.
+	var syncResult *SyncResult
+	if rule.Enabled {
+		syncResult = s.syncService.SyncAddRule(rule)
+	} else {
+		syncResult = &SyncResult{}
+	}
 
 	return rule, syncResult, nil
 }
@@ -240,8 +257,15 @@ func (s *RuleService) tryAnomalyMerge(existing *model.Rule, req *model.RuleReque
 		return nil, nil, fmt.Errorf("anomaly merge update failed: %w", err)
 	}
 
-	// Propagate the merged rule to all nodes.
-	syncResult := s.syncService.SyncUpdateRule(existing)
+	// Propagate the merged rule to all nodes only if the existing rule is enabled.
+	// A disabled rule was never written to BPF, so merging bits into it must not
+	// activate it on the data plane.
+	var syncResult *SyncResult
+	if existing.Enabled {
+		syncResult = s.syncService.SyncUpdateRule(existing)
+	} else {
+		syncResult = &SyncResult{}
+	}
 	return existing, syncResult, nil
 }
 
@@ -269,8 +293,12 @@ func (s *RuleService) ListEnabled() ([]*model.Rule, error) {
 func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *SyncResult, error) {
 	// Fetch existing rule FIRST so decoder normalization (Update-path variant)
 	// can seed the IPv6 scope guard with the rule's actual target.
+	// B7: map sql.ErrNoRows → ErrRuleNotFound so the handler can return 404.
 	rule, err := s.repo.Get(id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, fmt.Errorf("%w", ErrRuleNotFound)
+		}
 		return nil, nil, err
 	}
 
@@ -331,20 +359,24 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 		return nil, nil, err
 	}
 
-	// Validate packet length rule using updated values
+	// Validate packet length rule using effective values.
+	// B3: pkt_len is pointer tri-state — nil means "keep existing", non-nil (incl. 0) means "set".
 	tempReq := &model.RuleRequest{
-		SrcIP:     rule.SrcIP,
-		DstIP:     rule.DstIP,
-		SrcPort:   rule.SrcPort,
-		DstPort:   rule.DstPort,
-		Protocol:  rule.Protocol,
-		PktLenMin: req.PktLenMin,
-		PktLenMax: req.PktLenMax,
+		SrcIP:    rule.SrcIP,
+		DstIP:    rule.DstIP,
+		SrcPort:  rule.SrcPort,
+		DstPort:  rule.DstPort,
+		Protocol: rule.Protocol,
 	}
-	// If length not specified in the request, keep existing values
-	if req.PktLenMin == 0 && req.PktLenMax == 0 {
-		tempReq.PktLenMin = rule.PktLenMin
-		tempReq.PktLenMax = rule.PktLenMax
+	if req.PktLenMin != nil {
+		tempReq.PktLenMin = req.PktLenMin
+	} else {
+		tempReq.PktLenMin = intPtr(rule.PktLenMin)
+	}
+	if req.PktLenMax != nil {
+		tempReq.PktLenMax = req.PktLenMax
+	} else {
+		tempReq.PktLenMax = intPtr(rule.PktLenMax)
 	}
 	if err := validatePktLenRule(tempReq); err != nil {
 		return nil, nil, err
@@ -385,9 +417,12 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	} else if req.RateLimit > 0 {
 		rule.RateLimit = req.RateLimit
 	}
-	if req.PktLenMin > 0 || req.PktLenMax > 0 {
-		rule.PktLenMin = req.PktLenMin
-		rule.PktLenMax = req.PktLenMax
+	// B3: pointer tri-state — nil=omit (keep), non-nil (including 0) = set.
+	if req.PktLenMin != nil {
+		rule.PktLenMin = *req.PktLenMin
+	}
+	if req.PktLenMax != nil {
+		rule.PktLenMax = *req.PktLenMax
 	}
 	// tcp_flags: pointer tri-state — nil=omit (keep existing), ""=clear, "SYN"=set
 	// Validate against the PERSISTED protocol, not the request protocol (AUD-R2-01)
@@ -419,6 +454,12 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 	if req.MatchAnomaly != 0 {
 		rule.MatchAnomaly = req.MatchAnomaly
 	}
+	// B1: Enabled pointer tri-state — nil = keep existing value.
+	prevEnabled := rule.Enabled
+	if req.Enabled != nil {
+		rule.Enabled = *req.Enabled
+	}
+
 	// B-9: Comment is pointer tri-state — nil means "keep existing", non-nil
 	// (including "") means "set to this value", so explicit clear works.
 	if req.Comment != nil {
@@ -443,21 +484,57 @@ func (s *RuleService) Update(id string, req *model.RuleRequest) (*model.Rule, *S
 		return nil, nil, err
 	}
 
-	// Sync update to nodes (delete then re-add)
-	syncResult := s.syncService.SyncUpdateRule(rule)
+	// Sync to BPF based on enabled state transition.
+	var syncResult *SyncResult
+	switch {
+	case prevEnabled && rule.Enabled:
+		// enabled → enabled: update in place.
+		syncResult = s.syncService.SyncUpdateRule(rule)
+	case !prevEnabled && rule.Enabled:
+		// disabled → enabled: rule was never in BPF, use add (not update/delete+add).
+		syncResult = s.syncService.SyncAddRule(rule)
+	case prevEnabled && !rule.Enabled:
+		// enabled → disabled: remove from BPF.
+		syncResult = s.syncService.SyncDeleteRule(rule.ID)
+	default:
+		// disabled → disabled: no BPF change needed.
+		syncResult = &SyncResult{}
+	}
 
 	return rule, syncResult, nil
 }
 
 // Delete removes a rule by ID.
+// B6: idempotent — if the rule does not exist in DB we skip the Node fan-out
+// and return success, matching Batch DELETE behaviour.
+// P2: only fan-out SyncDeleteRule when the rule was enabled; a disabled rule
+// was never written to BPF so Node delete would produce a spurious 404.
 func (s *RuleService) Delete(id string) (*SyncResult, error) {
-	if err := s.repo.Delete(id); err != nil {
+	// Read the rule first to capture its enabled state before deletion.
+	rule, err := s.repo.Get(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &SyncResult{}, nil // idempotent
+		}
 		return nil, err
 	}
+	wasEnabled := rule.Enabled
 
-	// Sync deletion to nodes
+	found, err := s.repo.Delete(id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		// Raced with another delete — no BPF state to clean up.
+		return &SyncResult{}, nil
+	}
+
+	if !wasEnabled {
+		// Rule was never in BPF; skip Node fan-out.
+		return &SyncResult{}, nil
+	}
+
 	syncResult := s.syncService.SyncDeleteRule(id)
-
 	return syncResult, nil
 }
 
@@ -484,9 +561,10 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			continue
 		}
 
-		// Validate
+		// Validate — B4: action is required in batch too; missing action is a per-item failure.
 		if req.Action == "" {
-			req.Action = "drop"
+			failed++
+			continue
 		}
 		if req.Action != "drop" && req.Action != "rate_limit" {
 			failed++
@@ -617,25 +695,30 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 			}
 		}
 
+		// B1: respect Enabled *bool per item (nil defaults to true).
+		itemEnabled := true
+		if req.Enabled != nil {
+			itemEnabled = *req.Enabled
+		}
 		rule := &model.Rule{
-			ID:        "rule_" + uuid.New().String()[:8],
-			Name:      req.Name,
-			SrcIP:     req.SrcIP,
-			DstIP:     req.DstIP,
-			SrcCIDR:   req.SrcCIDR,
+			ID:           "rule_" + uuid.New().String()[:8],
+			Name:         req.Name,
+			SrcIP:        req.SrcIP,
+			DstIP:        req.DstIP,
+			SrcCIDR:      req.SrcCIDR,
 			DstCIDR:      req.DstCIDR,
 			SrcPort:      req.SrcPort,
 			DstPort:      req.DstPort,
 			Protocol:     protocol,
 			Action:       req.Action,
 			RateLimit:    req.RateLimit,
-			PktLenMin:    req.PktLenMin,
-			PktLenMax:    req.PktLenMax,
+			PktLenMin:    derefInt(req.PktLenMin),
+			PktLenMax:    derefInt(req.PktLenMax),
 			TcpFlags:     derefString(req.TcpFlags),
 			MatchAnomaly: req.MatchAnomaly, // v2.6 Phase 4
 			Source:       req.Source,
 			Comment:      derefString(req.Comment),
-			Enabled:      true,
+			Enabled:      itemEnabled,
 			CreatedAt:    time.Now(),
 			ExpiresAt:    expiresAt,
 			UpdatedAt:    time.Now(),
@@ -662,8 +745,20 @@ func (s *RuleService) BatchCreate(reqs []model.RuleRequest) ([]*model.Rule, int,
 		}
 	}
 
-	// Sync via node batch API (fast, lossless)
-	syncResult := s.syncService.SyncAddRulesBatch(rules)
+	// Sync only enabled rules to BPF (disabled rules are stored in DB but not
+	// pushed to the data plane until explicitly enabled via PUT).
+	var enabledRules []*model.Rule
+	for _, r := range rules {
+		if r.Enabled {
+			enabledRules = append(enabledRules, r)
+		}
+	}
+	var syncResult *SyncResult
+	if len(enabledRules) > 0 {
+		syncResult = s.syncService.SyncAddRulesBatch(enabledRules)
+	} else {
+		syncResult = &SyncResult{}
+	}
 
 	return rules, len(rules), failed, syncResult, nil
 }
@@ -832,7 +927,9 @@ func validateCIDRRule(req *model.RuleRequest) error {
 // validatePktLenRule validates packet length constraints.
 // Pure length-only rules are not allowed: at least one 5-tuple field must be specified.
 func validatePktLenRule(req *model.RuleRequest) error {
-	hasLengthFilter := req.PktLenMin > 0 || req.PktLenMax > 0
+	pktMin := derefInt(req.PktLenMin)
+	pktMax := derefInt(req.PktLenMax)
+	hasLengthFilter := pktMin > 0 || pktMax > 0
 	has5Tuple := req.SrcIP != "" || req.DstIP != "" ||
 		req.SrcCIDR != "" || req.DstCIDR != "" ||
 		req.SrcPort != 0 || req.DstPort != 0 ||
@@ -842,8 +939,8 @@ func validatePktLenRule(req *model.RuleRequest) error {
 		return fmt.Errorf("pure length rules not allowed: must specify at least one of src_ip, dst_ip, src_port, dst_port, or protocol")
 	}
 
-	if req.PktLenMin > 0 && req.PktLenMax > 0 && req.PktLenMin > req.PktLenMax {
-		return fmt.Errorf("invalid length range: min (%d) > max (%d)", req.PktLenMin, req.PktLenMax)
+	if pktMin > 0 && pktMax > 0 && pktMin > pktMax {
+		return fmt.Errorf("invalid length range: min (%d) > max (%d)", pktMin, pktMax)
 	}
 
 	// tcp_flags validation: syntax check + protocol=tcp requirement
@@ -868,6 +965,15 @@ func derefString(p *string) string {
 	return *p
 }
 
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func intPtr(v int) *int { return &v }
+
 // validateRuleScalarBounds checks that numeric fields fit Node-side types
 // (uint16 for ports/pkt_len, uint32 for rate_limit) and rejects nonsensical
 // combinations such as action=drop with a positive rate_limit. AUD-006.
@@ -878,11 +984,15 @@ func validateRuleScalarBounds(req *model.RuleRequest) error {
 	if req.DstPort < 0 || req.DstPort > 65535 {
 		return fmt.Errorf("dst_port out of range [0,65535]: %d", req.DstPort)
 	}
-	if req.PktLenMin < 0 || req.PktLenMin > 65535 {
-		return fmt.Errorf("pkt_len_min out of range [0,65535]: %d", req.PktLenMin)
+	if req.PktLenMin != nil {
+		if v := *req.PktLenMin; v < 0 || v > 65535 {
+			return fmt.Errorf("pkt_len_min out of range [0,65535]: %d", v)
+		}
 	}
-	if req.PktLenMax < 0 || req.PktLenMax > 65535 {
-		return fmt.Errorf("pkt_len_max out of range [0,65535]: %d", req.PktLenMax)
+	if req.PktLenMax != nil {
+		if v := *req.PktLenMax; v < 0 || v > 65535 {
+			return fmt.Errorf("pkt_len_max out of range [0,65535]: %d", v)
+		}
 	}
 	if req.RateLimit < 0 {
 		return fmt.Errorf("rate_limit must be non-negative: %d", req.RateLimit)

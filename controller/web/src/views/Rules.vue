@@ -765,10 +765,11 @@ const updateRule = async () => {
   data.action = f.action
   if (f.action === 'rate_limit') data.rate_limit = f.rate_limit
 
-  if (f.pkt_len_min > 0 || f.pkt_len_max > 0) {
-    data.pkt_len_min = f.pkt_len_min
-    data.pkt_len_max = f.pkt_len_max
-  }
+  // Always send pkt_len fields so the backend pointer tri-state can
+  // distinguish "clear to 0" from "omit/keep". Sending 0 clears an
+  // existing filter; sending >0 sets a new one.
+  data.pkt_len_min = f.pkt_len_min
+  data.pkt_len_max = f.pkt_len_max
 
   if (f.decoder) {
     data.decoder = f.decoder

@@ -135,7 +135,7 @@ X-API-Key: <external_api_key>
 | `dst_cidr` | string | 目的 CIDR 前缀，与 `dst_ip` 互斥 |
 | `src_port` | integer | 源端口，`0` = 任意 |
 | `dst_port` | integer | 目的端口，`0` = 任意 |
-| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""`（任意） |
+| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""`（任意） |
 | `action` | string | **必填**，`drop` 或 `rate_limit` |
 | `rate_limit` | integer | PPS 限速值，action=`rate_limit` 时必填（> 0） |
 | `pkt_len_min` | integer | L3 最小包长（字节），`0` = 不限 |
@@ -276,7 +276,7 @@ X-API-Key: <external_api_key>
 | `dst_cidr` | string | 否 | 目的 CIDR 前缀 |
 | `src_port` | integer | 否 | 源端口（0 = 任意） |
 | `dst_port` | integer | 否 | 目的端口（0 = 任意） |
-| `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
+| `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""` |
 | `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
 | `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
 | `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
@@ -286,6 +286,7 @@ X-API-Key: <external_api_key>
 | `comment` | string | 否 | 备注 |
 | `source` | string | 否 | 来源标记 |
 | `expires_in` | string | 否 | 相对过期时间，如 `1h`、`30m`、`24h` |
+| `enabled` | boolean | 否 | 默认 `true`；`false` 将规则保存到 DB 但不下发 BPF |
 
 **v2.6+ decoder / anomaly 语义**：
 
@@ -295,7 +296,7 @@ X-API-Key: <external_api_key>
 - **Anomaly 与非-anomaly 规则共存**：在已有非-anomaly 规则的 tuple 上再下发 anomaly → 409（需显式解决意图）。
 - **Portless 协议 + 端口（B-10）**：ICMP、ICMPv6、IGMP、GRE、ESP 不携带 L4 端口字段。这些协议配合 `src_port` 或 `dst_port` 非零 → 400，错误体含 `protocol=<名> does not carry ports (src_port/dst_port must be 0)`。BPF 数据面只对 TCP/UDP 填 `key.src_port/dst_port`，存储 portless+port 规则会成为永远不命中的 ghost rule。`protocol=all` 和空协议允许带端口（`all` 是通配，可匹配 TCP/UDP 流量）。同款约束也用于 `WhitelistService.Create`。
 
-**响应 `200`：**
+**响应 `201`：**
 
 ```json
 {
@@ -317,11 +318,15 @@ X-API-Key: <external_api_key>
 
 **Key 字段不可修改**：`src_ip`、`dst_ip`、`src_cidr`、`dst_cidr`、`protocol`、`src_port`、`dst_port`。发送不同**非空/非零**值会返回 `400`，诊断字符串 `<字段> is a key field and cannot be modified`。请删除后重建。发送与当前存储相同的值视为 no-op 接受（这让 decoder sugar 如 `decoder=tcp_rst` 在已是 tcp 协议的规则上展开成 `protocol=tcp` 与存储值相等可正常工作）。
 
-**零值 PUT 限制**：`protocol`、`src_port`、`dst_port` 使用 scalar（`string` / `int`）请求 schema，服务端无法区分"字段省略"和"字段显式置空/0"。`PUT {"dst_port": 0}` 对一个 `dst_port=80` 的规则被视为 **omit/no-op**，**不**会清空。要把 key 字段改成另一个值（包括 0/空），需要删除规则后重建。这些字段的 pointer 三态 schema 改造在 v2.7 backlog（plan §6 R3-002）；v2.6.2 保留 scalar 契约。同款限制也适用于 `rate_limit`、`pkt_len_min/max`、`match_anomaly`——见上文"显式清空限制"。
+**零值 PUT 限制**：`protocol`、`src_port`、`dst_port` 使用 scalar（`string` / `int`）请求 schema，服务端无法区分"字段省略"和"字段显式置空/0"。`PUT {"dst_port": 0}` 对一个 `dst_port=80` 的规则被视为 **omit/no-op**，**不**会清空。要把 key 字段改成另一个值（包括 0/空），需要删除规则后重建。这些字段的 pointer 三态 schema 改造在 v2.7 backlog（plan §6 R3-002）。同款限制也适用于 `rate_limit`、`match_anomaly`。
 
-**显式清空限制**：`rate_limit`、`pkt_len_min/max`、`match_anomaly` 使用 `int` schema，发 `0` 视为"省略/保留原值"而非"清空"。唯一例外：PUT body 包含 `action=drop` 时会自动将 `rate_limit` 清零。如需完整清除 `pkt_len_*` 或 `match_anomaly`，请删除规则后重建。
+**`pkt_len_min/max` 显式清空（v2.6.4+）**：`pkt_len_min` 和 `pkt_len_max` 使用 **pointer 三态** schema——字段省略保留原值，发 `0` 显式清空，发正整数设置新值。与 `tcp_flags`、`comment` 行为一致。
+
+**剩余 int 字段的显式清空限制**：`rate_limit`、`match_anomaly` 仍使用 `int` schema，发 `0` 视为"省略/保留原值"而非"清空"。唯一例外：PUT body 包含 `action=drop` 时会自动将 `rate_limit` 清零。
 
 `tcp_flags` 和 `comment` 使用 pointer 三态：字段省略表示保留原值，发 `""` 表示清空，发非空字符串表示设置新值。
+
+**`enabled` 字段（v2.6.4+）**：pointer 三态——字段省略保留原值。切换会触发对应数据面操作：`false→true` 将规则写入 BPF（`SyncAddRule`）；`true→false` 从 BPF 删除（`SyncDeleteRule`）；`false→false` / `true→true` 保持原有语义（无操作或 update）。
 
 **Decoder 切换契约（v2.6.2+）**：`tcp_flags` 和 `match_anomaly` 在数据面互斥。用 PUT 切换规则 decoder 类型时，客户端必须**显式**清空冲突字段——服务端**不**做隐式自动清空：
 
@@ -333,6 +338,8 @@ X-API-Key: <external_api_key>
 **响应 `200`：** 同 `POST`。
 
 **响应 `400`：** 校验错误。
+
+**响应 `404`：** 规则不存在。
 
 ---
 
@@ -419,7 +426,7 @@ X-API-Key: <external_api_key>
 | `dst_ip` | string | 目的 IPv4/IPv6 |
 | `src_port` | integer | 源端口（`0` = 任意） |
 | `dst_port` | integer | 目的端口（`0` = 任意） |
-| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
+| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""` |
 | `comment` | string | 备注 |
 | `created_at` | string (RFC3339) | 创建时间 |
 

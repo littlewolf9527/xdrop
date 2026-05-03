@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/littlewolf9527/xdrop/controller/internal/model"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Initialization SQL (inline)
@@ -464,9 +464,19 @@ func (r *SQLiteRuleRepo) Update(rule *model.Rule) error {
 	return err
 }
 
-func (r *SQLiteRuleRepo) Delete(id string) error {
-	_, err := r.db.Exec("DELETE FROM rules WHERE id = ?", id)
-	return err
+// Delete removes a rule by ID. Returns (true, nil) when the row was found and
+// deleted, (false, nil) when the ID did not exist (idempotent), or
+// (false, err) on a database error.
+func (r *SQLiteRuleRepo) Delete(id string) (bool, error) {
+	res, err := r.db.Exec("DELETE FROM rules WHERE id = ?", id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 func (r *SQLiteRuleRepo) BatchDelete(ids []string) error {

@@ -33,7 +33,7 @@ type RuleRepository interface {
 	ListEnabled() ([]*model.Rule, error)
 	ListExpired() ([]*model.Rule, error)
 	Update(rule *model.Rule) error
-	Delete(id string) error
+	Delete(id string) (bool, error) // returns (found, err); (false, nil) means idempotent not-found
 	BatchDelete(ids []string) error
 	DeleteExpired() (int, error)
 	Exists(srcIP, dstIP string, srcPort, dstPort int, protocol string) (bool, error)

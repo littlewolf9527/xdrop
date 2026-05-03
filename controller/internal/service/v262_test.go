@@ -203,7 +203,8 @@ func TestValidateRuleScalarBounds_PortOver(t *testing.T) {
 }
 
 func TestValidateRuleScalarBounds_PktLenOver(t *testing.T) {
-	req := &model.RuleRequest{PktLenMin: 70000, Action: "drop", SrcIP: "1.2.3.4"}
+	v := 70000
+	req := &model.RuleRequest{PktLenMin: &v, Action: "drop", SrcIP: "1.2.3.4"}
 	if err := validateRuleScalarBounds(req); err == nil {
 		t.Fatal("expected error for pkt_len_min=70000")
 	}
@@ -231,7 +232,8 @@ func TestValidateRuleScalarBounds_DropWithRateLimit(t *testing.T) {
 }
 
 func TestValidateRuleScalarBounds_Valid(t *testing.T) {
-	req := &model.RuleRequest{SrcPort: 80, DstPort: 443, PktLenMin: 60, PktLenMax: 1500, Action: "rate_limit", RateLimit: 1000}
+	min, max := 60, 1500
+	req := &model.RuleRequest{SrcPort: 80, DstPort: 443, PktLenMin: &min, PktLenMax: &max, Action: "rate_limit", RateLimit: 1000}
 	if err := validateRuleScalarBounds(req); err != nil {
 		t.Fatalf("unexpected error for valid bounds: %v", err)
 	}

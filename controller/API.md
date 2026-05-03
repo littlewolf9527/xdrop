@@ -135,7 +135,7 @@ All rule endpoints require authentication.
 | `dst_cidr` | string | Destination CIDR prefix. Mutually exclusive with `dst_ip` |
 | `src_port` | integer | Source port. `0` = any |
 | `dst_port` | integer | Destination port. `0` = any |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` (any) |
+| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` (any) |
 | `action` | string | **Required.** `drop` or `rate_limit` |
 | `rate_limit` | integer | PPS limit. Required (> 0) when `action` is `rate_limit` |
 | `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
@@ -277,7 +277,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 | `dst_cidr` | string | No | Destination CIDR prefix |
 | `src_port` | integer | No | Source port (0 = any) |
 | `dst_port` | integer | No | Destination port (0 = any) |
-| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
+| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
 | `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
 | `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
 | `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
@@ -287,6 +287,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 | `comment` | string | No | Notes |
 | `source` | string | No | Origin label |
 | `expires_in` | string | No | Relative expiry, e.g. `1h`, `30m`, `24h` |
+| `enabled` | boolean | No | default `true`; `false` stores the rule in DB without syncing to BPF |
 
 **v2.6+ decoder / anomaly semantics**:
 
@@ -296,7 +297,7 @@ Create a rule. Triggers an immediate sync to all nodes.
 - **Anomaly + non-anomaly on same tuple**: creating an anomaly rule on a tuple that already has a non-anomaly rule → 409 conflict (operator must resolve the intent explicitly).
 - **Portless protocol + port (B-10)**: ICMP, ICMPv6, IGMP, GRE, ESP do not carry L4 ports. Specifying a non-zero `src_port` or `dst_port` together with one of these protocols returns `400` with diagnosis `protocol=<name> does not carry ports (src_port/dst_port must be 0)`. The BPF data plane only fills `key.src_port/dst_port` for TCP and UDP; storing a portless+port rule would create a permanent lookup miss (a "ghost" rule that never matches). `protocol=all` and empty protocol allow ports — `all` is a wildcard that may match TCP/UDP traffic. The same rule applies to `WhitelistService.Create`.
 
-**Response `200`:**
+**Response `201`:**
 
 ```json
 {
@@ -318,11 +319,15 @@ Update an existing rule. Same request body as `POST`. Triggers sync.
 
 **Key fields are immutable**: `src_ip`, `dst_ip`, `src_cidr`, `dst_cidr`, `protocol`, `src_port`, `dst_port`. Sending a different non-empty/non-zero value returns `400` with diagnosis `<field> is a key field and cannot be modified`. Delete and recreate the rule instead. Sending the same value as currently stored is accepted as a no-op (this allows decoder sugar like `decoder=tcp_rst` on an existing tcp rule, which expands to `protocol=tcp` matching the stored value).
 
-**Zero-value PUT limitation**: `protocol`, `src_port`, `dst_port` use scalar (`string` / `int`) request schema, so the server cannot distinguish "field omitted" from "field explicitly set to empty/zero". A request like `PUT {"dst_port": 0}` against an `dst_port=80` rule is treated as **omit/no-op**, not as a clear-to-zero. To change a key field to a different value (including zero), delete and recreate the rule. Pointer-based tri-state schema for these fields is on the v2.7 backlog (see plan §6 R3-002); v2.6.2 keeps the existing scalar contract. Same pattern applies to `rate_limit`, `pkt_len_min/max`, `match_anomaly` — see "Explicit-clear limitation" above.
+**Zero-value PUT limitation**: `protocol`, `src_port`, `dst_port` use scalar (`string` / `int`) request schema, so the server cannot distinguish "field omitted" from "field explicitly set to empty/zero". A request like `PUT {"dst_port": 0}` against an `dst_port=80` rule is treated as **omit/no-op**, not as a clear-to-zero. To change a key field to a different value (including zero), delete and recreate the rule. Pointer-based tri-state schema for these fields is on the v2.7 backlog (see plan §6 R3-002). Same pattern applies to `rate_limit` and `match_anomaly`.
 
-**Explicit-clear limitation**: `rate_limit`, `pkt_len_min/max`, and `match_anomaly` use `int` schema; sending `0` is treated as "omit/keep existing" rather than "clear". The one exception is `action=drop` in the PUT body — this automatically zeroes `rate_limit`. To clear `pkt_len_*` or `match_anomaly` entirely, delete and recreate the rule.
+**Explicit-clear for `pkt_len_min/max` (v2.6.4+)**: `pkt_len_min` and `pkt_len_max` use **pointer tri-state** schema — omitting the field keeps the existing value, sending `0` explicitly clears it, sending a positive value sets it. This aligns with `tcp_flags` and `comment`.
+
+**Explicit-clear limitation (remaining int fields)**: `rate_limit` and `match_anomaly` still use `int` schema; sending `0` is treated as "omit/keep existing" rather than "clear". The one exception is `action=drop` in the PUT body — this automatically zeroes `rate_limit`.
 
 `tcp_flags` and `comment` use pointer tri-state: omitting the field keeps the existing value, sending `""` clears it, sending a non-empty string sets it.
+
+**`enabled` field (v2.6.4+)**: pointer tri-state — omitting keeps existing value. Toggling triggers the appropriate data-plane transition: `false→true` adds the rule to BPF (`SyncAddRule`); `true→false` removes it from BPF (`SyncDeleteRule`); `false→false` or `true→true` behaves as before (no-op or update).
 
 **Decoder switching contract (v2.6.2+)**: `tcp_flags` and `match_anomaly` are mutually exclusive at the data plane. When using PUT to switch a rule's decoder type, the client must explicitly clear the conflicting field — the server does NOT auto-clear:
 
@@ -334,6 +339,8 @@ Rationale: v2.6.2 keeps PUT semantics strictly explicit — the server does not 
 **Response `200`:** Same as `POST`.
 
 **Response `400`:** Validation error.
+
+**Response `404`:** Rule not found.
 
 ---
 
@@ -420,7 +427,7 @@ Whitelist entries bypass all blacklist rules. A packet matching any whitelist en
 | `dst_ip` | string | Destination IPv4/IPv6 |
 | `src_port` | integer | Source port (`0` = any) |
 | `dst_port` | integer | Destination port (`0` = any) |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
+| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
 | `comment` | string | Notes |
 | `created_at` | string (RFC3339) | Creation timestamp |
 

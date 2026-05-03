@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -523,6 +524,11 @@ func (h *RulesHandler) Update(c *gin.Context) {
 
 	rule, sr, err := h.svc.Update(id, &req)
 	if err != nil {
+		// B7: return 404 when the rule does not exist.
+		if errors.Is(err, service.ErrRuleNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -6,20 +6,20 @@ import (
 
 // Rule rule model
 type Rule struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name,omitempty"`
-	SrcIP     string     `json:"src_ip,omitempty"`
-	DstIP     string     `json:"dst_ip,omitempty"`
-	SrcCIDR   string     `json:"src_cidr,omitempty"` // CIDR notation (e.g. "10.0.0.0/8")
-	DstCIDR   string     `json:"dst_cidr,omitempty"` // CIDR notation (e.g. "192.168.0.0/16")
-	SrcPort   int        `json:"src_port,omitempty"`
-	DstPort   int        `json:"dst_port,omitempty"`
-	Protocol  string     `json:"protocol,omitempty"`
-	Action    string     `json:"action"`
-	RateLimit int        `json:"rate_limit,omitempty"`
-	PktLenMin int        `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
-	PktLenMax int        `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
-	TcpFlags  string     `json:"tcp_flags,omitempty"`   // TCP flags filter (e.g. "SYN,!ACK")
+	ID        string `json:"id"`
+	Name      string `json:"name,omitempty"`
+	SrcIP     string `json:"src_ip,omitempty"`
+	DstIP     string `json:"dst_ip,omitempty"`
+	SrcCIDR   string `json:"src_cidr,omitempty"` // CIDR notation (e.g. "10.0.0.0/8")
+	DstCIDR   string `json:"dst_cidr,omitempty"` // CIDR notation (e.g. "192.168.0.0/16")
+	SrcPort   int    `json:"src_port,omitempty"`
+	DstPort   int    `json:"dst_port,omitempty"`
+	Protocol  string `json:"protocol,omitempty"`
+	Action    string `json:"action"`
+	RateLimit int    `json:"rate_limit,omitempty"`
+	PktLenMin int    `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
+	PktLenMax int    `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
+	TcpFlags  string `json:"tcp_flags,omitempty"`   // TCP flags filter (e.g. "SYN,!ACK")
 	// MatchAnomaly is a bitmask (bit0=bad_fragment bit1=invalid). 0=don't
 	// check (default; legacy rules behave unchanged). v2.6 Phase 4.
 	MatchAnomaly int        `json:"match_anomaly,omitempty"`
@@ -33,18 +33,18 @@ type Rule struct {
 
 // RuleRequest add/update rule request
 type RuleRequest struct {
-	Name      string `json:"name,omitempty"`
-	SrcIP     string `json:"src_ip,omitempty"`
-	DstIP     string `json:"dst_ip,omitempty"`
-	SrcCIDR   string `json:"src_cidr,omitempty"` // CIDR notation (e.g. "10.0.0.0/8")
-	DstCIDR   string `json:"dst_cidr,omitempty"` // CIDR notation (e.g. "192.168.0.0/16")
-	SrcPort   int    `json:"src_port,omitempty"`
-	DstPort   int    `json:"dst_port,omitempty"`
-	Protocol  string `json:"protocol,omitempty"`
-	Action    string `json:"action"`
-	RateLimit int    `json:"rate_limit,omitempty"`
-	PktLenMin int    `json:"pkt_len_min,omitempty"` // L3 packet length min (0=no limit)
-	PktLenMax int    `json:"pkt_len_max,omitempty"` // L3 packet length max (0=no limit)
+	Name      string  `json:"name,omitempty"`
+	SrcIP     string  `json:"src_ip,omitempty"`
+	DstIP     string  `json:"dst_ip,omitempty"`
+	SrcCIDR   string  `json:"src_cidr,omitempty"` // CIDR notation (e.g. "10.0.0.0/8")
+	DstCIDR   string  `json:"dst_cidr,omitempty"` // CIDR notation (e.g. "192.168.0.0/16")
+	SrcPort   int     `json:"src_port,omitempty"`
+	DstPort   int     `json:"dst_port,omitempty"`
+	Protocol  string  `json:"protocol,omitempty"`
+	Action    string  `json:"action"`
+	RateLimit int     `json:"rate_limit,omitempty"`
+	PktLenMin *int    `json:"pkt_len_min,omitempty"` // pointer tri-state: nil=omit/keep, 0=clear, >0=set
+	PktLenMax *int    `json:"pkt_len_max,omitempty"` // pointer tri-state: nil=omit/keep, 0=clear, >0=set
 	TcpFlags  *string `json:"tcp_flags,omitempty"`   // TCP flags filter; pointer for tri-state: nil=omit, ""=clear, "SYN"=set
 	// Decoder is an input-only syntactic sugar (v2.6 Phase 2). When set, the
 	// service layer's normalizeDecoder expands it into protocol / tcp_flags
@@ -57,9 +57,12 @@ type RuleRequest struct {
 	// MatchAnomaly is normally set via Decoder. Explicit input is rejected by
 	// normalizeDecoder as mutually exclusive with decoder (prevents silent
 	// drift). 0=don't check.
-	MatchAnomaly int     `json:"match_anomaly,omitempty"`
-	ExpiresIn    string  `json:"expires_in,omitempty"` // "1h", "30m", "24h"
-	Source       string  `json:"source,omitempty"`
+	MatchAnomaly int    `json:"match_anomaly,omitempty"`
+	ExpiresIn    string `json:"expires_in,omitempty"` // "1h", "30m", "24h"
+	Source       string `json:"source,omitempty"`
+	// Enabled uses pointer tri-state: nil=use default (true on create, keep on update), explicit bool to set.
+	// When false on create, the rule is stored but not synced to BPF (disabled).
+	Enabled *bool `json:"enabled,omitempty"`
 	// Comment uses pointer tri-state: nil=omit (keep existing), ""=clear, "x"=set.
 	// Required so PUT can explicitly clear comment (B-9 edit dialog).
 	Comment *string `json:"comment,omitempty"`

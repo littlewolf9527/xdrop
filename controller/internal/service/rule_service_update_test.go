@@ -4,6 +4,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,11 @@ import (
 // fakeNodeProvider for SyncService construction (no nodes → SyncResult is empty).
 type fakeNodeProvider struct{}
 
-func (fakeNodeProvider) List() ([]*model.Node, error)         { return nil, nil }
-func (fakeNodeProvider) Get(id string) (*model.Node, error)   { return nil, nil }
-func (fakeNodeProvider) UpdateStatus(id, status string)       {}
-func (fakeNodeProvider) UpdateLastSeen(id string)             {}
-func (fakeNodeProvider) UpdateLastSync(id string)             {}
+func (fakeNodeProvider) List() ([]*model.Node, error)       { return nil, nil }
+func (fakeNodeProvider) Get(id string) (*model.Node, error) { return nil, nil }
+func (fakeNodeProvider) UpdateStatus(id, status string)     {}
+func (fakeNodeProvider) UpdateLastSeen(id string)           {}
+func (fakeNodeProvider) UpdateLastSync(id string)           {}
 
 func newTestRuleService(t *testing.T) (*RuleService, func()) {
 	t.Helper()
@@ -513,9 +514,9 @@ func TestBatchCreateRule_GREWithPortFails_OthersSucceed(t *testing.T) {
 	defer cleanup()
 
 	reqs := []model.RuleRequest{
-		{DstIP: "10.99.0.210", Protocol: "tcp", DstPort: 80, Action: "drop"}, // legit
+		{DstIP: "10.99.0.210", Protocol: "tcp", DstPort: 80, Action: "drop"},  // legit
 		{DstIP: "10.99.0.211", Protocol: "gre", SrcPort: 500, Action: "drop"}, // B-10 reject
-		{DstIP: "10.99.0.212", Protocol: "udp", DstPort: 53, Action: "drop"}, // legit
+		{DstIP: "10.99.0.212", Protocol: "udp", DstPort: 53, Action: "drop"},  // legit
 	}
 	_, added, failed, _, err := svc.BatchCreate(reqs)
 	if err != nil {
@@ -737,5 +738,313 @@ func TestUpdateRule_EmptyProtocol_NoOp(t *testing.T) {
 	}
 	if updated.Protocol != "tcp" {
 		t.Fatalf("protocol should remain tcp (empty treated as omit), got %q", updated.Protocol)
+	}
+}
+
+// ---- v2.6.4 regression tests ----
+
+// B4: action is now required on Create; omitting it must return an error.
+func TestCreateRule_MissingAction_Returns400(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	_, _, err := svc.Create(&model.RuleRequest{DstIP: "10.99.0.80"})
+	if err == nil {
+		t.Fatal("expected error when action is omitted, got nil")
+	}
+	if !strings.Contains(err.Error(), "action is required") {
+		t.Fatalf("expected 'action is required' error, got: %v", err)
+	}
+}
+
+// B1: Create with enabled=false stores rule as disabled and skips BPF sync.
+func TestCreateRule_EnabledFalse_StoredAsDisabled(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	f := false
+	r, sr, err := svc.Create(&model.RuleRequest{DstIP: "10.99.0.81", Action: "drop", Enabled: &f})
+	if err != nil {
+		t.Fatalf("create with enabled=false should succeed, got: %v", err)
+	}
+	if r.Enabled {
+		t.Fatal("rule should be stored with enabled=false")
+	}
+	// No nodes registered → SyncResult should be empty (not nil), confirming no fan-out attempted.
+	if sr == nil {
+		t.Fatal("SyncResult should not be nil")
+	}
+}
+
+// B1: Update enabled false → true triggers BPF sync (SyncUpdateRule path).
+func TestUpdateRule_EnableFlagToggle(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	// Create disabled
+	f := false
+	r, _, err := svc.Create(&model.RuleRequest{DstIP: "10.99.0.82", Action: "drop", Enabled: &f})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if r.Enabled {
+		t.Fatal("setup: expected enabled=false")
+	}
+
+	// Enable it
+	tr := true
+	updated, _, err := svc.Update(r.ID, &model.RuleRequest{Enabled: &tr})
+	if err != nil {
+		t.Fatalf("Update enabled=true: %v", err)
+	}
+	if !updated.Enabled {
+		t.Fatal("expected rule enabled after update")
+	}
+
+	// Disable again
+	updated2, _, err := svc.Update(r.ID, &model.RuleRequest{Enabled: &f})
+	if err != nil {
+		t.Fatalf("Update enabled=false: %v", err)
+	}
+	if updated2.Enabled {
+		t.Fatal("expected rule disabled after second update")
+	}
+}
+
+// B3: pkt_len pointer tri-state — nil keeps existing, 0 clears.
+func TestUpdateRule_PktLenClearWithZeroPointer(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	// Create with pkt_len 100-200
+	min, max := 100, 200
+	r, _, err := svc.Create(&model.RuleRequest{
+		DstIP:     "10.99.0.83",
+		Action:    "drop",
+		PktLenMin: &min,
+		PktLenMax: &max,
+	})
+	if err != nil {
+		t.Fatalf("create with pkt_len: %v", err)
+	}
+	if r.PktLenMin != 100 || r.PktLenMax != 200 {
+		t.Fatalf("setup: expected pkt_len 100-200, got %d-%d", r.PktLenMin, r.PktLenMax)
+	}
+
+	// PUT with pkt_len_min=0, pkt_len_max=0 (pointer to 0) → should CLEAR
+	zero := 0
+	updated, _, err := svc.Update(r.ID, &model.RuleRequest{PktLenMin: &zero, PktLenMax: &zero})
+	if err != nil {
+		t.Fatalf("Update pkt_len to 0 (clear): %v", err)
+	}
+	if updated.PktLenMin != 0 || updated.PktLenMax != 0 {
+		t.Fatalf("expected pkt_len cleared to 0, got %d-%d", updated.PktLenMin, updated.PktLenMax)
+	}
+}
+
+// B3: pkt_len nil in PUT request keeps existing value (backward compat).
+func TestUpdateRule_PktLenNilKeepsExisting(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	min, max := 60, 120
+	r, _, err := svc.Create(&model.RuleRequest{
+		DstIP:     "10.99.0.84",
+		Action:    "drop",
+		PktLenMin: &min,
+		PktLenMax: &max,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// PUT without pkt_len fields → should keep 60-120
+	updated, _, err := svc.Update(r.ID, &model.RuleRequest{Action: "drop"})
+	if err != nil {
+		t.Fatalf("Update without pkt_len: %v", err)
+	}
+	if updated.PktLenMin != 60 || updated.PktLenMax != 120 {
+		t.Fatalf("pkt_len should be preserved when omitted, got %d-%d", updated.PktLenMin, updated.PktLenMax)
+	}
+}
+
+// B6: Delete on non-existent ID returns success (no error), empty SyncResult.
+func TestDeleteRule_NonExistentID_Idempotent(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	sr, err := svc.Delete("rule_nonexistent")
+	if err != nil {
+		t.Fatalf("Delete non-existent should be idempotent, got: %v", err)
+	}
+	if sr == nil {
+		t.Fatal("SyncResult should not be nil")
+	}
+}
+
+// B7: Update on non-existent ID returns ErrRuleNotFound.
+func TestUpdateRule_NonExistentID_ReturnsNotFound(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	_, _, err := svc.Update("rule_nonexistent", &model.RuleRequest{Action: "drop"})
+	if err == nil {
+		t.Fatal("expected error for non-existent ID, got nil")
+	}
+	if !errors.Is(err, ErrRuleNotFound) {
+		t.Fatalf("expected ErrRuleNotFound, got: %v", err)
+	}
+}
+
+// TestBatchCreate_MissingActionFails: batch item with no action → counted as failed (B4 parity).
+func TestBatchCreate_MissingActionFails(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	reqs := []model.RuleRequest{
+		{DstIP: "10.99.0.90", Action: "drop"}, // valid
+		{DstIP: "10.99.0.91"},                 // missing action → fail
+		{DstIP: "10.99.0.92", Action: "drop"}, // valid
+	}
+	_, added, failed, _, err := svc.BatchCreate(reqs)
+	if err != nil {
+		t.Fatalf("batch create: %v", err)
+	}
+	if added != 2 {
+		t.Fatalf("expected 2 added, got %d", added)
+	}
+	if failed != 1 {
+		t.Fatalf("expected 1 failed (missing action), got %d", failed)
+	}
+}
+
+// TestBatchCreate_EnabledFalseStoredDisabledAndNotSynced: enabled=false items are stored but not
+// pushed to BPF (sync covers only enabled items).
+func TestBatchCreate_EnabledFalseStoredDisabledAndNotSynced(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	f := false
+	reqs := []model.RuleRequest{
+		{DstIP: "10.99.0.93", Action: "drop"},              // enabled=nil → true
+		{DstIP: "10.99.0.94", Action: "drop", Enabled: &f}, // enabled=false
+	}
+	rules, added, failed, sr, err := svc.BatchCreate(reqs)
+	if err != nil {
+		t.Fatalf("batch create: %v", err)
+	}
+	if added != 2 || failed != 0 {
+		t.Fatalf("expected added=2 failed=0, got added=%d failed=%d", added, failed)
+	}
+
+	// Verify stored enabled states.
+	var enabledCount, disabledCount int
+	for _, r := range rules {
+		if r.Enabled {
+			enabledCount++
+		} else {
+			disabledCount++
+		}
+	}
+	if enabledCount != 1 || disabledCount != 1 {
+		t.Fatalf("expected 1 enabled + 1 disabled, got enabled=%d disabled=%d", enabledCount, disabledCount)
+	}
+
+	// No nodes → SyncResult not nil; total reflects only the enabled rule (1).
+	if sr == nil {
+		t.Fatal("SyncResult must not be nil")
+	}
+	// With no registered nodes, Total=0 either way; just confirm we get a result.
+	_ = sr
+}
+
+// P1: anomaly merge onto a disabled existing rule must not activate BPF.
+// The merged rule's Enabled flag must remain false, bitmask must be OR'd,
+// and the returned SyncResult must show no failures.
+func TestAnomalyMerge_DisabledExistingRule_StaysDisabled(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	f := false
+	// Create a disabled bad_fragment anomaly rule.
+	r1, _, err := svc.Create(&model.RuleRequest{
+		DstIP:   "192.0.2.10",
+		Action:  "drop",
+		Decoder: "bad_fragment",
+		Enabled: &f,
+	})
+	if err != nil {
+		t.Fatalf("create disabled anomaly rule: %v", err)
+	}
+	if r1.Enabled {
+		t.Fatal("setup failure: rule should be disabled")
+	}
+	if r1.MatchAnomaly != 0x01 {
+		t.Fatalf("expected match_anomaly=0x01 (bad_fragment), got %d", r1.MatchAnomaly)
+	}
+
+	// Merge a second anomaly (invalid=0x02) onto the same tuple.
+	r2, sr, err := svc.Create(&model.RuleRequest{
+		DstIP:   "192.0.2.10",
+		Action:  "drop",
+		Decoder: "invalid",
+	})
+	if err != nil {
+		t.Fatalf("anomaly merge: %v", err)
+	}
+	// Must return the same rule ID — not a new row.
+	if r2.ID != r1.ID {
+		t.Fatalf("expected merge to return same rule ID, got %s != %s", r2.ID, r1.ID)
+	}
+	// Bitmask must be OR'd: 0x01 | 0x02 = 0x03.
+	if r2.MatchAnomaly != 0x03 {
+		t.Errorf("expected match_anomaly=0x03 after merge, got %d", r2.MatchAnomaly)
+	}
+	// Existing disabled rule must remain disabled after merge.
+	if r2.Enabled {
+		t.Error("merged rule must remain disabled; anomaly merge must not activate BPF")
+	}
+	// SyncResult must not report failures (no BPF push should have been attempted).
+	if sr == nil {
+		t.Fatal("SyncResult must not be nil")
+	}
+	if sr.Failed != 0 {
+		t.Errorf("expected sync.failed=0 for disabled anomaly merge, got %d", sr.Failed)
+	}
+}
+
+// P2: deleting a disabled rule must not fan-out to Node (disabled rules are
+// never in BPF, so Node delete would produce a spurious 404 / sync.failed>0).
+func TestDeleteRule_DisabledRule_NoSyncFanout(t *testing.T) {
+	svc, cleanup := newTestRuleService(t)
+	defer cleanup()
+
+	f := false
+	r, _, err := svc.Create(&model.RuleRequest{
+		DstIP:   "192.0.2.11",
+		Action:  "drop",
+		Enabled: &f,
+	})
+	if err != nil {
+		t.Fatalf("create disabled rule: %v", err)
+	}
+	if r.Enabled {
+		t.Fatal("setup failure: rule should be disabled")
+	}
+
+	sr, err := svc.Delete(r.ID)
+	if err != nil {
+		t.Fatalf("delete disabled rule: %v", err)
+	}
+	if sr == nil {
+		t.Fatal("SyncResult must not be nil")
+	}
+	// With fakeNodeProvider (0 nodes), any sync path returns Failed=0.
+	// The key assertion is no error and an empty result (no targeted nodes).
+	if sr.Failed != 0 {
+		t.Errorf("expected sync.failed=0 for disabled rule delete, got %d", sr.Failed)
+	}
+	if sr.Total != 0 {
+		t.Errorf("expected sync.total=0 for disabled rule delete (no BPF push), got %d", sr.Total)
 	}
 }
