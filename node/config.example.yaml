@@ -104,7 +104,8 @@ auth:
 #     port: 8080
 #     interface: "eth0"
 #   bpf:
-#     path: bpf/xdrop.elf
+#     main_path: bpf/xdrop_main.elf
+#     gate_path: bpf/xdrop_gate.elf
 #   auth:
 #     node_api_key: "your-node-key"
 #     controller_sync_key: "your-sync-key"
@@ -117,7 +118,8 @@ auth:
 #   server:
 #     port: 8080
 #   bpf:
-#     path: bpf/xdrop.elf
+#     main_path: bpf/xdrop_main.elf
+#     gate_path: bpf/xdrop_gate.elf
 #   auth:
 #     node_api_key: "your-node-key"
 #     controller_sync_key: "your-sync-key"
