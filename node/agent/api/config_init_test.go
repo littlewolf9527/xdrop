@@ -90,8 +90,10 @@ func TestInitDynamicConfig_ZerosFFSlots(t *testing.T) {
 		{"ConfigBlacklistCount", ConfigBlacklistCount},
 		{"ConfigWhitelistCount", ConfigWhitelistCount},
 		{"ConfigRuleBitmap", ConfigRuleBitmap},
+		{"ConfigWLBitmap", ConfigWLBitmap},           // Phase 8: slot 3
 		{"ConfigCIDRRuleCount", ConfigCIDRRuleCount},
 		{"ConfigCIDRBitmap", ConfigCIDRBitmap},
+		{"ConfigWLMapSelector", ConfigWLMapSelector}, // Phase 8: slot 8
 		{"ConfigRuleMapSelector", ConfigRuleMapSelector},
 	} {
 		if got := readSlot(t, m, slot.idx); got != 0 {
@@ -100,28 +102,27 @@ func TestInitDynamicConfig_ZerosFFSlots(t *testing.T) {
 	}
 }
 
-// TestInitDynamicConfig_LeavesReservedSlotsUntouched confirms the two
-// reserved slot indices (3 = ConfigBitmapValid, 8 = ConfigCIDRBitmapValid)
-// are explicitly NOT part of the init list — they're preserved as-is.
-// This is a negative control that catches an accidental expansion of
-// the init list (which would zero operator-written values in those
-// reserved slots if they ever get repurposed for compatibility).
-func TestInitDynamicConfig_LeavesReservedSlotsUntouched(t *testing.T) {
+// TestInitDynamicConfig_ZerosPhase8Slots confirms that Phase 8 slots 3 (ConfigWLBitmap)
+// and 8 (ConfigWLMapSelector) are explicitly initialized to 0 by initDynamicConfig.
+// These were formerly reserved (ConfigBitmapValid / ConfigCIDRBitmapValid) and are now
+// repurposed for whitelist dual-buffer control. The old "leave untouched" behavior is
+// replaced by "zero on boot" to prevent stale values from surviving agent restarts.
+func TestInitDynamicConfig_ZerosPhase8Slots(t *testing.T) {
 	m := newConfigArrayForTest(t)
 
-	// Plant sentinels in reserved slots 3 and 8.
-	writeSlot(t, m, 3, 0xcafe)
-	writeSlot(t, m, 8, 0xbabe)
+	// Pre-populate Phase 8 slots with non-zero sentinels (simulating stale pinned state).
+	writeSlot(t, m, ConfigWLBitmap, 0xcafe)
+	writeSlot(t, m, ConfigWLMapSelector, 0xbabe)
 
 	h := &Handlers{}
 	if err := h.initDynamicConfig(m); err != nil {
 		t.Fatalf("initDynamicConfig: %v", err)
 	}
 
-	if got := readSlot(t, m, 3); got != 0xcafe {
-		t.Errorf("reserved slot 3 was overwritten: got 0x%x, want 0xcafe", got)
+	if got := readSlot(t, m, ConfigWLBitmap); got != 0 {
+		t.Errorf("ConfigWLBitmap (slot 3) = 0x%x after init, want 0 (must be zeroed on boot)", got)
 	}
-	if got := readSlot(t, m, 8); got != 0xbabe {
-		t.Errorf("reserved slot 8 was overwritten: got 0x%x, want 0xbabe", got)
+	if got := readSlot(t, m, ConfigWLMapSelector); got != 0 {
+		t.Errorf("ConfigWLMapSelector (slot 8) = 0x%x after init, want 0 (must be zeroed on boot)", got)
 	}
 }

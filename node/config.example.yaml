@@ -18,8 +18,12 @@ server:
   interface: "eth0"   # e.g. eth0, ens3, enp3s0
 
 bpf:
-  # Path to the compiled BPF ELF file, relative to the working directory.
-  path: bpf/xdrop.elf
+  # Phase 8 dual-ELF architecture: main (blacklist/CIDR/rate/anomaly) + gate (whitelist 31-combo).
+  # Both paths are required — gate missing = fail startup (whitelist silently disabled otherwise).
+  main_path: bpf/xdrop_main.elf
+  gate_path: bpf/xdrop_gate.elf
+  # Deprecated: single-ELF path (ignored when main_path + gate_path are set).
+  # path: bpf/xdrop.elf
 
   # BPF pinning policy (v2.5+, Phases 3+4 of goebpf→cilium/ebpf migration).
   # When enabled, xdrop pins its BPF objects under /sys/fs/bpf/xdrop/ so

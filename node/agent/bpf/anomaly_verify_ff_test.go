@@ -10,7 +10,7 @@
 // traffic into the Linux stack on an interface with no IP → flow died. D8
 // shell regression didn't catch it (D8 runs traditional mode).
 //
-// This test loads xdrop.elf, populates a devmap entry + a tail_stash entry
+// This test loads xdrop_main.elf, populates a devmap entry + a tail_stash entry
 // with is_ff=1 and ingress_ifindex=INGRESS_SIM, then feeds
 // xdp_anomaly_verify a normal TCP SYN packet (pkt_anomaly=0 path). The program
 // MUST return XDP_REDIRECT (4), proving the FF pass_or_redirect sink works.
@@ -90,8 +90,8 @@ type tailStashWire struct {
 func TestAnomalyVerifyFFRedirect(t *testing.T) {
 	elfPath := os.Getenv("XDROP_BPF_ELF")
 	if elfPath == "" {
-		// Test CWD is node/agent/bpf/; xdrop.elf lives in node/bpf/.
-		elfPath = "../../bpf/xdrop.elf"
+		// Test CWD is node/agent/bpf/; Phase 8: xdp_anomaly_verify lives in xdrop_main.elf.
+		elfPath = "../../bpf/xdrop_main.elf"
 	}
 	if _, err := os.Stat(elfPath); err != nil {
 		t.Skipf("%s not found (build BPF first, or set XDROP_BPF_ELF): %v", elfPath, err)

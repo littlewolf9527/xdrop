@@ -58,6 +58,7 @@ type Stats struct {
 	PassedPackets      uint64       `json:"passed_packets"`
 	WhitelistedPackets uint64       `json:"whitelisted_packets"`
 	RateLimitedPackets uint64       `json:"rate_limited_packets"`
+	TailcallFail       uint64       `json:"tailcall_fail"` // Phase 8: gate→main tail-call failures (non-zero = BL chain bypassed)
 	RulesCount         int          `json:"rules_count"`
 	WhitelistCount     int          `json:"whitelist_count"`
 	DroppedPPS         float64      `json:"dropped_pps"`
@@ -88,12 +89,12 @@ type SyncRule struct {
 
 // SyncWhitelistEntry represents a whitelist entry for sync (matches sync.WhitelistEntry)
 type SyncWhitelistEntry struct {
-	ID       string
-	SrcIP    string
-	DstIP    string
-	SrcPort  uint16
-	DstPort  uint16
-	Protocol string
+	ID       string `json:"id"`
+	SrcIP    string `json:"src_ip,omitempty"`
+	DstIP    string `json:"dst_ip,omitempty"`
+	SrcPort  uint16 `json:"src_port,omitempty"`
+	DstPort  uint16 `json:"dst_port,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // AtomicSyncResult holds the outcome of DoAtomicSync.

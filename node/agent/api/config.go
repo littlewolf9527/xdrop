@@ -43,7 +43,7 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 
 	// Step 2: Update dynamic items in shadow
 
-	// 2a. Bitmap: rebuild from comboRefCount (not delta)
+	// 2a. Blacklist bitmap: rebuild from comboRefCount (not delta)
 	var bitmap uint64
 	for i := 0; i < 64; i++ {
 		if h.comboRefCount[i] > 0 {
@@ -56,6 +56,30 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	binary.LittleEndian.PutUint64(bitmapValue, bitmap)
 	if err := shadow.Update(bitmapKey, bitmapValue, ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to update shadow bitmap: %w", err)
+	}
+
+	// 2a2. Phase 8: Whitelist bitmap: rebuild from wlComboRefCount
+	var wlBitmap uint64
+	for i := 0; i < 64; i++ {
+		if h.wlComboRefCount[i] > 0 {
+			wlBitmap |= 1 << uint(i)
+		}
+	}
+	wlBitmapKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlBitmapKey, ConfigWLBitmap)
+	wlBitmapValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(wlBitmapValue, wlBitmap)
+	if err := shadow.Update(wlBitmapKey, wlBitmapValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow WL bitmap: %w", err)
+	}
+
+	// 2a3. Phase 8: Whitelist map selector (independent from blacklist selector)
+	wlSelKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlSelKey, ConfigWLMapSelector)
+	wlSelValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(wlSelValue, uint64(h.activeWLSlot))
+	if err := shadow.Update(wlSelKey, wlSelValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow WL map selector: %w", err)
 	}
 
 	// 2b. Blacklist count
@@ -158,8 +182,8 @@ func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta 
 	}
 	h.activeSlot = newSlot
 
-	log.Printf("[publishConfigUpdate] Switched to slot %d, bitmap=0x%016x, cidrBitmap=0x%016x, blCount delta=%d, wlCount delta=%d, cidrCount delta=%d",
-		newSlot, bitmap, cidrBitmap, countDelta, wlCountDelta, cidrCountDelta)
+	log.Printf("[publishConfigUpdate] Switched to slot %d, bitmap=0x%016x, wlBitmap=0x%016x, cidrBitmap=0x%016x, wlSlot=%d, blCount delta=%d, wlCount delta=%d, cidrCount delta=%d",
+		newSlot, bitmap, wlBitmap, cidrBitmap, h.activeWLSlot, countDelta, wlCountDelta, cidrCountDelta)
 
 	return nil
 }
@@ -229,6 +253,97 @@ func countAnomalyRulesIn(rules map[string]StoredRule, cidrRules map[string]Store
 		}
 	}
 	return n
+}
+
+// activeWhitelist returns the currently active whitelist BPF map (Phase 8 dual-buffer)
+func (h *Handlers) activeWhitelist() *ebpf.Map {
+	if h.activeWLSlot == 0 {
+		return h.whitelist
+	}
+	return h.whitelistB
+}
+
+// shadowWhitelist returns the shadow whitelist BPF map (Phase 8 dual-buffer)
+func (h *Handlers) shadowWhitelist() *ebpf.Map {
+	if h.activeWLSlot == 0 {
+		return h.whitelistB
+	}
+	return h.whitelist
+}
+
+// publishConfigUpdateForWLSync performs the config publish step for DoWhitelistAtomicSync.
+// Unlike the general publishConfigUpdate, this function:
+//   - Writes absolute whitelist count (not a delta)
+//   - Rebuilds WL bitmap from the provided newWLComboRefCount (not h.wlComboRefCount)
+//   - Preserves all other config slots byte-for-byte (BL, CIDR, anomaly, FF, etc.)
+//   - Flips the active_config selector
+//
+// Caller must hold publishMu and have already set h.activeWLSlot to the new value.
+func (h *Handlers) publishConfigUpdateForWLSync(wlAbsoluteCount uint64, newWLComboRefCount [64]int) error {
+	shadow := h.shadowMap()
+	active := h.activeMap()
+
+	// Step 1: Copy active → shadow (all entries, preserves BL/CIDR/anomaly/FF slots)
+	for i := uint32(0); i < ConfigMapEntries; i++ {
+		key := make([]byte, 4)
+		binary.LittleEndian.PutUint32(key, i)
+		var value [8]byte
+		if err := active.Lookup(key, &value); err == nil {
+			if err := shadow.Update(key, value[:], ebpf.UpdateExist); err != nil {
+				return fmt.Errorf("failed to copy config index %d to shadow: %w", i, err)
+			}
+		}
+	}
+
+	// Step 2: Overwrite only the 3 whitelist-owned slots
+
+	// 2a. Absolute whitelist count
+	wlCountKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlCountKey, ConfigWhitelistCount)
+	wlCountValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(wlCountValue, wlAbsoluteCount)
+	if err := shadow.Update(wlCountKey, wlCountValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow WL count: %w", err)
+	}
+
+	// 2b. WL bitmap rebuilt from newWLComboRefCount
+	var wlBitmap uint64
+	for i := 0; i < 64; i++ {
+		if newWLComboRefCount[i] > 0 {
+			wlBitmap |= 1 << uint(i)
+		}
+	}
+	wlBitmapKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlBitmapKey, ConfigWLBitmap)
+	wlBitmapValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(wlBitmapValue, wlBitmap)
+	if err := shadow.Update(wlBitmapKey, wlBitmapValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow WL bitmap: %w", err)
+	}
+
+	// 2c. WL map selector (h.activeWLSlot already set by caller)
+	wlSelKey := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlSelKey, ConfigWLMapSelector)
+	wlSelValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(wlSelValue, uint64(h.activeWLSlot))
+	if err := shadow.Update(wlSelKey, wlSelValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to update shadow WL map selector: %w", err)
+	}
+
+	// Step 3: Atomically flip active_config selector
+	newSlot := 1 - h.activeSlot
+	selKey := make([]byte, 4)
+	selValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
+	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
+		return fmt.Errorf("failed to switch active config: %w", err)
+	}
+	h.activeSlot = newSlot
+
+	log.Printf("[publishConfigUpdateForWLSync] Switched to slot %d, wlBitmap=0x%016x, wlSlot=%d, wlCount=%d",
+		newSlot, wlBitmap, h.activeWLSlot, wlAbsoluteCount)
+
+	return nil
 }
 
 // activeBlacklist returns the currently active blacklist BPF map (Phase 4.2 dual rule map)

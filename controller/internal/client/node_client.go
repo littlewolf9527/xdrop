@@ -175,6 +175,12 @@ func (c *NodeClient) DeleteWhitelistBatch(endpoint, apiKey string, ids []string)
 	return c.doDelete(endpoint+"/api/v1/whitelist/batch", apiKey, map[string]interface{}{"ids": ids})
 }
 
+// SyncWhitelist performs an atomic full whitelist snapshot sync via Phase 8 endpoint.
+// Returns error (containing "404") if the node does not support this endpoint.
+func (c *NodeClient) SyncWhitelist(endpoint, apiKey string, entries []map[string]interface{}) (*Response, error) {
+	return c.post(endpoint+"/api/v1/sync/whitelist", apiKey, map[string]interface{}{"entries": entries})
+}
+
 // WhitelistResponse is the node whitelist list response
 type WhitelistResponse struct {
 	Entries []struct {

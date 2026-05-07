@@ -70,6 +70,14 @@ type Options struct {
 	PinRoot string
 	// Mode selects the pinning policy. Empty string ≡ ModeAuto.
 	Mode Mode
+	// PinNoneOverrides lists map names that must use PinNone instead of
+	// PinByName, even when pinning is enabled. Phase 8 uses this for
+	// verifier_prune_map (security: must never be pinned) and
+	// tailcall_fail_stats (restart-clear semantics).
+	PinNoneOverrides []string
+	// MapReplacements, if non-nil, is passed to NewCollectionWithOptions.
+	// Phase 8 gate ELF uses this to reference mainColl's kernel maps.
+	MapReplacements map[string]*ebpf.Map
 }
 
 // Result reports what the loader actually did, for logging + LT
@@ -113,8 +121,32 @@ func loadFromSpec(spec *ebpf.CollectionSpec, opts Options) (*ebpf.Collection, Re
 		pinRoot = DefaultPinRoot
 	}
 
+	// newColl creates a collection, always passing MapReplacements if set.
+	// P1-1 fix: every path (disable, fallback, retry) must use this helper
+	// to avoid gate/main split-brain where gate creates its own copies of
+	// shared maps instead of referencing mainColl's kernel maps.
+	newColl := func(label string) (*ebpf.Collection, error) {
+		if opts.MapReplacements != nil {
+			return ebpf.NewCollectionWithOptions(spec, ebpf.CollectionOptions{
+				MapReplacements: opts.MapReplacements,
+			})
+		}
+		return ebpf.NewCollection(spec)
+	}
+
+	// newCollPinned creates a collection with pinning + MapReplacements.
+	newCollPinned := func(pinPath string) (*ebpf.Collection, error) {
+		collOpts := ebpf.CollectionOptions{
+			Maps: ebpf.MapOptions{PinPath: pinPath},
+		}
+		if opts.MapReplacements != nil {
+			collOpts.MapReplacements = opts.MapReplacements
+		}
+		return ebpf.NewCollectionWithOptions(spec, collOpts)
+	}
+
 	if mode == ModeDisable {
-		coll, err := ebpf.NewCollection(spec)
+		coll, err := newColl("disable")
 		if err != nil {
 			return nil, Result{}, fmt.Errorf("load BPF collection (pinning disabled): %w", err)
 		}
@@ -128,56 +160,69 @@ func loadFromSpec(spec *ebpf.CollectionSpec, opts Options) (*ebpf.Collection, Re
 			return nil, Result{}, fmt.Errorf("bpf.pinning=require but bpffs probe failed: %w", err)
 		}
 		log.Printf("[bpf] WARN: pinning disabled: %v", err)
-		coll, cerr := ebpf.NewCollection(spec)
+		coll, cerr := newColl("bpffs-fallback")
 		if cerr != nil {
 			return nil, Result{}, fmt.Errorf("load BPF collection (pinning fallback): %w", cerr)
 		}
 		return coll, Result{EffectiveMode: ModeDisable, FallbackReason: err.Error()}, nil
 	}
 
-	// Ensure the per-agent pin directory exists. 0700 because bpffs
-	// contents expose raw kernel state; anyone who can read the fds
-	// effectively gets CAP_BPF-equivalent read power over the maps.
+	// Ensure the per-agent pin directory exists.
 	if err := os.MkdirAll(pinRoot, 0o700); err != nil {
 		if mode == ModeRequire {
 			return nil, Result{}, fmt.Errorf("bpf.pinning=require: MkdirAll(%s): %w", pinRoot, err)
 		}
 		log.Printf("[bpf] WARN: pinning disabled: MkdirAll(%s): %v", pinRoot, err)
-		coll, cerr := ebpf.NewCollection(spec)
+		coll, cerr := newColl("mkdir-fallback")
 		if cerr != nil {
 			return nil, Result{}, fmt.Errorf("load BPF collection (MkdirAll fallback): %w", cerr)
 		}
 		return coll, Result{EffectiveMode: ModeDisable, FallbackReason: err.Error()}, nil
 	}
 
+	// Build set of replacement map names — these are owned by another collection
+	// (mainColl) and must be skipped during reconcile + pinning. Gate loader
+	// should only reconcile/pin its own maps (whitelist_b, etc.), not shared maps
+	// that mainColl already created.
+	replacementSet := make(map[string]bool, len(opts.MapReplacements))
+	for name := range opts.MapReplacements {
+		replacementSet[name] = true
+	}
+
 	// Walk pinned maps that already exist on disk; if any has a schema
 	// that doesn't match what the new ELF expects, unlink it so the load
-	// below creates a fresh one. Strict equality per proposal §3.b — we
-	// do not attempt any semver-like migration.
-	wiped, err := reconcilePinnedMaps(spec, pinRoot)
+	// below creates a fresh one. Skip replacement maps — their owner handles them.
+	wiped, err := reconcilePinnedMaps(spec, pinRoot, replacementSet)
 	if err != nil {
 		if mode == ModeRequire {
 			return nil, Result{}, fmt.Errorf("bpf.pinning=require: reconcile pinned maps: %w", err)
 		}
 		log.Printf("[bpf] WARN: pinning disabled: reconcile pinned maps: %v", err)
-		coll, cerr := ebpf.NewCollection(spec)
+		coll, cerr := newColl("reconcile-fallback")
 		if cerr != nil {
 			return nil, Result{}, fmt.Errorf("load BPF collection (reconcile fallback): %w", cerr)
 		}
 		return coll, Result{EffectiveMode: ModeDisable, FallbackReason: err.Error()}, nil
 	}
 
-	// Tag every map for pinning. cilium/ebpf then either creates +
-	// pins, or loads an existing pin, depending on presence on disk.
-	// The ORDER matters: we flipped Pinning BEFORE NewCollection sees
-	// the spec.
-	for _, ms := range spec.Maps {
-		ms.Pinning = ebpf.PinByName
+	// Build set of PinNone overrides for O(1) lookup.
+	pinNoneSet := make(map[string]bool, len(opts.PinNoneOverrides))
+	for _, name := range opts.PinNoneOverrides {
+		pinNoneSet[name] = true
 	}
 
-	coll, err := ebpf.NewCollectionWithOptions(spec, ebpf.CollectionOptions{
-		Maps: ebpf.MapOptions{PinPath: pinRoot},
-	})
+	// Tag every map for pinning. Replacement maps (owned by another collection)
+	// get PinNone — they'll be replaced by MapReplacements and shouldn't be
+	// pinned under this collection's ownership. PinNoneOverrides also get PinNone.
+	for name, ms := range spec.Maps {
+		if replacementSet[name] || pinNoneSet[name] {
+			ms.Pinning = ebpf.PinNone
+		} else {
+			ms.Pinning = ebpf.PinByName
+		}
+	}
+
+	coll, err := newCollPinned(pinRoot)
 	if err != nil {
 		if mode == ModeRequire {
 			return nil, Result{}, fmt.Errorf("bpf.pinning=require: NewCollectionWithOptions: %w", err)
@@ -187,13 +232,34 @@ func loadFromSpec(spec *ebpf.CollectionSpec, opts Options) (*ebpf.Collection, Re
 		for _, ms := range spec.Maps {
 			ms.Pinning = ebpf.PinNone
 		}
-		coll2, cerr := ebpf.NewCollection(spec)
+		coll2, cerr := newColl("pin-retry-fallback")
 		if cerr != nil {
 			return nil, Result{}, fmt.Errorf("load BPF collection (NewCollectionWithOptions fallback): %w", cerr)
 		}
 		return coll2, Result{EffectiveMode: ModeDisable, FallbackReason: err.Error(), Wiped: wiped}, nil
 	}
-	return coll, Result{EffectiveMode: ModeAuto, PinPath: pinRoot, Wiped: wiped}, nil
+	return coll, Result{EffectiveMode: mode, PinPath: pinRoot, Wiped: wiped}, nil
+}
+
+// CleanStalePins removes bpffs pin files for maps that must never be pinned.
+// Phase 8: verifier_prune_map is a real XDP_PASS branch — a stale pin from a
+// previous version could be reused by a new loader, creating an over-allow
+// backdoor. Deletion failure → fatal (caller should log.Fatalf).
+func CleanStalePins(pinRoot string, mapNames []string) error {
+	for _, name := range mapNames {
+		pinPath := filepath.Join(pinRoot, name)
+		if _, err := os.Stat(pinPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("stat stale pin %q: %w", pinPath, err)
+		}
+		if err := os.Remove(pinPath); err != nil {
+			return fmt.Errorf("cannot remove stale pin %q: %w (over-allow risk)", pinPath, err)
+		}
+		log.Printf("[bpf] Removed stale pin: %s", pinPath)
+	}
+	return nil
 }
 
 // probeBPFFS verifies the given directory lives on a bpf-typed filesystem.
@@ -230,9 +296,12 @@ func probeBPFFS(dir string) error {
 // spec. Mismatches are unlinked (not loaded), so the subsequent
 // NewCollectionWithOptions call creates a fresh one. Returns the list of
 // wiped map names for caller logging.
-func reconcilePinnedMaps(spec *ebpf.CollectionSpec, pinRoot string) ([]string, error) {
+func reconcilePinnedMaps(spec *ebpf.CollectionSpec, pinRoot string, skipMaps map[string]bool) ([]string, error) {
 	var wiped []string
 	for name, ms := range spec.Maps {
+		if skipMaps[name] {
+			continue // owned by another collection (e.g. mainColl shared maps)
+		}
 		path := filepath.Join(pinRoot, name)
 		if _, err := os.Stat(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {

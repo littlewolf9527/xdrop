@@ -186,25 +186,35 @@ All routes are under `/api/v1/`. The controller also exposes `/health` and `/api
 | `dst_cidr` | string | Destination CIDR prefix |
 | `src_port` | int | Source port (0 = any) |
 | `dst_port` | int | Destination port (0 = any) |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` (any) |
-| `action` | string | `drop` or `rate_limit` |
+| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` (any) |
+| `action` | string | **Required.** `drop` or `rate_limit` |
 | `rate_limit` | int | PPS limit (required when action is `rate_limit`) |
-| `pkt_len_min` | int | Minimum L3 packet length (0 = disabled) |
-| `pkt_len_max` | int | Maximum L3 packet length (0 = disabled) |
+| `pkt_len_min` | int | Minimum L3 packet length (0 = disabled). Pointer tri-state on PUT: omit=keep, 0=clear |
+| `pkt_len_max` | int | Maximum L3 packet length (0 = disabled). Pointer tri-state on PUT: omit=keep, 0=clear |
 | `tcp_flags` | string | TCP flags filter, e.g. `SYN`, `SYN,ACK`, `RST` (requires `protocol=tcp`) |
+| `decoder` | string | **v2.6+ sugar.** `tcp_ack`, `tcp_rst`, `tcp_fin`, `bad_fragment`, `invalid`. Expands to `protocol`/`tcp_flags`/`match_anomaly`; not returned on GET |
+| `match_anomaly` | int | **v2.6+.** Anomaly bitmask (`0x01=bad_fragment`, `0x02=invalid`). Typically set via `decoder`. Anomaly rules must use `action=drop` |
+| `enabled` | boolean | Whether the rule is active and pushed to BPF. Default `true`. Pointer tri-state on PUT |
 | `name` | string | Human-readable label |
 | `comment` | string | Notes |
-| `expires_at` | string | RFC3339 expiry time (optional) |
+| `source` | string | Origin label (e.g. `api`, `ui`) |
+| `expires_in` | string | Relative expiry on create, e.g. `1h`, `24h` |
+| `expires_at` | string (RFC3339) | Expiry timestamp. `null` = never expires |
 
 > `src_ip` and `src_cidr` are mutually exclusive. Same for `dst_ip` / `dst_cidr`.
+> Portless protocols (`icmp`, `icmpv6`, `igmp`, `gre`, `esp`) cannot carry `src_port`/`dst_port`.
 
 ### Whitelist
+
+**Phase 8 (v2.7.0+):** Whitelist supports arbitrary five-tuple field subsets — any non-empty combination of `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol` is valid (31 canonical combos). Examples: `protocol=udp` alone, `dst_port=80+protocol=tcp`, `src_ip+protocol=tcp`. The BPF data path uses 31-combo bitmap-gated lookup for zero-cost skipping.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/whitelist` | List entries |
-| `POST` | `/api/v1/whitelist` | Create entry |
-| `DELETE` | `/api/v1/whitelist/:id` | Delete entry |
+| `POST` | `/api/v1/whitelist` | Create entry (incremental sync to nodes) |
+| `DELETE` | `/api/v1/whitelist/:id` | Delete entry (incremental sync) |
+| `POST` | `/api/v1/whitelist/batch` | Bulk create |
+| `DELETE` | `/api/v1/whitelist/batch` | Bulk delete |
 
 ### Nodes
 
@@ -219,6 +229,7 @@ All routes are under `/api/v1/`. The controller also exposes `/health` and `/api
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/stats` | Aggregated stats across all nodes |
+| `GET` | `/api/v1/stats/cache_health` | **v2.6.3+.** Operator diagnostic for the in-process rule-stats cache (state, freshness, per-node failures) |
 
 ---
 

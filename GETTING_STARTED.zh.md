@@ -144,10 +144,7 @@ sudo ./scripts/node.sh start
 v2.5+ 把 BPF 对象 pin 到 `/sys/fs/bpf/xdrop/`，让状态跨
 `systemctl restart xdrop-agent` 存活：
 
-- **16 个 map 文件**（Phase 3）：`blacklist`、`whitelist`、4 个 LPM
-  trie 等。map ID 稳定，`bpftool map dump pinned
-  /sys/fs/bpf/xdrop/<name>` 可跨重启观察，外部 BPF 工具也继续指向
-  同一份对象。
+- **18 个 map 文件**（v2.7.0+）：`blacklist`/`blacklist_b`、`whitelist`/`whitelist_b`、4 个 LPM trie、`config_a`/`config_b`、`active_config`、`stats`、`rl_states`、`prog_tail_map`、`tailcall_fail_stats`。map ID 稳定，`bpftool map dump pinned /sys/fs/bpf/xdrop/<name>` 可跨重启观察，外部 BPF 工具也继续指向同一份对象。
 - **每个接口 1 个 XDP link 文件**（Phase 4）：`link_<ifname>`
   （如 `link_ens38`）。Agent 重启通过 `LoadPinnedLink +
   Link.Update(newProg)` 原子替换 XDP 程序 —— 内核层面零空窗切换。

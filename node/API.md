@@ -46,9 +46,9 @@ All endpoints return JSON. Errors return an appropriate HTTP status code with:
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"]
+  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match", "whitelist_31combo"]
 }
 ```
 
@@ -311,10 +311,12 @@ Whitelist entries are matched before any blacklist rule. A packet matching a whi
 | `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
 | `comment` | string | Notes |
 
-**Constraints:**
-- At least one IP address (`src_ip` or `dst_ip`) is required.
-- Setting `src_port`, `dst_port`, or `protocol` requires both `src_ip` and `dst_ip`.
-- The BPF whitelist map supports: src-IP-only, dst-IP-only, or exact five-tuple entries.
+**Constraints (v2.7.0+, Phase 8):**
+- At least one field must be non-empty/non-zero (all-zero/all-empty entry is rejected).
+- `protocol=all` alone (no IP, no port) is rejected — would whitelist all traffic.
+- Portless protocols (`icmp`, `icmpv6`, `igmp`, `gre`, `esp`) cannot carry `src_port` or `dst_port`.
+- Duplicate five-tuple key is rejected with `409`.
+- Any non-empty subset of the five fields is valid: e.g., `protocol=udp` alone, `dst_port=80+protocol=tcp`, `src_ip+protocol=tcp`, etc. The BPF data path uses 31-combo bitmap-gated lookup.
 
 ---
 
@@ -341,13 +343,15 @@ Add a whitelist entry.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `src_ip` | string | At least one IP | Source IP |
-| `dst_ip` | string | At least one IP | Destination IP |
+| `src_ip` | string | No | Source IP |
+| `dst_ip` | string | No | Destination IP |
 | `src_port` | integer | No | Source port |
 | `dst_port` | integer | No | Destination port |
-| `protocol` | string | No | Protocol |
+| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
 | `id` | string | No | UUID. Auto-generated if omitted |
 | `comment` | string | No | Notes |
+
+At least one field must be non-empty/non-zero.
 
 **Response `200`:**
 
@@ -359,7 +363,7 @@ Add a whitelist entry.
 }
 ```
 
-**Response `400`:** No IP specified; port/protocol without IP.
+**Response `400`:** All fields empty (no-op entry); `protocol=all` alone; portless protocol with port fields; invalid field format.
 
 **Response `409`:** Duplicate key already exists under a different ID.
 
@@ -476,7 +480,8 @@ Full statistics snapshot. Includes global counters, system metrics, XDP interfac
     "cidr_rules": 2,
     "whitelist_entries": 3,
     "active_slot": 1,
-    "rule_map_selector": 0
+    "rule_map_selector": 0,
+    "tailcall_fail": 0
   }
 }
 ```
@@ -503,6 +508,35 @@ Full statistics snapshot. Includes global counters, system metrics, XDP interfac
 | `agent_state.whitelist_entries` | Number of whitelist entries in BPF map |
 | `agent_state.active_slot` | Active config map slot (0 = A, 1 = B) |
 | `agent_state.rule_map_selector` | Active rule map selector (0 = primary, 1 = shadow) |
+| `agent_state.tailcall_fail` | **v2.7.0+.** Sum of `tailcall_fail_stats` per-CPU counters — number of times `xdp_whitelist_gate` failed to tail-call into `xdp_firewall_main`. Non-zero indicates a kernel PROG_ARRAY lookup failure; gate falls open (`XDP_PASS`) on failure. Should always be 0 in normal operation. |
+
+---
+
+## Internal Sync
+
+### `POST /api/v1/sync/whitelist` *(v2.7.0+)*
+
+Atomic full whitelist snapshot sync. Used by the Controller FullSync path to atomically replace the entire whitelist on this node using the double-buffer protocol (`DoWhitelistAtomicSync`): writes all entries to the shadow map, flips `CONFIG_WL_MAP_SELECTOR`, then clears the old active map — zero false-drop window. Not intended for direct use; invoke via `POST /api/v1/nodes/:id/sync` on the Controller instead.
+
+**Request body:**
+
+```json
+{
+  "entries": [
+    { "id": "uuid", "src_ip": "", "dst_ip": "", "src_port": 0, "dst_port": 0, "protocol": "udp" }
+  ]
+}
+```
+
+**Response `200`:**
+
+```json
+{ "success": true, "synced": 5 }
+```
+
+**Response `400`:** Invalid entry (unknown combo, duplicate key, etc.).
+
+**Response `500`:** BPF map operation failed.
 
 ---
 

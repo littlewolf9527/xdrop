@@ -169,39 +169,25 @@ func (s *ControllerSync) SyncOnStartup(handlers *api.Handlers) error {
 		}
 
 		// Step 1: Whitelist FIRST — must be fully armed before blacklist goes live.
-		// Clear any residual whitelist state from previous failed attempts
-		// to ensure each attempt starts from a clean slate.
-		if err := handlers.ClearAllWhitelistFromSync(); err != nil {
-			lastErr = fmt.Errorf("whitelist cleanup failed: %w", err)
-			log.Printf("[Sync] Whitelist cleanup failed: %v — aborting attempt", err)
-			continue
-		}
-
-		// If any whitelist entry fails, abort this attempt (fail-fast) to avoid
-		// arming the blacklist with incomplete exemptions.
-		wlAdded := 0
-		wlFailed := false
+		// Phase 8: use DoWhitelistAtomicSync (shadow write + atomic flip, zero window while running).
+		// Note: on restart, ClearDataMaps has already cleared both whitelist maps, so we start clean.
+		syncEntries := make([]api.SyncWhitelistEntry, 0, len(whitelist))
 		for _, entry := range whitelist {
-			syncEntry := api.SyncWhitelistEntry{
+			syncEntries = append(syncEntries, api.SyncWhitelistEntry{
 				ID:       entry.ID,
 				SrcIP:    entry.SrcIP,
 				DstIP:    entry.DstIP,
 				SrcPort:  entry.SrcPort,
 				DstPort:  entry.DstPort,
 				Protocol: entry.Protocol,
-			}
-			if err := handlers.AddWhitelistFromSync(syncEntry); err != nil {
-				lastErr = fmt.Errorf("whitelist entry %s failed: %w", entry.ID, err)
-				log.Printf("[Sync] Whitelist replay failed for %s: %v — aborting attempt", entry.ID, err)
-				wlFailed = true
-				break
-			}
-			wlAdded++
+			})
 		}
-		if wlFailed {
-			continue // retry — do NOT proceed to DoAtomicSync with incomplete whitelist
+		if err := handlers.DoWhitelistAtomicSync(syncEntries); err != nil {
+			lastErr = fmt.Errorf("whitelist atomic sync failed: %w", err)
+			log.Printf("[Sync] Whitelist atomic sync failed: %v — aborting attempt", err)
+			continue
 		}
-		log.Printf("[Sync] Whitelist replay complete: %d entries", wlAdded)
+		log.Printf("[Sync] Whitelist atomic sync complete: %d entries", len(syncEntries))
 
 		// Step 2: Blacklist rules via AtomicSync — whitelist already in place.
 		var apiRules []api.Rule
@@ -231,7 +217,7 @@ func (s *ControllerSync) SyncOnStartup(handlers *api.Handlers) error {
 		}
 		rulesAdded := result.Added
 
-		log.Printf("[Sync] Successfully synced from Controller: %d rules, %d whitelist entries", rulesAdded, wlAdded)
+		log.Printf("[Sync] Successfully synced from Controller: %d rules, %d whitelist entries", rulesAdded, len(syncEntries))
 		return nil
 	}
 

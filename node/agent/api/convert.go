@@ -54,7 +54,11 @@ func (h *Handlers) whitelistToKey(w WhitelistEntry) (RuleKey, error) {
 
 	key.SrcPort = htons(w.SrcPort)
 	key.DstPort = htons(w.DstPort)
-	key.Protocol = parseProtocol(w.Protocol)
+	proto, err := parseProtocolStrict(w.Protocol)
+	if err != nil {
+		return key, fmt.Errorf("whitelist protocol: %w", err)
+	}
+	key.Protocol = proto
 
 	return key, nil
 }

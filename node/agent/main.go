@@ -49,78 +49,124 @@ func main() {
 		log.Fatalf("Config validation failed: %v", err)
 	}
 
-	// Load BPF ELF into a cilium/ebpf Collection via the Phase 3 loader
-	// helper, which threads the bpffs probe, pinned-map schema reconcile,
-	// and the `bpf.pinning: auto|require|disable` policy knob into a
-	// single call. Pinning is silently disabled under `auto` when bpffs
-	// is not mounted or otherwise unusable — rules still load, the agent
-	// just loses restart survival for this boot.
-	log.Printf("Loading BPF program from %s...", cfg.BPF.Path)
-	coll, pinResult, err := xdropbpf.Load(xdropbpf.Options{
-		SpecPath: cfg.BPF.Path,
-		Mode:     xdropbpf.Mode(cfg.BPF.Pinning),
-	})
-	if err != nil {
-		log.Fatalf("Failed to load BPF collection: %v", err)
-	}
-	switch pinResult.EffectiveMode {
-	case xdropbpf.ModeAuto:
-		if len(pinResult.Wiped) > 0 {
-			log.Printf("BPF pinning enabled at %s (wiped schema-mismatched: %v)",
-				pinResult.PinPath, pinResult.Wiped)
-		} else {
-			log.Printf("BPF pinning enabled at %s", pinResult.PinPath)
-		}
-		// Phase 3 only promises MAP-INFRASTRUCTURE continuity across
-		// restart (stable fds for bpftool observers, config-map /
-		// stats-counter preservation). Data-map CONTENTS are wiped
-		// here so the in-memory rule index the agent is about to build
-		// reconverges with the kernel on controller sync — otherwise
-		// Update(UpdateNoExist) would trip ErrKeyExist on every rule
-		// the previous agent's life left behind. True zero-gap data
-		// plane comes in Phase 4 via link pinning + idempotent sync.
-		if err := xdropbpf.ClearDataMaps(coll, []string{
-			"blacklist", "blacklist_b",
-			"whitelist",
-			"cidr_blacklist", "cidr_blist_b",
-			"rl_states", "cidr_rl_states",
-			"sv4_cidr_trie", "dv4_cidr_trie",
-			"sv6_cidr_trie", "dv6_cidr_trie",
-		}); err != nil {
-			log.Printf("WARN: data-map clear reported error (continuing): %v", err)
-		}
-	case xdropbpf.ModeDisable:
-		if pinResult.FallbackReason != "" {
-			log.Printf("BPF pinning disabled (fallback): %s", pinResult.FallbackReason)
-		} else {
-			log.Printf("BPF pinning disabled (configured)")
-		}
+	// ==========================================================================
+	// Phase 8: Dual-ELF loading — mainColl (xdrop_main.elf) + gateColl (xdrop_gate.elf)
+	// ==========================================================================
+	//
+	// Main ELF: creates all shared kernel maps + verifier_prune_map.
+	// Gate ELF: references shared maps via MapReplacements, creates whitelist_b + tailcall_fail_stats.
+	//
+	// Pinning policy is threaded through the Phase 3 loader for both.
+	// verifier_prune_map + tailcall_fail_stats use PinNone (security + restart-clear).
+
+	mainPath := cfg.BPF.MainPath
+	gatePath := cfg.BPF.GatePath
+
+	// Migration hint: if old bpf.path is set but new paths are defaults, warn
+	if cfg.BPF.Path != "" && cfg.BPF.Path != "../bpf/xdrop.elf" {
+		log.Printf("[Phase8] WARN: bpf.path=%q is set but ignored — migrate to bpf.main_path + bpf.gate_path", cfg.BPF.Path)
 	}
 
-	// Helper to fetch a required map by name.
-	requireMap := func(name string) *ebpf.Map {
+	// Phase 8 P1-3: clean stale verifier_prune_map pin BEFORE loading (over-allow risk)
+	if err := xdropbpf.CleanStalePins(xdropbpf.DefaultPinRoot, []string{"verifier_prune_map", "tailcall_fail_stats"}); err != nil {
+		log.Fatalf("[Phase8] FATAL: %v — refusing to start", err)
+	}
+
+	// 1. Load xdrop_main.elf — creates all shared kernel maps
+	log.Printf("Loading main BPF from %s...", mainPath)
+	mainColl, mainPinResult, err := xdropbpf.Load(xdropbpf.Options{
+		SpecPath:         mainPath,
+		Mode:             xdropbpf.Mode(cfg.BPF.Pinning),
+		PinNoneOverrides: []string{"verifier_prune_map"}, // P1-3: NEVER pin
+	})
+	if err != nil {
+		log.Fatalf("Failed to load main BPF collection: %v", err)
+	}
+	logPinResult("main", mainPinResult)
+
+	// Helper to fetch a required map by name from a collection.
+	requireMapFrom := func(coll *ebpf.Collection, collName, name string) *ebpf.Map {
 		m, ok := coll.Maps[name]
 		if !ok || m == nil {
-			log.Fatalf("BPF map %q not found in ELF", name)
+			log.Fatalf("BPF map %q not found in %s ELF", name, collName)
 		}
 		return m
 	}
 
-	blacklist := requireMap("blacklist")
-	whitelist := requireMap("whitelist")
-	stats := requireMap("stats")
-	rlStates := requireMap("rl_states")
-	configA := requireMap("config_a")
-	configB := requireMap("config_b")
-	activeConfig := requireMap("active_config")
-	cidrBlacklist := requireMap("cidr_blacklist")
-	cidrRlStates := requireMap("cidr_rl_states")
-	srcV4Trie := requireMap("sv4_cidr_trie")
-	dstV4Trie := requireMap("dv4_cidr_trie")
-	srcV6Trie := requireMap("sv6_cidr_trie")
-	dstV6Trie := requireMap("dv6_cidr_trie")
-	blacklistB := requireMap("blacklist_b")
-	cidrBlacklistB := requireMap("cidr_blist_b")
+	// Extract shared maps from mainColl (these will be passed to gateColl via MapReplacements)
+	whitelist := requireMapFrom(mainColl, "main", "whitelist")
+	blacklist := requireMapFrom(mainColl, "main", "blacklist")
+	stats := requireMapFrom(mainColl, "main", "stats")
+	configA := requireMapFrom(mainColl, "main", "config_a")
+	configB := requireMapFrom(mainColl, "main", "config_b")
+	activeConfig := requireMapFrom(mainColl, "main", "active_config")
+	devmapMain := mainColl.Maps["devmap"] // may be nil if not in main ELF; FF check below
+	progTailMap := requireMapFrom(mainColl, "main", "prog_tail_map")
+	rlStates := requireMapFrom(mainColl, "main", "rl_states")
+	cidrBlacklist := requireMapFrom(mainColl, "main", "cidr_blacklist")
+	cidrRlStates := requireMapFrom(mainColl, "main", "cidr_rl_states")
+	srcV4Trie := requireMapFrom(mainColl, "main", "sv4_cidr_trie")
+	dstV4Trie := requireMapFrom(mainColl, "main", "dv4_cidr_trie")
+	srcV6Trie := requireMapFrom(mainColl, "main", "sv6_cidr_trie")
+	dstV6Trie := requireMapFrom(mainColl, "main", "dv6_cidr_trie")
+	blacklistB := requireMapFrom(mainColl, "main", "blacklist_b")
+	cidrBlacklistB := requireMapFrom(mainColl, "main", "cidr_blist_b")
+
+	// 2. Load xdrop_gate.elf — gate ELF references shared maps from mainColl
+	log.Printf("Loading gate BPF from %s...", gatePath)
+	if _, err := os.Stat(gatePath); err != nil {
+		log.Fatalf("FATAL: Phase 8 requires xdp_whitelist_gate ELF at %s — whitelist disabled: %v", gatePath, err)
+	}
+
+	// Build MapReplacements: gate's shared map declarations → mainColl's kernel fds
+	gateMapReplacements := map[string]*ebpf.Map{
+		"whitelist":     whitelist,
+		"stats":         stats,
+		"config_a":      configA,
+		"config_b":      configB,
+		"active_config": activeConfig,
+		"prog_tail_map": progTailMap,
+	}
+	if devmapMain != nil {
+		gateMapReplacements["devmap"] = devmapMain
+	}
+
+	gateColl, gatePinResult, err := xdropbpf.Load(xdropbpf.Options{
+		SpecPath:         gatePath,
+		Mode:             xdropbpf.Mode(cfg.BPF.Pinning),
+		PinNoneOverrides: []string{"tailcall_fail_stats"}, // restart-clear semantics
+		MapReplacements:  gateMapReplacements,
+	})
+	if err != nil {
+		log.Fatalf("Failed to load gate BPF collection: %v", err)
+	}
+	logPinResult("gate", gatePinResult)
+
+	// Gate-only maps
+	whitelistB := requireMapFrom(gateColl, "gate", "whitelist_b")
+
+	// Clear data maps — dual-collection aware (rev11 P2-1)
+	if mainPinResult.PinPath != "" {
+		// Main-owned business maps
+		if err := xdropbpf.ClearDataMaps(mainColl, []string{
+			"blacklist", "blacklist_b",
+			"whitelist", // main-owned shared map
+			"cidr_blacklist", "cidr_blist_b",
+			"rl_states", "cidr_rl_states",
+			"sv4_cidr_trie", "dv4_cidr_trie",
+			"sv6_cidr_trie", "dv6_cidr_trie",
+			// verifier_prune_map NOT in clear list (main-private, always empty)
+		}); err != nil {
+			log.Printf("WARN: main data-map clear reported error (continuing): %v", err)
+		}
+		// Gate-owned business maps
+		if err := xdropbpf.ClearDataMaps(gateColl, []string{
+			"whitelist_b", // gate-owned shadow map
+			// tailcall_fail_stats: PinNone, restart auto-clears PERCPU_ARRAY
+		}); err != nil {
+			log.Printf("WARN: gate data-map clear reported error (continuing): %v", err)
+		}
+	}
 
 	cidrMgr := cidr.NewManager(srcV4Trie, dstV4Trie, srcV6Trie, dstV6Trie)
 	log.Println("CIDR manager initialized")
@@ -128,38 +174,36 @@ func main() {
 	// Fast forward devmap (only required when enabled)
 	var devmap *ebpf.Map
 	if fastForwardMode {
-		devmap = requireMap("devmap")
+		if devmapMain == nil {
+			log.Fatal("BPF map 'devmap' not found in main ELF but fast_forward is enabled")
+		}
+		devmap = devmapMain
 	}
 
-	// XDP program. cilium/ebpf does not require an explicit Load() step —
-	// NewCollection already JITed + verified it. Attach happens via the
-	// link package further down.
-	xdpProg, ok := coll.Programs["xdrop_firewall"]
+	// Phase 8: XDP entry point is xdp_whitelist_gate from gate ELF.
+	xdpProg, ok := gateColl.Programs["xdp_whitelist_gate"]
 	if !ok || xdpProg == nil {
-		log.Fatal("XDP program 'xdrop_firewall' not found in ELF")
+		log.Fatal("XDP program 'xdp_whitelist_gate' not found in gate ELF")
 	}
 
-	// v2.6.1 Phase 4 B5: tail-call dispatch setup.
-	//
-	// The xdp_anomaly_verify program is loaded out of the same ELF but must
-	// be wired into prog_tail_map[TAIL_SLOT_ANOMALY_VERIFY=0] before the
-	// main xdp_firewall's bpf_tail_call() can dispatch to it. Until this
-	// wire-up is done, the tail_call in main returns control to caller and
-	// the packet goes XDP_PASS (safe default).
-	//
-	// The map + program are already loaded by NewCollection above. We just
-	// need to populate the PROG_ARRAY slot with the program's FD.
-	//
-	// D6 check: assert program type matches XDP.
-	anomalyProg, ok := coll.Programs["xdp_anomaly_verify"]
+	// Phase 8: xdp_firewall_main from main ELF — tail-call target in slot 1.
+	firewallMain, ok := mainColl.Programs["xdp_firewall_main"]
+	if !ok || firewallMain == nil {
+		log.Fatal("XDP program 'xdp_firewall_main' not found in main ELF")
+	}
+	if firewallMain.Type() != ebpf.XDP {
+		log.Fatalf("xdp_firewall_main has unexpected type %v (want XDP) — D6 violation", firewallMain.Type())
+	}
+
+	// xdp_anomaly_verify from main ELF — tail-call target in slot 0.
+	anomalyProg, ok := mainColl.Programs["xdp_anomaly_verify"]
 	if !ok || anomalyProg == nil {
-		log.Fatal("XDP program 'xdp_anomaly_verify' not found in ELF")
+		log.Fatal("XDP program 'xdp_anomaly_verify' not found in main ELF")
 	}
 	if anomalyProg.Type() != ebpf.XDP {
 		log.Fatalf("xdp_anomaly_verify has unexpected type %v (want XDP) — D6 violation", anomalyProg.Type())
 	}
-	progTailMap := requireMap("prog_tail_map")
-	tailStashMap := requireMap("tail_stash")
+	tailStashMap := requireMapFrom(mainColl, "main", "tail_stash")
 	_ = tailStashMap // used only by BPF programs; hold ref to keep pinned
 	// D6 verification: PROG_ARRAY key/value must be exactly 4 bytes.
 	if info, err := progTailMap.Info(); err == nil {
@@ -196,6 +240,23 @@ func main() {
 			tailSlotAnomalyVerify, anomalyFD)
 	}
 
+	// Phase 8: Register xdp_firewall_main in slot 1 — MUST succeed before attach.
+	// Unlike anomaly slot 0 (which is RT-skippable because it uses per-CPU tail_stash),
+	// slot 1 is the main firewall chain and must ALWAYS be registered regardless of RT kernel.
+	{
+		tailSlotFirewallMain := uint32(1)
+		firewallMainFD := uint32(firewallMain.FD())
+		if err := progTailMap.Update(tailSlotFirewallMain, firewallMainFD, ebpf.UpdateAny); err != nil {
+			log.Fatalf("populate prog_tail_map[1] with xdp_firewall_main FD: %v — cannot attach gate without main firewall", err)
+		}
+		log.Printf("[bpf] prog_tail_map[%d] = xdp_firewall_main FD=%d (Phase 8 main firewall wired)",
+			tailSlotFirewallMain, firewallMainFD)
+	}
+
+	// Phase 8: tailcall_fail_stats (gate-owned, PinNone → restart-clear)
+	// Passed to NewHandlers → exposed in /stats API as "tailcall_fail"
+	tailcallFailStats := requireMapFrom(gateColl, "gate", "tailcall_fail_stats")
+
 	// Interface manager for fast forward mode.
 	var ifMgr *ifmgr.InterfaceManager
 
@@ -214,13 +275,14 @@ func main() {
 	// Initialize API handlers before XDP attach so the signal handler can call
 	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not
 	// depend on XDP being attached. SetXDPInfo is called later, after attach.
-	handlers := api.NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates,
+	handlers := api.NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig, rlStates,
 		cidrBlacklist, cidrRlStates, cidrMgr,
-		blacklistB, cidrBlacklistB)
+		blacklistB, cidrBlacklistB,
+		tailcallFailStats)
 
 	// Setup graceful shutdown BEFORE XDP attach and ifmgr config, so Ctrl-C
 	// during startup still runs cleanup. The goroutine captures ifMgr,
-	// xdpAttachedIfaces, xdpLinks, and coll by reference — all are still
+	// xdpAttachedIfaces, xdpLinks, mainColl, gateColl by reference — all are still
 	// zero-value here but will be populated synchronously below, so they're
 	// valid by the time a signal can actually be delivered after startup.
 	sigChan := make(chan os.Signal, 1)
@@ -259,10 +321,10 @@ func main() {
 			}
 		}
 
-		// Release collection: closes every map + program fd. Pinned maps
-		// (Phase 3+) would survive this; in Phase 2 all maps are unpinned
-		// so they're freed here. Collection.Close returns no error.
-		coll.Close()
+		// Release both collections: closes every map + program fd. Pinned maps
+		// (Phase 3+) survive Close(); unpinned maps are freed.
+		mainColl.Close()
+		gateColl.Close()
 
 		// Restore interfaces in fast forward mode (nil if signal fired pre-init)
 		if fastForwardMode && ifMgr != nil {
@@ -444,10 +506,11 @@ func main() {
 			wl.DELETE("/batch", handlers.DeleteWhitelistBatch)
 		}
 
-		// Sync API (Phase 4.2 atomic sync)
+		// Sync API (Phase 4.2 atomic sync + Phase 8 whitelist atomic sync)
 		syncGroup := protected.Group("/sync")
 		{
 			syncGroup.POST("/atomic", handlers.AtomicSync)
+			syncGroup.POST("/whitelist", handlers.SyncWhitelistHandler) // Phase 8
 		}
 
 		// Stats API
@@ -459,6 +522,24 @@ func main() {
 	log.Printf("XDrop Agent listening on %s", addr)
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+// logPinResult logs the pinning outcome for a BPF collection (main or gate).
+func logPinResult(label string, r xdropbpf.Result) {
+	switch r.EffectiveMode {
+	case xdropbpf.ModeAuto:
+		if len(r.Wiped) > 0 {
+			log.Printf("[%s] BPF pinning enabled at %s (wiped schema-mismatched: %v)", label, r.PinPath, r.Wiped)
+		} else {
+			log.Printf("[%s] BPF pinning enabled at %s", label, r.PinPath)
+		}
+	case xdropbpf.ModeDisable:
+		if r.FallbackReason != "" {
+			log.Printf("[%s] BPF pinning disabled (fallback): %s", label, r.FallbackReason)
+		} else {
+			log.Printf("[%s] BPF pinning disabled (configured)", label)
+		}
 	}
 }
 

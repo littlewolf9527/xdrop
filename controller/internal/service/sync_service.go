@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -477,6 +478,75 @@ func (s *SyncService) SyncDeleteWhitelist(controllerWlID string) *SyncResult {
 	return result
 }
 
+// SyncWhitelistFull performs a full atomic whitelist sync to all online nodes.
+// Used when a new whitelist entry uses a Phase 8 combo that requires the atomic endpoint.
+// Falls back to legacy batch for old nodes if all entries are legacy-compatible; fails loudly otherwise.
+func (s *SyncService) SyncWhitelistFull(entries []*model.Whitelist) *SyncResult {
+	result := newSyncResult()
+	nodes, err := s.nodeProvider.List()
+	if err != nil {
+		slog.Error("Failed to list nodes for whitelist full sync", "error", err)
+		result.Failed = 1
+		result.Errors["_controller"] = fmt.Sprintf("nodeProvider.List failed: %v", err)
+		return result
+	}
+
+	var nodeWhitelist []map[string]interface{}
+	for _, w := range entries {
+		nodeWhitelist = append(nodeWhitelist, w.ToNodeWhitelist())
+	}
+
+	sem := make(chan struct{}, s.concurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, node := range nodes {
+		if node.Status == model.NodeStatusOffline {
+			continue
+		}
+		result.Total++
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(n *model.Node) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			var syncErr error
+			for attempt := 0; attempt <= s.retryCount; attempt++ {
+				if attempt > 0 {
+					time.Sleep(s.retryInterval)
+				}
+				syncErr = s.syncWhitelistToNode(n, nodeWhitelist)
+				if syncErr == nil {
+					break
+				}
+			}
+
+			status := "success"
+			errMsg := ""
+			if syncErr != nil {
+				status = "failed"
+				errMsg = syncErr.Error()
+			}
+
+			mu.Lock()
+			if status == "success" {
+				result.Success++
+			} else {
+				result.Failed++
+				result.Errors[n.Name] = errMsg
+			}
+			mu.Unlock()
+
+			s.syncLogRepo.Log(n.ID, "full_whitelist_sync", "", status, errMsg)
+		}(node)
+	}
+
+	wg.Wait()
+	return result
+}
+
 // SyncUpdateRule syncs a rule update to all nodes (delete then re-add).
 func (s *SyncService) SyncUpdateRule(rule *model.Rule) *SyncResult {
 	delResult := s.SyncDeleteRule(rule.ID)
@@ -570,7 +640,7 @@ func (s *SyncService) FullSyncToAllNodes() *SyncResult {
 }
 
 // FullSyncToNode performs a full sync of rules to the specified node.
-// Phase 4.2: sync whitelist first (batch API), then AtomicSync blacklist rules; fall back to legacy FullSync on failure.
+// Syncs whitelist first via POST /api/v1/sync/whitelist (Phase 8 atomic snapshot), then AtomicSync blacklist rules; falls back to legacy FullSync on rule sync failure.
 func (s *SyncService) FullSyncToNode(node *model.Node, rules []*model.Rule, whitelist []*model.Whitelist) error {
 	s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusSyncing)
 
@@ -585,17 +655,17 @@ func (s *SyncService) FullSyncToNode(node *model.Node, rules []*model.Rule, whit
 		nodeWhitelist = append(nodeWhitelist, w.ToNodeWhitelist())
 	}
 
-	// Step 1: Sync whitelist first (independent of AtomicSync, via batch API)
-	var wlErr error
-	if wlErr = s.syncWhitelistToNode(node, nodeWhitelist); wlErr != nil {
-		slog.Warn("Whitelist sync failed, continuing with rule sync", "node", node.Name, "error", wlErr)
+	// Step 1: Sync whitelist first (atomic snapshot)
+	if err := s.syncWhitelistToNode(node, nodeWhitelist); err != nil {
+		s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOffline)
+		s.syncLogRepo.Log(node.ID, "full_sync", "", "failed", err.Error())
+		return err
 	}
 
 	// Step 2: Attempt AtomicSync (zero-gap swap)
 	resp, err := s.nodeClient.AtomicSync(node.Endpoint, node.ApiKey, nodeRules)
 	if err != nil || (resp != nil && resp.Failed > 0) {
-		// AtomicSync failed (old node may return 404 for /sync/atomic, partial failure, or other error)
-		// Fall back to legacy FullSync
+		// AtomicSync failed — fall back to legacy FullSync.
 		if err != nil {
 			slog.Warn("AtomicSync failed, falling back to legacy FullSync", "node", node.Name, "error", err)
 		} else {
@@ -607,17 +677,6 @@ func (s *SyncService) FullSyncToNode(node *model.Node, rules []*model.Rule, whit
 			s.syncLogRepo.Log(node.ID, "full_sync", "", "failed", err.Error())
 			return err
 		}
-		// Legacy FullSync includes whitelist, so whitelist error is resolved
-		wlErr = nil
-	}
-
-	// If whitelist sync failed but rule sync succeeded, report partial failure
-	if wlErr != nil {
-		s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOnline)
-		s.nodeProvider.UpdateLastSync(node.ID)
-		s.syncLogRepo.Log(node.ID, "full_sync", "", "partial", fmt.Sprintf("whitelist sync failed: %v", wlErr))
-		slog.Warn("Full sync partial: rules OK, whitelist failed", "node", node.Name, "error", wlErr)
-		return fmt.Errorf("whitelist sync failed: %w", wlErr)
 	}
 
 	s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOnline)
@@ -628,40 +687,53 @@ func (s *SyncService) FullSyncToNode(node *model.Node, rules []*model.Rule, whit
 	return nil
 }
 
-// syncWhitelistToNode syncs whitelist entries to a node (batch delete + batch add).
+// syncWhitelistToNode syncs whitelist entries to a node via POST /api/v1/sync/whitelist.
+// Old nodes (404) are rejected with an upgrade error — no legacy fallback.
 func (s *SyncService) syncWhitelistToNode(node *model.Node, nodeWhitelist []map[string]interface{}) error {
-	// Get existing whitelist IDs from the node
-	wlIDs, err := s.nodeClient.GetWhitelistIDs(node.Endpoint, node.ApiKey)
-	if err != nil {
-		return fmt.Errorf("failed to get existing whitelist IDs: %w", err)
+	// Try the Phase 8 atomic sync endpoint first
+	resp, err := s.nodeClient.SyncWhitelist(node.Endpoint, node.ApiKey, nodeWhitelist)
+	if err == nil {
+		if resp != nil && resp.Failed > 0 {
+			return fmt.Errorf("whitelist atomic sync partially failed: %d/%d entries failed", resp.Failed, len(nodeWhitelist))
+		}
+		return nil
 	}
 
-	// Batch-delete existing whitelist entries
-	if len(wlIDs) > 0 {
-		if _, err := s.nodeClient.DeleteWhitelistBatch(node.Endpoint, node.ApiKey, wlIDs); err != nil {
-			return fmt.Errorf("failed to delete existing whitelist: %w", err)
-		}
+	// If endpoint not found (old Node), check whether we can safely fall back
+	if !isNotFoundError(err) {
+		return fmt.Errorf("whitelist atomic sync failed: %w", err)
 	}
 
-	// Batch-add new whitelist entries
-	if len(nodeWhitelist) > 0 {
-		resp, err := s.nodeClient.AddWhitelistBatch(node.Endpoint, node.ApiKey, nodeWhitelist)
-		if err != nil {
-			return fmt.Errorf("failed to add whitelist batch: %w", err)
-		}
-		if resp.Failed > 0 {
-			return fmt.Errorf("whitelist sync partially failed: %d/%d entries failed", resp.Failed, len(nodeWhitelist))
-		}
-	}
+	return fmt.Errorf("node %s does not support Phase 8 whitelist sync (/api/v1/sync/whitelist returned 404) — upgrade node to v2.7.0+", node.Name)
+}
 
-	return nil
+// isNotFoundError returns true if the error indicates a 404/not-found response from the node.
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found")
+}
+
+// toIntFromInterface converts numeric interface{} values to int regardless of JSON/native type.
+// JSON-decoded numbers arrive as float64; directly-set values may be int or int64.
+func toIntFromInterface(v interface{}) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	}
+	return 0
 }
 
 // DiffSyncToNode performs a diff sync to the specified node, falling back to FullSync on failure.
+// Phase 8: whitelist is always synced atomically via syncWhitelistToNode first, then rules are diff'd.
 func (s *SyncService) DiffSyncToNode(node *model.Node, rules []*model.Rule, whitelist []*model.Whitelist) error {
 	s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusSyncing)
 
-	// Convert rule format
 	var nodeRules []map[string]interface{}
 	for _, r := range rules {
 		nodeRules = append(nodeRules, r.ToNodeRule())
@@ -672,27 +744,25 @@ func (s *SyncService) DiffSyncToNode(node *model.Node, rules []*model.Rule, whit
 		nodeWhitelist = append(nodeWhitelist, w.ToNodeWhitelist())
 	}
 
-	// Attempt DiffSync
-	err := s.nodeClient.DiffSync(node.Endpoint, node.ApiKey, nodeRules, nodeWhitelist)
-	if err != nil {
-		slog.Warn("Diff sync failed, falling back to full sync", "node", node.Name, "error", err)
-		s.syncLogRepo.Log(node.ID, "diff_sync", "", "failed", err.Error())
-
-		// Fall back to FullSync
-		err = s.nodeClient.FullSync(node.Endpoint, node.ApiKey, nodeRules, nodeWhitelist)
-		if err != nil {
-			s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOffline)
-			s.syncLogRepo.Log(node.ID, "full_sync_fallback", "", "failed", err.Error())
-			return err
-		}
-		s.syncLogRepo.Log(node.ID, "full_sync_fallback", "", "success", "")
-	} else {
-		s.syncLogRepo.Log(node.ID, "diff_sync", "", "success", "")
+	// Phase 8: sync whitelist atomically first (version-aware: Phase 8 endpoint or legacy fallback).
+	// After this call, the node's whitelist state matches nodeWhitelist exactly.
+	// The subsequent DiffSync's internal whitelist diff becomes a no-op.
+	if wlErr := s.syncWhitelistToNode(node, nodeWhitelist); wlErr != nil {
+		slog.Warn("Whitelist atomic sync failed in DiffSync, falling back to FullSync", "node", node.Name, "error", wlErr)
+		return s.FullSyncToNode(node, rules, whitelist)
 	}
 
+	// Diff-sync rules only (whitelist is already consistent)
+	err := s.nodeClient.DiffSync(node.Endpoint, node.ApiKey, nodeRules, nodeWhitelist)
+	if err != nil {
+		slog.Warn("Rule diff sync failed, falling back to FullSync", "node", node.Name, "error", err)
+		s.syncLogRepo.Log(node.ID, "diff_sync", "", "failed", err.Error())
+		return s.FullSyncToNode(node, rules, whitelist)
+	}
+
+	s.syncLogRepo.Log(node.ID, "diff_sync", "", "success", "")
 	s.nodeProvider.UpdateStatus(node.ID, model.NodeStatusOnline)
 	s.nodeProvider.UpdateLastSync(node.ID)
-
 	slog.Info("Diff sync completed", "node", node.Name, "rules", len(rules))
 	return nil
 }

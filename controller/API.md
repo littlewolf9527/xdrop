@@ -65,7 +65,7 @@ Successful responses return `200 OK` with a JSON body. Errors return an appropri
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.6.3",
+  "version": "2.7.0",
   "status": "running"
 }
 ```
@@ -417,23 +417,34 @@ Delete multiple rules. Triggers a single sync.
 
 Whitelist entries bypass all blacklist rules. A packet matching any whitelist entry is passed immediately.
 
+**Phase 8 (v2.7.0):** Whitelist now supports arbitrary five-tuple field subsets — any non-empty combination of `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol` is valid. The BPF datapath uses a 31-combo bitmap-gated lookup identical to the blacklist architecture.
+
+**Supported combo examples:**
+- `protocol=udp` — allow all UDP traffic
+- `dst_port=80, protocol=tcp` — allow all inbound TCP:80
+- `src_ip=192.0.2.1` — allow all traffic from this source IP
+- `src_ip=192.0.2.1, protocol=tcp` — allow all TCP from this source
+- `dst_ip=192.0.2.2, dst_port=443, protocol=tcp` — allow HTTPS to a specific destination
+
 ### Whitelist Entry Object
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string (UUID) | Entry identifier |
 | `name` | string | Label |
-| `src_ip` | string | Source IPv4/IPv6 |
-| `dst_ip` | string | Destination IPv4/IPv6 |
-| `src_port` | integer | Source port (`0` = any) |
-| `dst_port` | integer | Destination port (`0` = any) |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
+| `src_ip` | string | Source IPv4/IPv6 (empty = wildcard) |
+| `dst_ip` | string | Destination IPv4/IPv6 (empty = wildcard) |
+| `src_port` | integer | Source port (`0` = wildcard) |
+| `dst_port` | integer | Destination port (`0` = wildcard) |
+| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` (any) |
 | `comment` | string | Notes |
 | `created_at` | string (RFC3339) | Creation timestamp |
 
 **Constraints:**
-- At least one IP address (`src_ip` or `dst_ip`) is required.
-- `src_port`, `dst_port`, and `protocol` require both `src_ip` and `dst_ip` to be set.
+- At least one field must be non-empty (all-zero/all-empty entry is rejected).
+- `protocol=all` alone (no IP, no port) is rejected — would whitelist all traffic.
+- Portless protocols (`icmp`, `icmpv6`, `igmp`, `gre`, `esp`) cannot carry port fields.
+- Duplicate five-tuple key is rejected with `409`.
 
 ---
 
@@ -454,19 +465,21 @@ List all whitelist entries.
 
 ### `POST /api/v1/whitelist`
 
-Create a whitelist entry. Triggers sync.
+Create a whitelist entry. Triggers incremental sync to all nodes.
 
 **Request body:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `src_ip` | string | At least one IP required | Source IP |
-| `dst_ip` | string | At least one IP required | Destination IP |
+| `src_ip` | string | No | Source IP |
+| `dst_ip` | string | No | Destination IP |
 | `src_port` | integer | No | Source port |
 | `dst_port` | integer | No | Destination port |
 | `protocol` | string | No | Protocol |
 | `name` | string | No | Label |
 | `comment` | string | No | Notes |
+
+At least one of the above fields must be non-empty.
 
 **Response `200`:**
 
@@ -478,9 +491,9 @@ Create a whitelist entry. Triggers sync.
 }
 ```
 
-**Response `400`:** Validation error.
+**Response `400`:** Validation error (empty entry, protocol=all alone, portless protocol with ports).
 
-**Response `409`:** Duplicate entry already exists.
+**Response `409`:** Duplicate five-tuple key already exists.
 
 ---
 
@@ -497,6 +510,12 @@ Delete a whitelist entry. Triggers sync.
   "sync": { "failed": 0 }
 }
 ```
+
+---
+
+### Node Sync Endpoint (internal)
+
+**`POST /api/v1/sync/whitelist`** — Atomic full whitelist snapshot sync (v2.7.0+). Used by Controller FullSync to replace the entire whitelist atomically with zero false-drop window while the agent is running. **Node version requirement**: Phase 8 Controller (v2.7.0+) requires Phase 8 Node (v2.7.0+). Old nodes (pre-v2.7.0) that do not implement this endpoint return an upgrade error — there is no silent fallback. The Controller surfaces this as a sync failure for the affected node.
 
 ---
 

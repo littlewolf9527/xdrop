@@ -58,6 +58,18 @@ func (h *Handlers) GetStats(c *gin.Context) {
 	h.lastStatsTime = now
 	h.statsMu.Unlock()
 
+	// Phase 8: read tailcall_fail_stats (separate PERCPU_ARRAY, gate-owned)
+	var tailcallFail uint64
+	if h.tailcallFailStats != nil {
+		tcKey := make([]byte, 4) // key=0
+		var tcPerCPU []uint64
+		if err := h.tailcallFailStats.Lookup(tcKey, &tcPerCPU); err == nil {
+			for _, v := range tcPerCPU {
+				tailcallFail += v
+			}
+		}
+	}
+
 	sysStats := getSystemStats(h.sysStatsCache)
 	agentState := h.getAgentState()
 
@@ -67,6 +79,7 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		PassedPackets:      current[2],
 		WhitelistedPackets: current[3],
 		RateLimitedPackets: current[4],
+		TailcallFail:       tailcallFail,
 		RulesCount:         rulesCount,
 		WhitelistCount:     wlCount,
 		DroppedPPS:         droppedPPS,

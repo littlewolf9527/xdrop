@@ -13,13 +13,15 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-func NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rlStates *ebpf.Map,
+func NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig, rlStates *ebpf.Map,
 	cidrBlacklist, cidrRlStates *ebpf.Map, cidrMgr *cidr.Manager,
-	blacklistB, cidrBlacklistB *ebpf.Map) *Handlers {
+	blacklistB, cidrBlacklistB *ebpf.Map,
+	tailcallFailStats *ebpf.Map) *Handlers {
 	h := &Handlers{
 		blacklist:         blacklist,
 		blacklistB:        blacklistB,
 		whitelist:         whitelist,
+		whitelistB:        whitelistB, // Phase 8
 		stats:             stats,
 		configA:           configA,
 		configB:           configB,
@@ -33,12 +35,14 @@ func NewHandlers(blacklist, whitelist, stats, configA, configB, activeConfig, rl
 		lastRuleStatsTime: make(map[string]int64),
 		activeSlot:        0,
 		activeRuleSlot:    0,
+		activeWLSlot:      0, // Phase 8
 		cidrBlacklist:     cidrBlacklist,
 		cidrBlacklistB:    cidrBlacklistB,
 		cidrRlStates:      cidrRlStates,
 		cidrMgr:           cidrMgr,
 		cidrRules:         make(map[string]StoredCIDRRule),
 		cidrRuleKeyIndex:  make(map[CIDRRuleKey]string),
+		tailcallFailStats: tailcallFailStats, // Phase 8
 	}
 
 	// Initialize dynamic config items (bitmap=0, count=0, wl_count=0)
@@ -99,8 +103,11 @@ func (h *Handlers) Shutdown() {
 func (h *Handlers) initDynamicConfig(m *ebpf.Map) error {
 	for _, idx := range []uint32{
 		ConfigBlacklistCount, ConfigWhitelistCount, ConfigRuleBitmap,
+		ConfigWLBitmap,           // Phase 8: slot 3
 		ConfigFastForwardEnabled, ConfigFilterIfindex,
-		ConfigCIDRRuleCount, ConfigCIDRBitmap, ConfigRuleMapSelector,
+		ConfigCIDRRuleCount, ConfigCIDRBitmap,
+		ConfigWLMapSelector,      // Phase 8: slot 8
+		ConfigRuleMapSelector,
 	} {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, idx)

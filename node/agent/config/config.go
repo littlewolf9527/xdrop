@@ -42,7 +42,11 @@ type ServerConfig struct {
 
 // BPFConfig BPF configuration
 type BPFConfig struct {
-	Path string `mapstructure:"path"`
+	Path string `mapstructure:"path"` // deprecated: use MainPath + GatePath
+
+	// Phase 8 dual-ELF: explicit paths for main and gate ELF files.
+	MainPath string `mapstructure:"main_path"` // xdrop_main.elf (blacklist/CIDR/rate/anomaly)
+	GatePath string `mapstructure:"gate_path"` // xdrop_gate.elf (whitelist 31-combo gate)
 
 	// Pinning controls whether BPF maps are pinned to /sys/fs/bpf/xdrop/ for
 	// survival across agent restarts (Phase 3 of goebpf→cilium migration).
@@ -84,7 +88,9 @@ func Load(configPath string) (*Config, error) {
 	// set defaults
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.interface", "eth0")
-	viper.SetDefault("bpf.path", "../bpf/xdrop.elf")
+	viper.SetDefault("bpf.path", "../bpf/xdrop.elf")      // deprecated
+	viper.SetDefault("bpf.main_path", "../bpf/xdrop_main.elf") // Phase 8
+	viper.SetDefault("bpf.gate_path", "../bpf/xdrop_gate.elf") // Phase 8
 	viper.SetDefault("bpf.pinning", "auto")
 	viper.SetDefault("fast_forward.enabled", false)
 

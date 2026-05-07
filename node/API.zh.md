@@ -46,9 +46,9 @@ X-API-Key: <node_api_key>
 ```json
 {
   "name": "XDrop Agent",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"]
+  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match", "whitelist_31combo"]
 }
 ```
 
@@ -309,10 +309,12 @@ X-API-Key: <node_api_key>
 | `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
 | `comment` | string | 备注 |
 
-**约束：**
-- 至少需要一个 IP（`src_ip` 或 `dst_ip`）。
-- 设置端口或协议时，`src_ip` 和 `dst_ip` 必须同时存在。
-- BPF 白名单表支持：仅源 IP、仅目的 IP 或完整五元组三种形式。
+**约束（v2.7.0+，Phase 8）：**
+- 至少一个字段不为空/非零（全空条目拒绝）。
+- 单独 `protocol=all`（无 IP 无端口）拒绝——会放行所有流量。
+- 无 L4 端口的协议（`icmp`、`icmpv6`、`igmp`、`gre`、`esp`）不能携带端口字段。
+- 重复五元组 key 返回 `409`。
+- 五元组字段的任意非空子集均有效：如单独 `protocol=udp`、`dst_port=80+protocol=tcp`、`src_ip+protocol=tcp` 等。BPF 数据面使用 31-combo 位图门控查找。
 
 ---
 
@@ -339,13 +341,15 @@ X-API-Key: <node_api_key>
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `src_ip` | string | 至少一个 IP | 源 IP |
-| `dst_ip` | string | 至少一个 IP | 目的 IP |
+| `src_ip` | string | 否 | 源 IP |
+| `dst_ip` | string | 否 | 目的 IP |
 | `src_port` | integer | 否 | 源端口 |
 | `dst_port` | integer | 否 | 目的端口 |
-| `protocol` | string | 否 | 协议 |
+| `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""` |
 | `id` | string | 否 | UUID，不传则自动生成 |
 | `comment` | string | 否 | 备注 |
+
+至少一个字段不为空/非零。
 
 **响应 `200`：**
 
@@ -357,7 +361,7 @@ X-API-Key: <node_api_key>
 }
 ```
 
-**响应 `400`：** 未指定 IP；端口/协议未附带 IP。
+**响应 `400`：** 全空条目；单独 `protocol=all`；无端口协议携带端口；字段格式无效。
 
 **响应 `409`：** 相同匹配键已以不同 ID 存在。
 
@@ -474,7 +478,8 @@ X-API-Key: <node_api_key>
     "cidr_rules": 2,
     "whitelist_entries": 3,
     "active_slot": 1,
-    "rule_map_selector": 0
+    "rule_map_selector": 0,
+    "tailcall_fail": 0
   }
 }
 ```
@@ -501,6 +506,35 @@ X-API-Key: <node_api_key>
 | `agent_state.whitelist_entries` | BPF 白名单表中的条目数 |
 | `agent_state.active_slot` | 当前活跃配置表槽位（0=A，1=B） |
 | `agent_state.rule_map_selector` | 当前活跃规则表选择器（0=主表，1=影子表） |
+| `agent_state.tailcall_fail` | **v2.7.0+。** `tailcall_fail_stats` 各 CPU 计数器之和——`xdp_whitelist_gate` 向 `xdp_firewall_main` tail-call 失败次数。非零表示 PROG_ARRAY 查找失败；gate 失败时 fail-open（`XDP_PASS`）。正常运行时应始终为 0。 |
+
+---
+
+## 内部同步
+
+### `POST /api/v1/sync/whitelist` *(v2.7.0+)*
+
+原子全量白名单快照同步。由 Controller FullSync 路径调用，使用双缓冲协议（`DoWhitelistAtomicSync`）原子替换本节点全部白名单：写入影子表 → 翻转 `CONFIG_WL_MAP_SELECTOR` → 清空旧活跃表，零空窗。不建议直接调用；请通过 Controller 的 `POST /api/v1/nodes/:id/sync` 触发。
+
+**请求体：**
+
+```json
+{
+  "entries": [
+    { "id": "uuid", "src_ip": "", "dst_ip": "", "src_port": 0, "dst_port": 0, "protocol": "udp" }
+  ]
+}
+```
+
+**响应 `200`：**
+
+```json
+{ "success": true, "synced": 5 }
+```
+
+**响应 `400`：** 条目无效（未知 combo、重复 key 等）。
+
+**响应 `500`：** BPF 映射表操作失败。
 
 ---
 

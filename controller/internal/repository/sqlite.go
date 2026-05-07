@@ -627,7 +627,35 @@ func NewSQLiteWhitelistRepo(db *SQLiteDB) *SQLiteWhitelistRepo {
 }
 
 func (r *SQLiteWhitelistRepo) Create(entry *model.Whitelist) error {
-	_, err := r.db.Exec(`
+	// Phase 8: repository-level duplicate key precheck (TOCTOU — not atomic).
+	// Uses COALESCE to handle NULL vs empty string consistently.
+	// Protocol is normalized upstream ("" for "all") before reaching here.
+	//
+	// NOTE: This is a SELECT+INSERT, not a DB-level unique constraint. Two
+	// concurrent requests can both see count=0 and insert the same key. This
+	// is an accepted product trade-off (plan rev11 §PR-3): whitelist CRUD
+	// frequency is very low, and adding a unique index would require a DB
+	// schema migration. If duplicates do occur, the next SyncWhitelistFull
+	// will fail on Node-side duplicate key validation, requiring manual
+	// DB cleanup. See P2-2 in codex-audit.md for details.
+	var count int
+	err := r.db.QueryRow(`
+		SELECT COUNT(*) FROM whitelist
+		WHERE COALESCE(src_ip, '') = ?
+		  AND COALESCE(dst_ip, '') = ?
+		  AND src_port = ?
+		  AND dst_port = ?
+		  AND COALESCE(protocol, '') = ?
+	`, entry.SrcIP, entry.DstIP, entry.SrcPort, entry.DstPort, entry.Protocol).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("whitelist duplicate check failed: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("whitelist entry with the same key (src_ip=%q dst_ip=%q src_port=%d dst_port=%d protocol=%q) already exists",
+			entry.SrcIP, entry.DstIP, entry.SrcPort, entry.DstPort, entry.Protocol)
+	}
+
+	_, err = r.db.Exec(`
 		INSERT INTO whitelist (id, name, src_ip, dst_ip, src_port, dst_port, protocol, comment)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, entry.ID, entry.Name, nullString(entry.SrcIP), nullString(entry.DstIP),

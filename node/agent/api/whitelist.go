@@ -1,4 +1,4 @@
-// XDrop Agent - Whitelist CRUD handlers
+// XDrop Agent - Whitelist CRUD handlers (Phase 8: 31-combo bitmap-gated dual-buffer)
 package api
 
 import (
@@ -26,10 +26,11 @@ func (h *Handlers) ListWhitelist(c *gin.Context) {
 	})
 }
 
-// AddWhitelist adds a whitelist entry
-// BPF whitelist only supports 3 match types: exact 5-tuple, src_ip-only, dst_ip-only.
-// Entries with port/protocol fields but missing the corresponding IP are rejected
-// because they would be silently ineffective in the datapath.
+// AddWhitelist adds or replaces a whitelist entry (Phase 8: 31-combo bitmap-gated).
+// Lock order: syncMu → publishMu → wlMu.
+// Bitmap ordering (safety-critical):
+//   Add:     refcount++ → publish (bitmap bit set) → BPF insert
+//   Replace: delete old BPF → old combo refcount-- → new combo refcount++ → publish → insert new BPF
 func (h *Handlers) AddWhitelist(c *gin.Context) {
 	var req WhitelistEntry
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -37,128 +38,111 @@ func (h *Handlers) AddWhitelist(c *gin.Context) {
 		return
 	}
 
-	// Validate: BPF whitelist only supports exact, src_ip-only, dst_ip-only
-	hasIP := req.SrcIP != "" || req.DstIP != ""
-	hasPortOrProto := req.SrcPort != 0 || req.DstPort != 0 ||
-		(req.Protocol != "" && req.Protocol != "all")
-	hasBothIPs := req.SrcIP != "" && req.DstIP != ""
-
-	if !hasIP && hasPortOrProto {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "whitelist with port/protocol but no IP is not supported; " +
-				"BPF whitelist only matches: exact 5-tuple, src_ip-only, or dst_ip-only",
-		})
-		return
-	}
-	if hasPortOrProto && !hasBothIPs {
-		// Has port/proto but only one IP → not an exact match, BPF won't match
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "whitelist with port/protocol requires both src_ip and dst_ip (exact 5-tuple); " +
-				"single-IP whitelist only supports IP-only matching without port/protocol",
-		})
-		return
-	}
-
-	// B-10 (rev13 codex round 12 P2): same portless+port guard as rules. BPF
-	// whitelist matching uses the same key-port semantics as the rule path
-	// (only TCP/UDP packets get key.src_port/dst_port filled), so a
-	// `protocol=gre + src_port=500` whitelist entry would never match —
-	// silent ghost whitelist. Reject at every Node whitelist write entry.
-	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
+	// Phase 8: replace old exact-only guard with combo-type validation
 	key, err := h.whitelistToKey(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	newCombo := getComboType(key)
+	if err := validateComboType(newCombo); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// Portless protocol guard
+	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-	keyBytes := ruleKeyToBytes(key)
-	wlValue := []byte{1}
-
-	// Use externally provided ID if present, otherwise generate a new one
 	id := req.ID
 	if id == "" {
 		id = uuid.New().String()
 	}
 
-	h.publishMu.Lock()
-	h.wlMu.Lock()
+	newKeyBytes := ruleKeyToBytes(key)
+	wlValue := []byte{1}
 
-	// Duplicate key check: reject if another ID already owns this key
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+
+	// Conflict: newKey already owned by different ID
 	if existingID, ok := h.wlKeyIndex[key]; ok && existingID != id {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
 		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("whitelist key already exists under id %s", existingID)})
 		return
 	}
 
-	// Check for existing whitelist with same ID (replacement case)
+	// Check for same-ID replacement
 	var oldKey *RuleKey
+	var oldCombo int
 	wlCountDelta := int64(1)
 	if existingKey, exists := h.wlEntries[id]; exists {
 		keyCopy := existingKey
 		oldKey = &keyCopy
+		oldCombo = getComboType(*oldKey)
 		wlCountDelta = 0 // replacing, not adding
 	}
 
-	// Step 1: Insert new BPF whitelist entry (old entry still intact if different key)
-	if err := h.whitelist.Update(keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to add whitelist: %v", err)})
+	// Same-ID same-key: idempotent, no refcount/BPF change needed
+	if oldKey != nil && *oldKey == key {
+		c.JSON(http.StatusOK, gin.H{"success": true, "id": id, "message": "Whitelist entry unchanged (idempotent)"})
 		return
 	}
 
-	// Step 2: Delete old BPF entry BEFORE publish (hard failure to avoid orphan)
-	if oldKey != nil && *oldKey != key {
-		if err := h.whitelist.Delete(ruleKeyToBytes(*oldKey)); err != nil {
-			if delErr := h.whitelist.Delete(keyBytes); delErr != nil {
-				log.Printf("[AddWhitelist] WARN: best-effort cleanup of new BPF entry failed during abort: %v", delErr)
-			}
-			h.wlMu.Unlock()
-			h.publishMu.Unlock()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete old whitelist entry during replacement: %v", err)})
+	// --- Security-first replacement: delete old BPF entry before adding new ---
+	if oldKey != nil {
+		if err := h.activeWhitelist().Delete(ruleKeyToBytes(*oldKey)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to delete old whitelist entry during replacement: %v", err)})
 			return
 		}
+		h.wlComboRefCount[oldCombo]--
 	}
 
-	// Step 3: Update memory state
+	// Increment new combo refcount BEFORE publish (so bitmap bit is set first)
+	h.wlComboRefCount[newCombo]++
+
+	// Publish: sets new bitmap bit (and clears old if refcount=0)
+	if err := h.publishConfigUpdate(0, wlCountDelta, 0); err != nil {
+		// Rollback refcount changes
+		h.wlComboRefCount[newCombo]--
+		if oldKey != nil {
+			h.wlComboRefCount[oldCombo]++
+			// Best-effort re-insert old BPF entry
+			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+				log.Printf("[AddWhitelist] WARN: rollback re-insert of old BPF entry failed: %v", insErr)
+			}
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
+		return
+	}
+
+	// Insert new BPF entry (bitmap bit already set above)
+	if err := h.activeWhitelist().Update(newKeyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
+		// Rollback: undo refcount, re-insert old if replacement, re-publish
+		h.wlComboRefCount[newCombo]--
+		if oldKey != nil {
+			h.wlComboRefCount[oldCombo]++
+			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+				log.Printf("[AddWhitelist] WARN: rollback re-insert of old BPF entry failed: %v", insErr)
+			}
+		}
+		if pubErr := h.publishConfigUpdate(0, -wlCountDelta, 0); pubErr != nil {
+			log.Printf("[AddWhitelist] WARN: rollback re-publish failed: %v", pubErr)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to add whitelist to BPF: %v", err)})
+		return
+	}
+
+	// Update memory state
 	if oldKey != nil {
 		delete(h.wlKeyIndex, *oldKey)
 	}
 	h.wlEntries[id] = key
 	h.wlKeyIndex[key] = id
-
-	// Step 4: Publish config
-	if err := h.publishConfigUpdate(0, wlCountDelta, 0); err != nil {
-		// Strong failure: rollback memory + BPF
-		if delErr := h.whitelist.Delete(keyBytes); delErr != nil {
-			log.Printf("[AddWhitelist] WARN: best-effort rollback delete of new BPF entry failed: %v", delErr)
-		}
-		delete(h.wlEntries, id)
-		delete(h.wlKeyIndex, key)
-		// Restore old state if replacement
-		if oldKey != nil {
-			h.wlEntries[id] = *oldKey
-			h.wlKeyIndex[*oldKey] = id
-			// Re-insert old BPF entry if it was deleted (best-effort restore)
-			if *oldKey != key {
-				if insErr := h.whitelist.Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
-					log.Printf("[AddWhitelist] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
-				}
-			}
-		}
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
-		return
-	}
-
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -167,38 +151,49 @@ func (h *Handlers) AddWhitelist(c *gin.Context) {
 	})
 }
 
-// DeleteWhitelist removes a whitelist entry
+// DeleteWhitelist removes a whitelist entry.
+// Bitmap ordering: BPF delete → refcount-- → publish (bitmap bit cleared if refcount=0).
 func (h *Handlers) DeleteWhitelist(c *gin.Context) {
 	id := c.Param("id")
 
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
 	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
 	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
 
 	key, exists := h.wlEntries[id]
 	if !exists {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
 		c.JSON(http.StatusNotFound, gin.H{"error": "Whitelist entry not found"})
 		return
 	}
 
+	combo := getComboType(key)
 	keyBytes := ruleKeyToBytes(key)
-	if err := h.whitelist.Delete(keyBytes); err != nil {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete: %v", err)})
+
+	// Delete BPF entry first
+	if err := h.activeWhitelist().Delete(keyBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to delete: %v", err)})
 		return
 	}
 
+	// Decrement refcount and update memory, then publish
+	h.wlComboRefCount[combo]--
 	delete(h.wlKeyIndex, key)
 	delete(h.wlEntries, id)
 
 	if err := h.publishConfigUpdate(0, -1, 0); err != nil {
-		log.Printf("[DeleteWhitelist] WARN: publish failed after BPF delete (safe direction): %v", err)
+		// Rollback: restore refcount, memory, and re-insert BPF entry
+		h.wlComboRefCount[combo]++
+		h.wlEntries[id] = key
+		h.wlKeyIndex[key] = id
+		if insErr := h.activeWhitelist().Update(keyBytes, []byte{1}, ebpf.UpdateNoExist); insErr != nil {
+			log.Printf("[DeleteWhitelist] WARN: rollback BPF re-insert failed: %v", insErr)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
+		return
 	}
-
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -206,8 +201,9 @@ func (h *Handlers) DeleteWhitelist(c *gin.Context) {
 	})
 }
 
-// AddWhitelistBatch adds multiple whitelist entries in one request.
-// Follows the same lock + double-buffer pattern as AddRulesBatch.
+// AddWhitelistBatch adds multiple whitelist entries atomically (all-or-nothing).
+// Phase 8: 31-combo bitmap, supports replacement (same ID), combo refcount maintenance.
+// Any validation failure or BPF error causes the entire batch to be rolled back.
 func (h *Handlers) AddWhitelistBatch(c *gin.Context) {
 	var req struct {
 		Entries []WhitelistEntry `json:"entries"`
@@ -217,170 +213,204 @@ func (h *Handlers) AddWhitelistBatch(c *gin.Context) {
 		return
 	}
 
-	added := 0
-	failed := 0
-
-	// Pre-validate and prepare entries (before locks)
 	type preparedEntry struct {
-		id       string
-		key      RuleKey
-		keyBytes []byte
+		id            string
+		key           RuleKey
+		keyBytes      []byte
+		combo         int
+		isNoOp        bool // same-ID same-key: idempotent, skip BPF
+		isReplacement bool
+		oldKey        *RuleKey
+		oldCombo      int
 	}
+
+	// --- Phase 1: Pre-validate ALL entries BEFORE acquiring locks ---
+	// Fail the entire batch if any entry is invalid (all-or-nothing starts here).
 	prepared := make([]preparedEntry, 0, len(req.Entries))
+	seenIDsBefore := make(map[string]int) // for ID dedup: keep last
 
-	// Deduplicate by ID: keep last occurrence
-	seenIDs := make(map[string]int)
-
-	for _, entry := range req.Entries {
-		// Validate: BPF whitelist only supports exact, src_ip-only, dst_ip-only
-		hasIP := entry.SrcIP != "" || entry.DstIP != ""
-		hasPortOrProto := entry.SrcPort != 0 || entry.DstPort != 0 ||
-			(entry.Protocol != "" && entry.Protocol != "all")
-		hasBothIPs := entry.SrcIP != "" && entry.DstIP != ""
-
-		if !hasIP && hasPortOrProto {
-			failed++
-			continue
-		}
-		if hasPortOrProto && !hasBothIPs {
-			failed++
-			continue
-		}
-		// B-10 (rev13 codex round 12 P2): portless+port guard for batch.
-		if err := validatePortProtocolCompatNode(entry.Protocol, entry.SrcPort, entry.DstPort); err != nil {
-			failed++
-			continue
-		}
-
+	for i, entry := range req.Entries {
 		key, err := h.whitelistToKey(entry)
 		if err != nil {
-			failed++
-			continue
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("entry %d: %v", i, err)})
+			return
 		}
-
+		combo := getComboType(key)
+		if err := validateComboType(combo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("entry %d unsupported combo: %v", i, err)})
+			return
+		}
+		if err := validatePortProtocolCompatNode(entry.Protocol, entry.SrcPort, entry.DstPort); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("entry %d: %v", i, err)})
+			return
+		}
 		id := entry.ID
 		if id == "" {
 			id = uuid.New().String()
 		}
-
-		p := preparedEntry{
-			id:       id,
-			key:      key,
-			keyBytes: ruleKeyToBytes(key),
-		}
-
-		if idx, ok := seenIDs[id]; ok {
-			prepared[idx] = p
+		p := preparedEntry{id: id, key: key, keyBytes: ruleKeyToBytes(key), combo: combo}
+		if idx, ok := seenIDsBefore[id]; ok {
+			prepared[idx] = p // dedup: keep last
 		} else {
-			seenIDs[id] = len(prepared)
+			seenIDsBefore[id] = len(prepared)
 			prepared = append(prepared, p)
 		}
 	}
 
-	// Critical section: BPF writes + memory updates, one publish at the end
-	h.publishMu.Lock()
-	h.wlMu.Lock()
-
-	type succeededItem struct {
-		id            string
-		key           RuleKey
-		keyBytes      []byte
-		isReplacement bool
-		oldKey        *RuleKey
+	if len(prepared) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": true, "added": 0})
+		return
 	}
-	succeeded := make([]succeededItem, 0, len(prepared))
+
+	// --- Phase 2: Acquire locks and do lock-held validation ---
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+
 	wlValue := []byte{1}
+	seenKeysInBatch := make(map[RuleKey]string, len(prepared))
 
-	for _, p := range prepared {
-		// Duplicate key check: reject if another ID already owns this key
+	for i := range prepared {
+		p := &prepared[i]
+		// Intra-batch key duplicate
+		if ownerID, ok := seenKeysInBatch[p.key]; ok && ownerID != p.id {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("duplicate key in batch: id %s and %s map to the same BPF key", ownerID, p.id)})
+			return
+		}
+		// Cross-existing key conflict
 		if existingID, ok := h.wlKeyIndex[p.key]; ok && existingID != p.id {
-			failed++
-			continue
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("key already owned by id %s", existingID)})
+			return
 		}
+		seenKeysInBatch[p.key] = p.id
 
-		// Insert new BPF entry
-		if err := h.whitelist.Update(p.keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
-			failed++
-			continue
-		}
-
-		// Save old state
-		var oldKey *RuleKey
-		isReplacement := false
 		if existingKey, exists := h.wlEntries[p.id]; exists {
-			isReplacement = true
-			keyCopy := existingKey
-			oldKey = &keyCopy
-		}
-
-		// Delete old BPF entry if key changed
-		if oldKey != nil && *oldKey != p.key {
-			if err := h.whitelist.Delete(ruleKeyToBytes(*oldKey)); err != nil {
-				// Abort this item, remove new entry
-				if delErr := h.whitelist.Delete(p.keyBytes); delErr != nil {
-					log.Printf("[AddWhitelistBatch] WARN: best-effort cleanup of new BPF entry failed: %v", delErr)
-				}
-				failed++
+			if existingKey == p.key {
+				p.isNoOp = true // same-ID same-key: idempotent
 				continue
 			}
+			p.isReplacement = true
+			keyCopy := existingKey
+			p.oldKey = &keyCopy
+			p.oldCombo = getComboType(existingKey)
 		}
-
-		// Update memory state
-		if oldKey != nil {
-			delete(h.wlKeyIndex, *oldKey)
-		}
-		h.wlEntries[p.id] = p.key
-		h.wlKeyIndex[p.key] = p.id
-		succeeded = append(succeeded, succeededItem{id: p.id, key: p.key, keyBytes: p.keyBytes, isReplacement: isReplacement, oldKey: oldKey})
 	}
 
-	// Count net new (exclude replacements)
+	// --- Phase 3: Delete old BPF entries for replacements ---
+	// On any failure, rollback deletions already done and return error.
+	deletedOld := make([]preparedEntry, 0)
+	for _, p := range prepared {
+		if p.isNoOp || p.oldKey == nil {
+			continue
+		}
+		if err := h.activeWhitelist().Delete(ruleKeyToBytes(*p.oldKey)); err != nil {
+			// Rollback: re-insert already-deleted old entries
+			for _, done := range deletedOld {
+				if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*done.oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+					log.Printf("[AddWhitelistBatch] WARN: rollback of old entry failed (id=%s): %v", done.id, insErr)
+				}
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to delete old entry for id %s: %v", p.id, err)})
+			return
+		}
+		deletedOld = append(deletedOld, p)
+	}
+
+	// --- Phase 4: Update refcounts ---
 	netNew := int64(0)
-	for _, item := range succeeded {
-		if !item.isReplacement {
+	for _, p := range prepared {
+		if p.isNoOp {
+			continue
+		}
+		if p.oldKey != nil {
+			h.wlComboRefCount[p.oldCombo]--
+		}
+		h.wlComboRefCount[p.combo]++
+		if !p.isReplacement {
 			netNew++
 		}
 	}
 
-	// One publish for entire batch
-	if len(succeeded) > 0 {
-		if err := h.publishConfigUpdate(0, netNew, 0); err != nil {
-			// Rollback all
-			for _, item := range succeeded {
-				if delErr := h.whitelist.Delete(item.keyBytes); delErr != nil {
-					log.Printf("[AddWhitelistBatch] WARN: rollback delete failed (id=%s): %v", item.id, delErr)
+	// --- Phase 5: Publish (bitmap + count reflect all changes) ---
+	if err := h.publishConfigUpdate(0, netNew, 0); err != nil {
+		// Full rollback: undo refcounts and re-insert old entries
+		for _, p := range prepared {
+			if p.isNoOp {
+				continue
+			}
+			h.wlComboRefCount[p.combo]--
+			if p.oldKey != nil {
+				h.wlComboRefCount[p.oldCombo]++
+				if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*p.oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+					log.Printf("[AddWhitelistBatch] WARN: rollback re-insert of old entry failed (id=%s): %v", p.id, insErr)
 				}
-				delete(h.wlKeyIndex, item.key)
-				delete(h.wlEntries, item.id)
-				if item.oldKey != nil {
-					h.wlEntries[item.id] = *item.oldKey
-					h.wlKeyIndex[*item.oldKey] = item.id
-					if *item.oldKey != item.key {
-						if insErr := h.whitelist.Update(ruleKeyToBytes(*item.oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
-							log.Printf("[AddWhitelistBatch] WARN: rollback re-insert failed (id=%s): %v", item.id, insErr)
-						}
+			}
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
+		return
+	}
+
+	// --- Phase 6: Insert new BPF entries ---
+	// If ANY insert fails, rollback ALL (including already-inserted) and re-insert all old entries.
+	inserted := make([]preparedEntry, 0, len(prepared))
+	for _, p := range prepared {
+		if p.isNoOp {
+			continue
+		}
+		if err := h.activeWhitelist().Update(p.keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
+			// Rollback: delete all already-inserted, restore refcounts, re-insert old entries, re-publish
+			for _, done := range inserted {
+				if delErr := h.activeWhitelist().Delete(done.keyBytes); delErr != nil {
+					log.Printf("[AddWhitelistBatch] WARN: rollback delete of new entry failed (id=%s): %v", done.id, delErr)
+				}
+			}
+			for _, rp := range prepared {
+				if rp.isNoOp {
+					continue
+				}
+				h.wlComboRefCount[rp.combo]--
+				if rp.oldKey != nil {
+					h.wlComboRefCount[rp.oldCombo]++
+					if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*rp.oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+						log.Printf("[AddWhitelistBatch] WARN: rollback re-insert of old entry failed (id=%s): %v", rp.id, insErr)
 					}
 				}
 			}
-			h.wlMu.Unlock()
-			h.publishMu.Unlock()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
+			if pubErr := h.publishConfigUpdate(0, -netNew, 0); pubErr != nil {
+				log.Printf("[AddWhitelistBatch] WARN: rollback re-publish failed: %v", pubErr)
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("BPF insert failed for id %s: %v; entire batch rolled back", p.id, err)})
 			return
 		}
+		inserted = append(inserted, p)
 	}
-	added = len(succeeded)
 
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
+	// --- Phase 7: Commit memory state ---
+	for _, p := range prepared {
+		if p.isNoOp {
+			continue
+		}
+		if p.oldKey != nil {
+			delete(h.wlKeyIndex, *p.oldKey)
+		}
+		h.wlEntries[p.id] = p.key
+		h.wlKeyIndex[p.key] = p.id
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"added":   added,
-		"failed":  failed,
+		"added":   len(inserted),
 	})
 }
 
-// DeleteWhitelistBatch removes multiple whitelist entries in one request.
+// DeleteWhitelistBatch removes multiple whitelist entries.
+// Semantics: best-effort per-entry deletion. Missing IDs and per-entry BPF
+// delete failures are counted as failed without aborting the rest. Config is
+// published once for all successfully deleted entries. If publish fails, all
+// deleted entries are rolled back (BPF re-insert + refcount restore).
 func (h *Handlers) DeleteWhitelistBatch(c *gin.Context) {
 	var req struct {
 		IDs []string `json:"ids"`
@@ -393,8 +423,20 @@ func (h *Handlers) DeleteWhitelistBatch(c *gin.Context) {
 	deleted := 0
 	failed := 0
 
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
 	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
 	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+
+	type deletedItem struct {
+		id    string
+		key   RuleKey
+		combo int
+	}
+	deletedItems := make([]deletedItem, 0, len(req.IDs))
+	wlValue := []byte{1}
 
 	for _, id := range req.IDs {
 		key, exists := h.wlEntries[id]
@@ -403,25 +445,36 @@ func (h *Handlers) DeleteWhitelistBatch(c *gin.Context) {
 			continue
 		}
 
-		if err := h.whitelist.Delete(ruleKeyToBytes(key)); err != nil {
+		combo := getComboType(key)
+
+		// BPF delete first
+		if err := h.activeWhitelist().Delete(ruleKeyToBytes(key)); err != nil {
 			failed++
 			continue
 		}
 
+		h.wlComboRefCount[combo]--
 		delete(h.wlKeyIndex, key)
 		delete(h.wlEntries, id)
+		deletedItems = append(deletedItems, deletedItem{id: id, key: key, combo: combo})
 		deleted++
 	}
 
-	// One publish for entire batch
 	if deleted > 0 {
 		if err := h.publishConfigUpdate(0, -int64(deleted), 0); err != nil {
-			log.Printf("[DeleteWhitelistBatch] WARN: publish failed after BPF deletes (safe direction): %v", err)
+			// Rollback: restore all successfully deleted entries
+			for _, item := range deletedItems {
+				h.wlComboRefCount[item.combo]++
+				h.wlEntries[item.id] = item.key
+				h.wlKeyIndex[item.key] = item.id
+				if insErr := h.activeWhitelist().Update(ruleKeyToBytes(item.key), wlValue, ebpf.UpdateNoExist); insErr != nil {
+					log.Printf("[DeleteWhitelistBatch] WARN: rollback BPF re-insert failed (id=%s): %v", item.id, insErr)
+				}
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "config publish failed"})
+			return
 		}
 	}
-
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

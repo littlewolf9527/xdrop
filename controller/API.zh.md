@@ -65,7 +65,7 @@ X-API-Key: <external_api_key>
 ```json
 {
   "name": "XDrop Controller",
-  "version": "2.6.3",
+  "version": "2.7.0",
   "status": "running"
 }
 ```
@@ -416,23 +416,34 @@ X-API-Key: <external_api_key>
 
 白名单条目在所有黑名单规则之前匹配。命中白名单的数据包直接通过（`XDP_PASS`）。
 
+**Phase 8 (v2.7.0)：** 白名单支持任意五元组字段子集——`src_ip`、`dst_ip`、`src_port`、`dst_port`、`protocol` 的任意非空组合均有效。BPF 数据面使用与黑名单相同的 31-combo bitmap-gated lookup 架构。
+
+**支持的 combo 示例：**
+- `protocol=udp` — 放行所有 UDP
+- `dst_port=80, protocol=tcp` — 放行所有入向 TCP:80
+- `src_ip=192.0.2.1` — 放行来自该 IP 的所有流量
+- `src_ip=192.0.2.1, protocol=tcp` — 放行来自该 IP 的所有 TCP
+- `dst_ip=192.0.2.2, dst_port=443, protocol=tcp` — 放行到特定目的地的 HTTPS
+
 ### 白名单条目对象
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | string (UUID) | 条目 ID |
 | `name` | string | 名称 |
-| `src_ip` | string | 源 IPv4/IPv6 |
-| `dst_ip` | string | 目的 IPv4/IPv6 |
-| `src_port` | integer | 源端口（`0` = 任意） |
-| `dst_port` | integer | 目的端口（`0` = 任意） |
+| `src_ip` | string | 源 IPv4/IPv6（空 = 通配） |
+| `dst_ip` | string | 目的 IPv4/IPv6（空 = 通配） |
+| `src_port` | integer | 源端口（`0` = 通配） |
+| `dst_port` | integer | 目的端口（`0` = 通配） |
 | `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""` |
 | `comment` | string | 备注 |
 | `created_at` | string (RFC3339) | 创建时间 |
 
 **约束：**
-- 至少需要一个 IP 地址（`src_ip` 或 `dst_ip`）。
-- 设置端口或协议时，`src_ip` 和 `dst_ip` 必须同时存在。
+- 至少一个字段非空（全空条目被拒绝）。
+- `protocol=all` 单独使用（无 IP、无端口）被拒绝——会放行所有流量。
+- 无端口协议（`icmp`、`icmpv6`、`igmp`、`gre`、`esp`）不能带端口字段。
+- 重复五元组 key 返回 `409`。
 
 ---
 
@@ -453,19 +464,21 @@ X-API-Key: <external_api_key>
 
 ### `POST /api/v1/whitelist`
 
-创建白名单条目。触发同步。
+创建白名单条目。触发增量同步到所有节点。
 
 **请求体：**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `src_ip` | string | 至少一个 IP | 源 IP |
-| `dst_ip` | string | 至少一个 IP | 目的 IP |
+| `src_ip` | string | 否 | 源 IP |
+| `dst_ip` | string | 否 | 目的 IP |
 | `src_port` | integer | 否 | 源端口 |
 | `dst_port` | integer | 否 | 目的端口 |
 | `protocol` | string | 否 | 协议 |
 | `name` | string | 否 | 名称 |
 | `comment` | string | 否 | 备注 |
+
+以上字段至少一个非空。
 
 **响应 `200`：**
 
@@ -477,9 +490,9 @@ X-API-Key: <external_api_key>
 }
 ```
 
-**响应 `400`：** 校验错误。
+**响应 `400`：** 校验错误（全空条目、protocol=all 单独使用、无端口协议带端口）。
 
-**响应 `409`：** 重复条目已存在。
+**响应 `409`：** 重复五元组 key 已存在。
 
 ---
 
@@ -496,6 +509,12 @@ X-API-Key: <external_api_key>
   "sync": { "failed": 0 }
 }
 ```
+
+---
+
+### 节点同步端点（内部）
+
+**`POST /api/v1/sync/whitelist`** — 原子全量白名单快照同步（v2.7.0+）。Controller FullSync 调用此端点将整张白名单原子替换，运行期无 false-drop 窗口。**节点版本要求**：Phase 8 Controller（v2.7.0+）要求 Phase 8 Node（v2.7.0+）。不支持此端点的旧节点（< v2.7.0）返回升级错误——无静默 fallback。Controller 将对应节点的同步标记为失败。
 
 ---
 

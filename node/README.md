@@ -15,28 +15,36 @@ NIC (hardware)
     │
     ▼  ← XDP hook (before sk_buff allocation)
 ┌─────────────────────────────────────────────────────────┐
-│  xdrop BPF program                                      │
+│  xdp_whitelist_gate  [xdrop_gate.elf]                   │
 │                                                         │
 │  1. Parse Ethernet → (VLAN 802.1Q/802.1ad) → IP        │
 │                                                         │
-│  2. Whitelist lookup (hash map)                         │
+│  2. Whitelist bitmap check (31-combo, v2.7.0+)         │
+│     └─ wl_bitmap == 0 → tail-call xdp_firewall_main   │
+│                                                         │
+│  3. 31-combo whitelist lookup (hash map, bitmap-gated) │
 │     └─ HIT  → XDP_PASS  (bypass all blacklist rules)   │
 │                                                         │
-│  3. Bitmap check                                        │
-│     └─ Read active_config bitmap (64-bit, 34 combos)   │
-│     └─ Skip rule types with no active entries          │
+│  4. tail-call → xdp_firewall_main  [xdrop_main.elf]    │
+└─────────────────────────────────────────────────────────┘
+    │  (tail-call, slot 1 in prog_tail_map)
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│  xdp_firewall_main  [xdrop_main.elf]                    │
 │                                                         │
-│  4. Exact blacklist lookup (hash map)                   │
+│  5. BL bitmap check (64-bit, 31 active combos)         │
+│     └─ Skip combos with no active rules                │
+│                                                         │
+│  6. Exact blacklist lookup (hash map)                   │
 │     └─ HIT  → check pkt_len + tcp_flags               │
 │              → match → apply action (DROP / RATE_LIMIT)│
 │              → mismatch → continue to next combo       │
 │                                                         │
-│  5. CIDR blacklist lookup (LPM trie — src then dst)    │
-│     └─ HIT  → check pkt_len + tcp_flags               │
+│  7. CIDR blacklist lookup (LPM trie — src then dst)    │
+│     └─ HIT  → anomaly? → tail-call xdp_anomaly_verify │
 │              → match → apply action (DROP / RATE_LIMIT)│
-│              → mismatch → continue to next combo       │
 │                                                         │
-│  6. No match → XDP_PASS                                │
+│  8. No match → XDP_PASS                                │
 └─────────────────────────────────────────────────────────┘
     │
     ▼  XDP_DROP or XDP_PASS
@@ -47,15 +55,17 @@ kernel network stack
 
 | Map | Type | Max Entries | Purpose |
 |-----|------|-------------|---------|
-| `whitelist` | Hash | 10,000 | Bypass entries (checked first) |
-| `blacklist` / `blacklist_b` | Hash | 100,000 | Exact five-tuple rules (double-buffer) |
-| `cidr_blacklist` / `cidr_blist_b` | Hash | 100,000 | CIDR rule ID → action/rate mapping |
-| `sv4_cidr_trie` / `dv4_cidr_trie` | LPM Trie | 50,000 | IPv4 src/dst CIDR prefix lookup |
-| `sv6_cidr_trie` / `dv6_cidr_trie` | LPM Trie | 50,000 | IPv6 src/dst CIDR prefix lookup |
-| `config_a` / `config_b` | Array | 10 | Double-buffer config (bitmap, counts, flags) |
+| `whitelist` / `whitelist_b` | Hash | 50,000 each | Bypass entries — active + shadow (double-buffer, v2.7.0+) |
+| `blacklist` / `blacklist_b` | Hash | 500,000 each | Exact five-tuple rules (double-buffer) |
+| `cidr_blacklist` / `cidr_blist_b` | Hash | 500,000 each | CIDR rule ID → action/rate mapping (double-buffer) |
+| `sv4_cidr_trie` / `dv4_cidr_trie` | LPM Trie | 50,000 each | IPv4 src/dst CIDR prefix lookup |
+| `sv6_cidr_trie` / `dv6_cidr_trie` | LPM Trie | 50,000 each | IPv6 src/dst CIDR prefix lookup |
+| `config_a` / `config_b` | Array | 12 | Double-buffer config (BL/WL bitmaps, counts, FF flags, selectors) |
 | `active_config` | Array | 1 | Config map selector (0 = A, 1 = B) |
-| `stats` | Per-CPU Array | 5 | Global packet counters |
+| `stats` | Per-CPU Array | 5 | Global packet counters (shared between gate and main ELFs) |
 | `rl_states` | Hash | 100,000 | Per-rule token bucket state for rate limiting |
+| `prog_tail_map` | PROG_ARRAY | 2 | Tail-call dispatch: slot 0 = xdp_anomaly_verify, slot 1 = xdp_firewall_main |
+| `tailcall_fail_stats` | Per-CPU Array | 1 | Gate-exclusive fail-open counter (gate→main tail-call failures) |
 
 ### Bitmap Optimization
 
@@ -63,7 +73,9 @@ Each rule matches a combination of fields (e.g., "src_ip + dst_port + protocol" 
 
 ### AtomicSync (Double-Buffer Rule Publishing)
 
-Updating rules involves two operations that must appear atomic to the BPF data path: writing entries to the hash map and updating the lookup bitmap. XDrop uses an RCU-style double-buffer to eliminate the inconsistency window:
+Updating rules involves two operations that must appear atomic to the BPF data path: writing entries to the hash map and updating the lookup bitmap. XDrop uses an RCU-style double-buffer to eliminate the inconsistency window.
+
+**Blacklist AtomicSync:**
 
 ```
 Active slot = A                    Shadow slot = B
@@ -77,7 +89,21 @@ Active slot = A                    Shadow slot = B
 Active slot = B                    Shadow slot = A (next update)
 ```
 
-The same double-buffer applies to the rule maps themselves (`blacklist` / `blacklist_b`) and CIDR maps. Two selectors track the active side independently — `active_config` for the config map pair, `rule_map_selector` for the rule map pair.
+**Whitelist AtomicSync (v2.7.0+, `DoWhitelistAtomicSync`):**
+
+```
+Active map = whitelist              Shadow map = whitelist_b
+──────────────────────────────────────────────────────
+① Clear whitelist_b (shadow)
+② Write all entries to whitelist_b
+③ Update CONFIG_WL_BITMAP in shadow config
+④ atomic: flip CONFIG_WL_MAP_SELECTOR ← BPF switches to whitelist_b
+⑤ Clear old active whitelist (now shadow)
+──────────────────────────────────────────────────────
+Active map = whitelist_b            Shadow map = whitelist
+```
+
+Single add/delete writes directly to the active map (single BPF update is atomic). Full sync (Controller FullSync) uses `DoWhitelistAtomicSync`. Three selectors track active sides independently — `active_config` for the config map pair, `rule_map_selector` for the blacklist map pair, `CONFIG_WL_MAP_SELECTOR` for the whitelist map pair.
 
 ---
 
@@ -141,7 +167,7 @@ Requires Linux, clang ≥ 11, and Go ≥ 1.21. The BPF program must be compiled 
 ./scripts/build-node.sh          # builds BPF program then Go agent
 
 # Or step by step:
-./scripts/build-node.sh bpf      # clang → node/bpf/xdrop.elf
+./scripts/build-node.sh bpf      # clang → node/bpf/xdrop_main.elf + xdrop_gate.elf
 ./scripts/build-node.sh agent    # go build → node/xdrop-agent
 ```
 
@@ -189,6 +215,8 @@ All routes are under `/api/v1/`. Every request must include `X-API-Key: <node_ap
 
 ### Whitelist
 
+**Phase 8 (v2.7.0+):** Any non-empty five-tuple field subset is a valid whitelist key (31 canonical combos, bitmap-gated BPF lookup).
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/whitelist` | List entries |
@@ -196,6 +224,7 @@ All routes are under `/api/v1/`. Every request must include `X-API-Key: <node_ap
 | `DELETE` | `/api/v1/whitelist/:id` | Delete entry |
 | `POST` | `/api/v1/whitelist/batch` | Bulk create |
 | `DELETE` | `/api/v1/whitelist/batch` | Bulk delete |
+| `POST` | `/api/v1/sync/whitelist` | **v2.7.0+.** Atomic full whitelist replacement (used by Controller FullSync) |
 
 ### Stats & Health
 
@@ -225,7 +254,9 @@ All routes are under `/api/v1/`. Every request must include `X-API-Key: <node_ap
     "active_slot": 1,
     "rule_map_selector": 0,
     "exact_rules": 40,
-    "cidr_rules": 2
+    "cidr_rules": 2,
+    "whitelist_entries": 3,
+    "tailcall_fail": 0
   }
 }
 ```
@@ -237,9 +268,10 @@ All routes are under `/api/v1/`. Every request must include `X-API-Key: <node_ap
 ```
 node/
 ├── bpf/
-│   ├── xdrop.c           # XDP program (C, GPL-2.0)
-│   ├── xdrop.h           # Shared BPF type definitions
-│   └── Makefile          # clang compilation
+│   ├── xdrop_gate.c      # Gate program: whitelist 31-combo + tail-call dispatch (GPL-2.0)
+│   ├── xdrop_main.c      # Main program: blacklist lookup + anomaly verify (GPL-2.0)
+│   ├── xdrop.h           # Shared BPF type definitions and map declarations
+│   └── Makefile          # clang compilation → xdrop_gate.elf + xdrop_main.elf
 └── agent/
     ├── main.go           # Entry point (load BPF, start API server)
     ├── api/

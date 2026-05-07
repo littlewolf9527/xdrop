@@ -15,23 +15,32 @@ func ntohs(n uint16) uint16 {
 }
 
 func parseProtocol(s string) uint8 {
+	p, _ := parseProtocolStrict(s)
+	return p
+}
+
+// parseProtocolStrict returns (protocol, error). Unknown strings return an error
+// instead of silently mapping to ProtoAll, preventing whitelist combo broadening.
+func parseProtocolStrict(s string) (uint8, error) {
 	switch s {
+	case "", "all":
+		return ProtoAll, nil
 	case "tcp":
-		return ProtoTCP
+		return ProtoTCP, nil
 	case "udp":
-		return ProtoUDP
+		return ProtoUDP, nil
 	case "icmp":
-		return ProtoICMP
+		return ProtoICMP, nil
 	case "icmpv6":
-		return ProtoICMPv6
+		return ProtoICMPv6, nil
 	case "igmp":
-		return ProtoIGMP
+		return ProtoIGMP, nil
 	case "gre":
-		return ProtoGRE
+		return ProtoGRE, nil
 	case "esp":
-		return ProtoESP
+		return ProtoESP, nil
 	default:
-		return ProtoAll
+		return 0, fmt.Errorf("unknown protocol %q; supported: tcp, udp, icmp, icmpv6, igmp, gre, esp, all", s)
 	}
 }
 

@@ -60,21 +60,27 @@ The system has two components:
 - **Five-tuple matching** — src/dst IP, src/dst port, protocol
 - **IPv4 and IPv6** — unified rule format; IPv4 stored as IPv4-mapped IPv6 internally
 - **CIDR rules** — per-direction LPM trie (src or dst prefix); supports /0–/128
-- **Whitelist** — hash map bypass checked before any blacklist rule
+- **Whitelist (v2.7.0+)** — 31-combo bitmap-gated matching with double-buffer atomic sync; hash map bypass checked before any blacklist rule
 - **Actions** — `drop`, `rate_limit` (token bucket, configurable PPS), `pass`
 - **Packet length filter** — `pkt_len_min` / `pkt_len_max` (L3 total length)
 - **TCP flags matching** — `tcp_flags` post-match filter (e.g. `SYN`, `SYN,ACK`, `RST`); mismatch continues wildcard fallback
 - **Decoder sugar** (v2.6+) — `decoder=tcp_ack|tcp_rst|tcp_fin` expands to `protocol=tcp` + matching TCP flags mask at rule creation; lets upstream detectors name attack patterns instead of bit-manipulating flags
 - **Anomaly data plane** (v2.6.1+) — `decoder=bad_fragment|invalid` attaches anomaly bits to rules; a tail-called `xdp_anomaly_verify` program detects Ping-of-Death (offset*8+payload>65535), tiny-first-fragment (TCP <20B / UDP <8B), malformed IHL<5, truncated total_length, and TCP `doff<5` — drops packets only when the rule's `match_anomaly` bits intersect with the packet's actual anomaly signature. Anomaly detection logic ported byte-for-byte from xSight v1.3 for cross-repo parity. IPv6 `invalid` supported; IPv6 `bad_fragment` rejected at the Controller (deferred)
-- **Bitmap optimization** — 64-bit bitmap encodes which of 34 field combinations have active rules; BPF skips combinations with no rules, keeping the hot path O(1)
+- **Bitmap optimization** — 64-bit bitmap encodes which of 34 field combinations have active rules (blacklist) or 31 combos (whitelist); BPF skips combinations with no rules, keeping the hot path O(1)
 - **Per-rule statistics** — per-CPU `match_count` and `drop_count` aggregated by the agent
 
 ### AtomicSync (Double-Buffer Rule Publishing)
 Rule updates follow an RCU-style double-buffer protocol to eliminate race conditions between writing rules and updating the lookup bitmap:
 
-1. Write rule to the BPF hash map
+**Blacklist** (v2.0+):
+1. Write rule to the shadow BPF hash map (`blacklist_b` or `cidr_blist_b`)
 2. Build updated config (bitmap, counts) in the shadow config map
 3. Single atomic write flips the `active_config` selector — BPF switches atomically
+
+**Whitelist** (v2.7.0+, Phase 8):
+1. Write whitelist entries to the shadow BPF map (`whitelist_b`)
+2. Update `CONFIG_WL_BITMAP` and `CONFIG_WL_MAP_SELECTOR` in config
+3. Single atomic flip — whitelist switches with zero gap
 
 This guarantees the BPF data path never sees an inconsistent bitmap/rule state.
 
@@ -98,7 +104,7 @@ This guarantees the BPF data path never sees an inconsistent bitmap/rule state.
 ```
 xdrop/
 ├── node/
-│   ├── bpf/          # XDP program in C (xdrop.c / xdrop.h)
+│   ├── bpf/          # XDP program in C (xdrop_gate.c + xdrop_main.c / xdrop.h)
 │   └── agent/        # Go agent — BPF loader, API server, AtomicSync engine
 ├── controller/
 │   ├── cmd/          # Binary entry point
@@ -222,14 +228,21 @@ BPF/C kernel programs (`node/bpf/`) are licensed under GPL-2.0 as required by th
 
 ---
 
-## Sponsor
+## Sponsors
 
-This project is made possible by [Hytron](https://www.hytron.io/), who generously sponsors the development tooling.
-
+<a href="https://www.hytron.io/">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/sponsor-hytron-dark.png">
   <img src=".github/assets/sponsor-hytron.png" alt="Hytron" height="60">
 </picture>
+</a>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://www.yecaoyun.com/">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/sponsor-yecaoyun-dark.png">
+  <img src=".github/assets/sponsor-yecaoyun.png" alt="Yecaoyun" height="60">
+</picture>
+</a>
 
 ---
 

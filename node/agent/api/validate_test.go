@@ -7,7 +7,11 @@
 // the Controller's normalizeDecoder depends on.
 package api
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestParseProtocolKnownValues(t *testing.T) {
 	cases := []struct {
@@ -68,5 +72,37 @@ func TestProtocolConstantValues(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("%s = %d, want %d (IANA)", c.name, c.got, c.want)
 		}
+	}
+}
+
+// T56: parseProtocolStrict rejects unknown protocols instead of silently
+// mapping them to ProtoAll (Phase 8 P2-1 whitelist combo broadening fix).
+func TestParseProtocolStrict_RejectsUnknown(t *testing.T) {
+	for _, s := range []string{"sctp", "ospf", "banana", "TCP", "UDP"} {
+		_, err := parseProtocolStrict(s)
+		if err == nil {
+			t.Errorf("parseProtocolStrict(%q) should return error for unknown protocol", s)
+		}
+	}
+}
+
+func TestParseProtocolStrict_AcceptsKnown(t *testing.T) {
+	for _, s := range []string{"", "all", "tcp", "udp", "icmp", "icmpv6", "igmp", "gre", "esp"} {
+		_, err := parseProtocolStrict(s)
+		if err != nil {
+			t.Errorf("parseProtocolStrict(%q) returned unexpected error: %v", s, err)
+		}
+	}
+}
+
+// T55: Stats struct must have tailcall_fail JSON field (Phase 8 fail-open observability).
+func TestStats_TailcallFailFieldExists(t *testing.T) {
+	s := Stats{TailcallFail: 42}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("Marshal Stats: %v", err)
+	}
+	if !strings.Contains(string(data), `"tailcall_fail":42`) {
+		t.Errorf("Stats JSON missing tailcall_fail field: %s", string(data))
 	}
 }

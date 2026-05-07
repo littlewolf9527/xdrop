@@ -145,9 +145,7 @@ sudo ./scripts/node.sh start
 v2.5+ pins its BPF objects under `/sys/fs/bpf/xdrop/` so state
 survives across `systemctl restart xdrop-agent`:
 
-- **16 map files** (Phase 3): `blacklist`, `whitelist`, the four
-  LPM tries, etc. Stable map IDs for `bpftool map dump pinned
-  /sys/fs/bpf/xdrop/<name>` and external BPF tooling.
+- **18 map files** (v2.7.0+): `blacklist`/`blacklist_b`, `whitelist`/`whitelist_b`, the four LPM tries, `config_a`/`config_b`, `active_config`, `stats`, `rl_states`, `prog_tail_map`, `tailcall_fail_stats`. Stable map IDs for `bpftool map dump pinned /sys/fs/bpf/xdrop/<name>` and external BPF tooling.
 - **1 XDP link file per interface** (Phase 4): `link_<ifname>`
   (e.g. `link_ens38`). Agent restart does `LoadPinnedLink +
   Link.Update(newProg)` — zero-gap kernel attachment swap. Without

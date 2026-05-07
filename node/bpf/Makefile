@@ -1,29 +1,20 @@
-# XDrop BPF Makefile
+# XDrop BPF Makefile — Phase 8: dual-ELF architecture
 
 CLANG ?= clang
-LLC ?= llc
 
 # Compiler flags
 CFLAGS := -O2 -g -Wall -target bpf -D__BPF__
 CFLAGS += -I./headers
 
-# Source and target
-SRC = xdrop.c
-OBJ = xdrop.elf
-
 .PHONY: all clean
 
-all: $(OBJ)
+all: xdrop_main.elf xdrop_gate.elf
 
-$(OBJ): $(SRC) xdrop.h headers/bpf_helpers.h
-	$(CLANG) $(CFLAGS) -c $(SRC) -o $(OBJ)
+xdrop_main.elf: xdrop_main.c xdrop.h headers/bpf_helpers.h
+	$(CLANG) $(CFLAGS) -c xdrop_main.c -o xdrop_main.elf
+
+xdrop_gate.elf: xdrop_gate.c xdrop.h headers/bpf_helpers.h
+	$(CLANG) $(CFLAGS) -c xdrop_gate.c -o xdrop_gate.elf
 
 clean:
-	rm -f $(OBJ)
-
-# Verify that bpf program is valid (requires Linux with bpftool)
-verify: $(OBJ)
-	@echo "Verifying BPF program..."
-	@bpftool prog load $(OBJ) /sys/fs/bpf/xdrop_test type xdp 2>&1 || true
-	@bpftool prog show name xdrop_firewall 2>/dev/null || echo "Note: Run on Linux to verify"
-	@rm -f /sys/fs/bpf/xdrop_test 2>/dev/null || true
+	rm -f xdrop_main.elf xdrop_gate.elf

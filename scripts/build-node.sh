@@ -20,15 +20,17 @@ NODE_DIR="$ROOT/node"
 BPF_DIR="$NODE_DIR/bpf"
 AGENT_DIR="$NODE_DIR/agent"
 AGENT_BIN="$NODE_DIR/xdrop-agent"
-BPF_ELF="$BPF_DIR/xdrop.elf"
+BPF_MAIN_ELF="$BPF_DIR/xdrop_main.elf"
+BPF_GATE_ELF="$BPF_DIR/xdrop_gate.elf"
 
 build_bpf() {
-    info "Compiling BPF program..."
+    info "Compiling BPF programs (Phase 8 dual-ELF)..."
     command -v clang &>/dev/null || die "clang not found. Install with: apt install clang"
     make -C "$BPF_DIR" clean
     make -C "$BPF_DIR"
-    [[ -f "$BPF_ELF" ]] || die "BPF compile failed — $BPF_ELF not found"
-    info "BPF build OK → $BPF_ELF"
+    [[ -f "$BPF_MAIN_ELF" ]] || die "BPF compile failed — $BPF_MAIN_ELF not found"
+    [[ -f "$BPF_GATE_ELF" ]] || die "BPF compile failed — $BPF_GATE_ELF not found"
+    info "BPF build OK → $BPF_MAIN_ELF + $BPF_GATE_ELF"
 }
 
 build_agent() {

@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="login-logo">
         <div class="logo-icon">
-          <el-icon size="32"><Aim /></el-icon>
+          <span class="logo-diamond">◆</span>
         </div>
         <h1 class="logo-text">XDrop</h1>
       </div>
@@ -129,18 +129,21 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--xs-accent), var(--primary-dark));
+  background: var(--xs-accent);
   border-radius: 12px;
   color: white;
+}
+
+.logo-diamond {
+  font-size: 22px;
+  color: white;
+  line-height: 1;
 }
 
 .logo-text {
   font-size: 2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--xs-accent), var(--primary-light));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--xs-accent);
 }
 
 .login-subtitle {

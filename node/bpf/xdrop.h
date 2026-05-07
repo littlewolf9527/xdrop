@@ -177,7 +177,7 @@ struct rule_value {
 #define CONFIG_BLACKLIST_COUNT 0
 #define CONFIG_WHITELIST_COUNT 1      // Agent-side only; BPF no longer gates on this
 #define CONFIG_RULE_BITMAP 2          // 64-bit bitmap for 34 combo types
-#define CONFIG_BITMAP_VALID 3         // Reserved (unused in double-buffer mode)
+#define CONFIG_WL_BITMAP 3            // 64-bit whitelist combo bitmap (was CONFIG_BITMAP_VALID)
 #define CONFIG_FAST_FORWARD_ENABLED 4 // 1 = fast forward mode enabled
 #define CONFIG_FILTER_IFINDEX 5       // Interface index to filter (0 = all/both)
 
@@ -258,7 +258,7 @@ struct rate_limit_state {
 // CIDR config map indices (continuing from existing 0-5)
 #define CONFIG_CIDR_RULE_COUNT   6   // total CIDR rule count
 #define CONFIG_CIDR_BITMAP       7   // CIDR combo bitmap (lower 34 bits)
-#define CONFIG_CIDR_BITMAP_VALID 8   // 1 = bitmap initialized by agent
+#define CONFIG_WL_MAP_SELECTOR 8     // 0=whitelist, 1=whitelist_b dual-buffer (was CONFIG_CIDR_BITMAP_VALID)
 
 // Dual rule map selector (Phase 4.2)
 #define CONFIG_RULE_MAP_SELECTOR 9   // 0 = blacklist/cidr_blacklist, 1 = blacklist_b/cidr_blist_b
@@ -272,14 +272,16 @@ struct rate_limit_state {
 // Double-buffer config map entries
 #define CONFIG_MAP_ENTRIES 11
 
-// v2.6.1 Phase 4 B5: tail_call prog_array slot assignments (D2 — proposal §7.8.5).
+// tail_call prog_array slot assignments.
 // max_entries=16, reserved slot layout:
-//   0      = xdp_anomaly_verify (B5)
-//   1-3    = payload match (v2.7+ reserved)
+//   0      = xdp_anomaly_verify (v2.6.1 Phase 4 B5)
+//   1      = xdp_firewall_main (Phase 8 — blacklist+CIDR+rate+anomaly)
+//   2-3    = payload match (reserved)
 //   4      = GeoIP filter (reserved)
 //   5-7    = TLS / SNI / JA3 match (reserved)
 //   8-15   = dynamic allocation
 #define TAIL_SLOT_ANOMALY_VERIFY 0
+#define TAIL_SLOT_FIREWALL_MAIN  1
 #define TAIL_SLOT_MAX            16
 
 // v2.6.1 Phase 4 B5: stash struct for tail_call state transfer (D1 — proposal §7.8.5).

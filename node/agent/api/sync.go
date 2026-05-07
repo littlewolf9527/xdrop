@@ -638,9 +638,10 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	}, nil
 }
 
-// AddWhitelistFromSync adds a whitelist entry from Controller sync
+// AddWhitelistFromSync adds a whitelist entry from Controller incremental sync (DiffSync path).
+// Phase 8: uses 31-combo bitmap validation, activeWhitelist(), wlComboRefCount.
+// Lock order: syncMu → publishMu → wlMu.
 func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
-	// Convert to internal WhitelistEntry format
 	req := WhitelistEntry{
 		ID:       entry.ID,
 		SrcIP:    entry.SrcIP,
@@ -650,150 +651,134 @@ func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
 		Protocol: entry.Protocol,
 	}
 
-	// Validate: BPF whitelist only supports exact, src_ip-only, dst_ip-only
-	hasIP := req.SrcIP != "" || req.DstIP != ""
-	hasPortOrProto := req.SrcPort != 0 || req.DstPort != 0 ||
-		(req.Protocol != "" && req.Protocol != "all")
-	hasBothIPs := req.SrcIP != "" && req.DstIP != ""
-
-	if !hasIP && hasPortOrProto {
-		return fmt.Errorf("whitelist with port/protocol but no IP is not supported")
+	// Phase 8: replace old exact-only guard with combo-type validation
+	key, err := h.whitelistToKey(req)
+	if err != nil {
+		return fmt.Errorf("failed to convert whitelist entry: %w", err)
 	}
-	if hasIP && !hasBothIPs && hasPortOrProto {
-		return fmt.Errorf("whitelist with port/protocol requires both src_ip and dst_ip (exact 5-tuple)")
+	newCombo := getComboType(key)
+	if err := validateComboType(newCombo); err != nil {
+		return fmt.Errorf("unsupported whitelist combo: %w", err)
 	}
-	// B-10 (rev13 codex round 12 P2): portless+port guard for whitelist sync.
 	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
 		return err
 	}
 
-	key, err := h.whitelistToKey(req)
-	if err != nil {
-		return fmt.Errorf("failed to convert whitelist: %w", err)
-	}
-
-	keyBytes := ruleKeyToBytes(key)
-	wlValue := []byte{1}
-
-	// Use provided ID or generate new one
 	id := entry.ID
 	if id == "" {
 		id = uuid.New().String()
 	}
 
-	h.publishMu.Lock()
-	h.wlMu.Lock()
+	newKeyBytes := ruleKeyToBytes(key)
+	wlValue := []byte{1}
 
-	// Duplicate key check: reject if another ID already owns this key
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+
 	if existingID, ok := h.wlKeyIndex[key]; ok && existingID != id {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
 		return fmt.Errorf("whitelist key already exists under id %s", existingID)
 	}
 
-	// Check for existing whitelist with same ID (replacement case)
 	var oldKey *RuleKey
+	var oldCombo int
 	wlCountDelta := int64(1)
 	if existingKey, exists := h.wlEntries[id]; exists {
+		// Same-ID same-key: idempotent, no-op
+		if existingKey == key {
+			return nil
+		}
 		keyCopy := existingKey
 		oldKey = &keyCopy
-		wlCountDelta = 0 // replacing, not adding
+		oldCombo = getComboType(*oldKey)
+		wlCountDelta = 0
 	}
 
-	// Step 1: Insert new BPF entry (old entry still intact if different key)
-	if err := h.whitelist.Update(keyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
-		return fmt.Errorf("failed to insert whitelist: %w", err)
-	}
-
-	// Step 2: Delete old BPF entry BEFORE publish (hard failure to avoid orphan)
-	if oldKey != nil && *oldKey != key {
-		if err := h.whitelist.Delete(ruleKeyToBytes(*oldKey)); err != nil {
-			if delErr := h.whitelist.Delete(keyBytes); delErr != nil {
-				log.Printf("[AddWhitelistFromSync] WARN: best-effort cleanup of new BPF entry failed during abort: %v", delErr)
-			}
-			h.wlMu.Unlock()
-			h.publishMu.Unlock()
-			return fmt.Errorf("failed to delete old whitelist entry during replacement: %w", err)
+	// Security-first: delete old BPF entry before adding new (always different key here)
+	if oldKey != nil {
+		if err := h.activeWhitelist().Delete(ruleKeyToBytes(*oldKey)); err != nil {
+			return fmt.Errorf("failed to delete old whitelist entry: %w", err)
 		}
+		h.wlComboRefCount[oldCombo]--
 	}
 
-	// Step 3: Update memory state
+	// Increment new combo refcount BEFORE publish
+	h.wlComboRefCount[newCombo]++
+
+	if err := h.publishConfigUpdate(0, wlCountDelta, 0); err != nil {
+		h.wlComboRefCount[newCombo]--
+		if oldKey != nil {
+			h.wlComboRefCount[oldCombo]++
+			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+				log.Printf("[AddWhitelistFromSync] WARN: rollback re-insert of old entry failed: %v", insErr)
+			}
+		}
+		return fmt.Errorf("config publish failed: %w", err)
+	}
+
+	if err := h.activeWhitelist().Update(newKeyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
+		h.wlComboRefCount[newCombo]--
+		if oldKey != nil {
+			h.wlComboRefCount[oldCombo]++
+			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
+				log.Printf("[AddWhitelistFromSync] WARN: rollback re-insert of old entry failed: %v", insErr)
+			}
+		}
+		if pubErr := h.publishConfigUpdate(0, -wlCountDelta, 0); pubErr != nil {
+			log.Printf("[AddWhitelistFromSync] WARN: rollback re-publish failed: %v", pubErr)
+		}
+		return fmt.Errorf("failed to insert whitelist into BPF: %w", err)
+	}
+
 	if oldKey != nil {
 		delete(h.wlKeyIndex, *oldKey)
 	}
 	h.wlEntries[id] = key
 	h.wlKeyIndex[key] = id
 
-	// Step 4: Publish config
-	if err := h.publishConfigUpdate(0, wlCountDelta, 0); err != nil {
-		// Strong failure: rollback memory + BPF
-		if delErr := h.whitelist.Delete(keyBytes); delErr != nil {
-			log.Printf("[AddWhitelistFromSync] WARN: best-effort rollback delete of new BPF entry failed: %v", delErr)
-		}
-		delete(h.wlEntries, id)
-		delete(h.wlKeyIndex, key)
-		// Restore old state if replacement
-		if oldKey != nil {
-			h.wlEntries[id] = *oldKey
-			h.wlKeyIndex[*oldKey] = id
-			// Re-insert old BPF entry if it was deleted (best-effort restore)
-			if *oldKey != key {
-				if insErr := h.whitelist.Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
-					log.Printf("[AddWhitelistFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
-				}
-			}
-		}
-		h.wlMu.Unlock()
-		h.publishMu.Unlock()
-		return fmt.Errorf("config publish failed: %w", err)
-	}
-
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
-
 	return nil
 }
 
-// ClearAllWhitelistFromSync removes all whitelist entries from BPF and memory.
-// Called before each startup-sync attempt to ensure a clean whitelist state,
-// preventing partial replay residue from failed previous attempts.
-//
-// Returns an error if any BPF delete fails — in that case, the in-memory state
-// for the failed entry is preserved (not wiped) to avoid control-plane/datapath
-// divergence. The caller should treat this as a hard failure for the attempt.
+// ClearAllWhitelistFromSync clears the active whitelist map and resets combo state.
+// Used for error recovery / cleanup paths. Full sync uses DoWhitelistAtomicSync instead.
+// Lock order: syncMu → publishMu → wlMu (must not be called while syncMu is held by caller).
 func (h *Handlers) ClearAllWhitelistFromSync() error {
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
 	h.publishMu.Lock()
 	h.wlMu.Lock()
 
 	deleted := 0
 	for id, key := range h.wlEntries {
+		combo := getComboType(key)
 		keyBytes := ruleKeyToBytes(key)
-		if err := h.whitelist.Delete(keyBytes); err != nil {
-			// BPF delete failed: do NOT wipe in-memory state for this entry.
-			// Publish the delta for entries successfully deleted so far, then bail.
+		if err := h.activeWhitelist().Delete(keyBytes); err != nil {
 			if deleted > 0 {
 				if pubErr := h.publishConfigUpdate(0, -int64(deleted), 0); pubErr != nil {
-					log.Printf("[ClearAllWhitelistFromSync] WARN: publish config failed: %v", pubErr)
+					log.Printf("[ClearAllWhitelistFromSync] WARN: publish failed: %v", pubErr)
 				}
 			}
 			h.wlMu.Unlock()
 			h.publishMu.Unlock()
 			return fmt.Errorf("BPF delete failed for whitelist entry %s: %w", id, err)
 		}
-		// BPF delete succeeded — safe to wipe in-memory state for this entry
+		h.wlComboRefCount[combo]--
 		delete(h.wlKeyIndex, key)
 		delete(h.wlEntries, id)
 		deleted++
 	}
 
+	// Reset all combo refcounts to zero (should already be zero after loop above)
+	h.wlComboRefCount = [64]int{}
+
 	if deleted > 0 {
 		if err := h.publishConfigUpdate(0, -int64(deleted), 0); err != nil {
-			log.Printf("[ClearAllWhitelistFromSync] ERROR: publish config failed after deleting %d entries: %v", deleted, err)
+			log.Printf("[ClearAllWhitelistFromSync] ERROR: publish failed after clearing %d entries: %v", deleted, err)
 			h.wlMu.Unlock()
 			h.publishMu.Unlock()
-			// BPF entries are gone but config count is stale; caller must know convergence failed
 			return fmt.Errorf("whitelist cleared but publishConfigUpdate failed: %w", err)
 		}
 		log.Printf("[ClearAllWhitelistFromSync] Cleared %d whitelist entries", deleted)
@@ -802,4 +787,142 @@ func (h *Handlers) ClearAllWhitelistFromSync() error {
 	h.wlMu.Unlock()
 	h.publishMu.Unlock()
 	return nil
+}
+
+// DoWhitelistAtomicSync performs a zero-window full whitelist replacement.
+// This is the ONLY entry point for full whitelist sync (Controller FullSync + startup pull-sync).
+// Pattern: clear shadow → write shadow → flip selector → commit memory.
+// All CRUD paths are blocked via syncMu for the entire duration.
+func (h *Handlers) DoWhitelistAtomicSync(entries []SyncWhitelistEntry) error {
+	h.syncMu.Lock()
+	defer h.syncMu.Unlock()
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+
+	// --- Phase 1: Pre-validate ALL entries before any shadow writes ---
+	type prepared struct {
+		entry SyncWhitelistEntry
+		key   RuleKey
+		combo int
+	}
+
+	items := make([]prepared, 0, len(entries))
+	seenIDs := make(map[string]bool, len(entries))
+	seenKeys := make(map[RuleKey]bool, len(entries))
+
+	for _, e := range entries {
+		if e.ID == "" {
+			return &wlSyncValidationError{msg: "whitelist entry with empty ID rejected"}
+		}
+		if seenIDs[e.ID] {
+			return &wlSyncValidationError{msg: fmt.Sprintf("duplicate whitelist ID in sync batch: %s", e.ID)}
+		}
+		seenIDs[e.ID] = true
+
+		req := WhitelistEntry{
+			SrcIP: e.SrcIP, DstIP: e.DstIP,
+			SrcPort: e.SrcPort, DstPort: e.DstPort,
+			Protocol: e.Protocol,
+		}
+		key, err := h.whitelistToKey(req)
+		if err != nil {
+			return &wlSyncValidationError{msg: fmt.Sprintf("invalid whitelist entry %s: %v", e.ID, err)}
+		}
+		if seenKeys[key] {
+			return &wlSyncValidationError{msg: fmt.Sprintf("duplicate whitelist key in sync batch for ID %s", e.ID)}
+		}
+		seenKeys[key] = true
+
+		combo := getComboType(key)
+		if err := validateComboType(combo); err != nil {
+			return &wlSyncValidationError{msg: fmt.Sprintf("unsupported combo for whitelist entry %s: %v", e.ID, err)}
+		}
+		if err := validatePortProtocolCompatNode(e.Protocol, e.SrcPort, e.DstPort); err != nil {
+			return &wlSyncValidationError{msg: fmt.Sprintf("port/protocol error for whitelist entry %s: %v", e.ID, err)}
+		}
+
+		items = append(items, prepared{entry: e, key: key, combo: combo})
+	}
+
+	// --- Phase 2: Clear shadow whitelist map ---
+	shadow := h.shadowWhitelist()
+	if err := clearMap(shadow); err != nil {
+		return fmt.Errorf("failed to clear shadow whitelist: %w", err)
+	}
+
+	// --- Phase 3: Write all entries to shadow ---
+	newWlEntries := make(map[string]RuleKey, len(items))
+	newWlKeyIndex := make(map[RuleKey]string, len(items))
+	var newWlComboRefCount [64]int
+
+	for _, item := range items {
+		keyBytes := ruleKeyToBytes(item.key)
+		if err := shadow.Update(keyBytes, []byte{1}, ebpf.UpdateNoExist); err != nil {
+			return fmt.Errorf("shadow whitelist insert failed for %s: %w", item.entry.ID, err)
+		}
+		newWlEntries[item.entry.ID] = item.key
+		newWlKeyIndex[item.key] = item.entry.ID
+		newWlComboRefCount[item.combo]++
+	}
+
+	// --- Phase 4: Flip selector and publish config ---
+	oldWLSlot := h.activeWLSlot
+	oldWlEntries := h.wlEntries
+	oldWlKeyIndex := h.wlKeyIndex
+	oldWlComboRefCount := h.wlComboRefCount
+
+	h.activeWLSlot = 1 - h.activeWLSlot
+	h.wlComboRefCount = newWlComboRefCount
+
+	if err := h.publishConfigUpdateForWLSync(uint64(len(items)), newWlComboRefCount); err != nil {
+		// Rollback in-memory state (shadow map data doesn't matter — selector wasn't flipped)
+		h.activeWLSlot = oldWLSlot
+		h.wlComboRefCount = oldWlComboRefCount
+		return fmt.Errorf("config publish failed: %w", err)
+	}
+
+	// --- Phase 5: Commit memory state (point of no return) ---
+	h.wlEntries = newWlEntries
+	h.wlKeyIndex = newWlKeyIndex
+	// wlComboRefCount and activeWLSlot already updated in Phase 4
+
+	log.Printf("[DoWhitelistAtomicSync] Synced %d whitelist entries, wlSlot=%d", len(items), h.activeWLSlot)
+
+	// --- Phase 6: Cleanup old shadow (now = old active) — best-effort ---
+	if err := clearMap(h.shadowWhitelist()); err != nil {
+		log.Printf("[DoWhitelistAtomicSync] WARN: old shadow whitelist cleanup failed: %v", err)
+	}
+
+	_ = oldWlEntries
+	_ = oldWlKeyIndex
+	return nil
+}
+
+// wlSyncValidationError distinguishes validation errors (400) from I/O errors (500).
+type wlSyncValidationError struct{ msg string }
+
+func (e *wlSyncValidationError) Error() string { return e.msg }
+
+// SyncWhitelistHandler handles POST /api/v1/sync/whitelist — full snapshot sync from Controller.
+func (h *Handlers) SyncWhitelistHandler(c *gin.Context) {
+	var req struct {
+		Entries []SyncWhitelistEntry `json:"entries"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.DoWhitelistAtomicSync(req.Entries); err != nil {
+		if _, ok := err.(*wlSyncValidationError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"total": len(req.Entries), "failed": 0})
 }

@@ -23,20 +23,35 @@ func NewWhitelistService(repo repository.WhitelistRepository, syncService *SyncS
 	}
 }
 
-// validateWhitelistCombo validates that the whitelist combo is supported by BPF datapath.
-// BPF only supports: exact 5-tuple, src_ip-only, dst_ip-only.
-func validateWhitelistCombo(req *model.WhitelistRequest) error {
-	hasIP := req.SrcIP != "" || req.DstIP != ""
-	hasPortOrProto := req.SrcPort != 0 || req.DstPort != 0 ||
-		(req.Protocol != "" && req.Protocol != "all")
-	hasBothIPs := req.SrcIP != "" && req.DstIP != ""
+// normalizeWhitelistProtocol normalizes protocol to a canonical value.
+// "" and "all" both map to protocol byte 0 on the Node, so treat them as the same key.
+func normalizeWhitelistProtocol(proto string) string {
+	if proto == "all" {
+		return ""
+	}
+	return proto
+}
 
-	if !hasIP && hasPortOrProto {
-		return fmt.Errorf("whitelist with port/protocol but no IP is not supported; BPF whitelist only matches: exact 5-tuple, src_ip-only, or dst_ip-only")
+// validateWhitelistCombo validates whitelist combo for Phase 8 (31-combo).
+// Any non-empty five-tuple subset is valid except:
+//   - completely empty (at least one field required)
+//   - protocol="all" alone (would whitelist all traffic)
+//   - portless protocol with port fields
+func validateWhitelistCombo(req *model.WhitelistRequest) error {
+	proto := normalizeWhitelistProtocol(req.Protocol)
+
+	hasAnyField := req.SrcIP != "" || req.DstIP != "" ||
+		req.SrcPort != 0 || req.DstPort != 0 || proto != ""
+	if !hasAnyField {
+		return fmt.Errorf("whitelist entry must have at least one field set")
 	}
-	if hasIP && !hasBothIPs && hasPortOrProto {
-		return fmt.Errorf("whitelist with port/protocol requires both src_ip and dst_ip (exact 5-tuple)")
+
+	// Reject protocol=all alone (no IP, no port) — would whitelist all traffic
+	if req.Protocol == "all" && req.SrcIP == "" && req.DstIP == "" && req.SrcPort == 0 && req.DstPort == 0 {
+		return fmt.Errorf("whitelist with protocol=all and no other fields would allow all traffic")
 	}
+
+	// All other non-empty subsets are valid in Phase 8
 	return nil
 }
 
@@ -61,6 +76,9 @@ func (s *WhitelistService) Create(req *model.WhitelistRequest) (*model.Whitelist
 		return nil, nil, err
 	}
 
+	// Normalize protocol before persistence and duplicate check
+	normalizedProtocol := normalizeWhitelistProtocol(req.Protocol)
+
 	entry := &model.Whitelist{
 		ID:        "wl_" + uuid.New().String()[:8],
 		Name:      req.Name,
@@ -68,7 +86,7 @@ func (s *WhitelistService) Create(req *model.WhitelistRequest) (*model.Whitelist
 		DstIP:     req.DstIP,
 		SrcPort:   req.SrcPort,
 		DstPort:   req.DstPort,
-		Protocol:  req.Protocol,
+		Protocol:  normalizedProtocol,
 		Comment:   req.Comment,
 		CreatedAt: time.Now(),
 	}
@@ -77,7 +95,6 @@ func (s *WhitelistService) Create(req *model.WhitelistRequest) (*model.Whitelist
 		return nil, nil, err
 	}
 
-	// Sync to nodes (waits for completion)
 	syncResult := s.syncService.SyncAddWhitelist(entry)
 
 	return entry, syncResult, nil

@@ -186,25 +186,35 @@ nodes:
 | `dst_cidr` | string | 目的 CIDR 前缀 |
 | `src_port` | int | 源端口（0 = 任意） |
 | `dst_port` | int | 目的端口（0 = 任意） |
-| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""`（任意） |
-| `action` | string | `drop` 或 `rate_limit` |
+| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""`（任意） |
+| `action` | string | **必填。** `drop` 或 `rate_limit` |
 | `rate_limit` | int | PPS 限速值（action 为 rate_limit 时必填） |
-| `pkt_len_min` | int | L3 最小包长（0 = 不限） |
-| `pkt_len_max` | int | L3 最大包长（0 = 不限） |
+| `pkt_len_min` | int | L3 最小包长（0 = 不限）。PUT 时指针三态：省略=保留，0=清除 |
+| `pkt_len_max` | int | L3 最大包长（0 = 不限）。PUT 时指针三态：省略=保留，0=清除 |
 | `tcp_flags` | string | TCP 标志过滤，如 `SYN`、`SYN,ACK`、`RST`（需 `protocol=tcp`） |
+| `decoder` | string | **v2.6+ 语法糖。** `tcp_ack`、`tcp_rst`、`tcp_fin`、`bad_fragment`、`invalid`；展开为 `protocol`/`tcp_flags`/`match_anomaly`；GET 不返回此字段 |
+| `match_anomaly` | int | **v2.6+。** 异常位掩码（`0x01=bad_fragment`、`0x02=invalid`）。通常由 `decoder` 设置；异常规则必须使用 `action=drop` |
+| `enabled` | boolean | 是否活跃并推送到 BPF。默认 `true`。PUT 时指针三态 |
 | `name` | string | 规则名称 |
 | `comment` | string | 备注 |
-| `expires_at` | string | RFC3339 格式的过期时间（可选） |
+| `source` | string | 来源标签（如 `api`、`ui`） |
+| `expires_in` | string | 创建时的相对过期时间，如 `1h`、`24h` |
+| `expires_at` | string (RFC3339) | 过期时间戳，`null` = 永不过期 |
 
 > `src_ip` 与 `src_cidr` 互斥，`dst_ip` 与 `dst_cidr` 同理。
+> 无 L4 端口的协议（`icmp`、`icmpv6`、`igmp`、`gre`、`esp`）不能携带 `src_port`/`dst_port`。
 
 ### 白名单
+
+**Phase 8（v2.7.0+）：** 白名单支持五元组字段的任意子集——`src_ip`、`dst_ip`、`src_port`、`dst_port`、`protocol` 的任意非空组合均有效（31 种规范 combo）。示例：单独 `protocol=udp`、`dst_port=80+protocol=tcp`、`src_ip+protocol=tcp`。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/whitelist` | 条目列表 |
-| `POST` | `/api/v1/whitelist` | 创建条目 |
-| `DELETE` | `/api/v1/whitelist/:id` | 删除条目 |
+| `POST` | `/api/v1/whitelist` | 创建条目（增量同步到节点） |
+| `DELETE` | `/api/v1/whitelist/:id` | 删除条目（增量同步） |
+| `POST` | `/api/v1/whitelist/batch` | 批量创建 |
+| `DELETE` | `/api/v1/whitelist/batch` | 批量删除 |
 
 ### 节点
 
@@ -219,6 +229,7 @@ nodes:
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/stats` | 所有节点的聚合统计 |
+| `GET` | `/api/v1/stats/cache_health` | **v2.6.3+。** 进程内规则统计缓存的运维诊断（状态、新鲜度、各节点错误） |
 
 ---
 

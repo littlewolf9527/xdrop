@@ -32,12 +32,14 @@ const (
 	ConfigBlacklistCount = 0
 	ConfigWhitelistCount = 1
 	ConfigRuleBitmap     = 2
-	// ConfigBitmapValid (3) is reserved, no longer used in double-buffer mode
+	// Phase 8: whitelist combo bitmap (was reserved ConfigBitmapValid)
+	ConfigWLBitmap           = 3
 	ConfigFastForwardEnabled = 4 // 0=traditional, 1=fast-forward (written by main.go at startup)
 	ConfigFilterIfindex      = 5 // ifindex filter target in fast-forward mode, 0=both
 	ConfigCIDRRuleCount      = 6
 	ConfigCIDRBitmap         = 7
-	// ConfigCIDRBitmapValid (8) is reserved, no longer used in double-buffer mode
+	// Phase 8: whitelist dual-buffer selector (was reserved ConfigCIDRBitmapValid)
+	ConfigWLMapSelector = 8
 	ConfigRuleMapSelector = 9 // 0=A, 1=B (dual rule map Phase 4.2)
 	// v2.6.1 Phase 4 B5: counts rules with MatchAnomaly != 0 across
 	// exact + CIDR blacklist. Non-zero gates main program's tail_call
@@ -122,6 +124,7 @@ type Handlers struct {
 	blacklist  *ebpf.Map
 	blacklistB *ebpf.Map // shadow blacklist (Phase 4.2 dual rule map)
 	whitelist  *ebpf.Map
+	whitelistB *ebpf.Map // shadow whitelist (Phase 8 dual-buffer)
 	stats      *ebpf.Map
 	rlStates   *ebpf.Map
 
@@ -133,6 +136,10 @@ type Handlers struct {
 
 	// Dual rule map selector (Phase 4.2)
 	activeRuleSlot int // 0 = blacklist/cidrBlacklist active, 1 = blacklistB/cidrBlacklistB active
+
+	// Phase 8: whitelist dual-buffer selector (independent from blacklist)
+	activeWLSlot    int    // 0 = whitelist active, 1 = whitelistB active
+	wlComboRefCount [64]int // per-combo ref count for whitelist bitmap (protected by publishMu+wlMu)
 
 	// Global publish lock: all publishConfigUpdate() calls must hold this lock.
 	// Rule path and whitelist path share configA/configB/activeSlot, must be serialized.
@@ -171,6 +178,10 @@ type Handlers struct {
 	cidrRules         map[string]StoredCIDRRule // id → stored CIDR rule
 	cidrRuleKeyIndex  map[CIDRRuleKey]string    // reverse index: key → id
 	cidrComboRefCount [64]int                   // per-combo ref count for CIDR bitmap
+
+	// Phase 8: tail-call failure counter (gate-owned PERCPU_ARRAY, max_entries=1).
+	// Non-zero = prog_tail_map slot 1 missing → blacklist chain bypassed (fail-open).
+	tailcallFailStats *ebpf.Map
 
 	// System stats background sampler cache (Phase 5.1)
 	sysStatsCache *SystemStatsCache

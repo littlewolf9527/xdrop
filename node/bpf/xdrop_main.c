@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
+// XDrop - XDP Firewall with five-tuple matching
 //
-// LEGACY FILE — DO NOT COMPILE.
-//
-// This is the pre-Phase-8 monolithic single-ELF source. Phase 8 split it into:
-//   - xdrop_main.c → xdrop_main.elf (blacklist/CIDR/rate/anomaly + verifier_prune_map)
-//   - xdrop_gate.c → xdrop_gate.elf (whitelist 31-combo gate)
-//
-// The Makefile no longer builds this file. It is kept for historical reference only.
-// If you need to build xdrop BPF programs, use `make -C node/bpf` which produces
-// xdrop_main.elf and xdrop_gate.elf.
-//
-// XDrop - XDP Firewall with five-tuple matching (pre-Phase-8 monolith)
+// Features:
+// - Five-tuple matching (src_ip, dst_ip, src_port, dst_port, protocol)
+// - IPv4 and IPv6 dual-stack support
+// - Whitelist support (checked first, always pass)
+// - Blacklist with wildcard matching
+// - Drop/Pass/RateLimit actions
+// - Per-rule and global statistics
 
 #include "xdrop.h"
 
@@ -23,7 +20,9 @@ BPF_MAP_DEF(blacklist) = {
 };
 BPF_MAP_ADD(blacklist);
 
-// Whitelist Map - Five-tuple hash map (priority over blacklist)
+// Whitelist Map - shared map, mainColl creates, gate references via MapReplacements.
+// xdp_firewall_main does NOT reference this map in program logic; it exists here
+// solely so mainColl.Maps["whitelist"] is available for gate's MapReplacements.
 BPF_MAP_DEF(whitelist) = {
     .map_type = BPF_MAP_TYPE_HASH,
     .key_size = sizeof(struct rule_key),
@@ -32,14 +31,19 @@ BPF_MAP_DEF(whitelist) = {
 };
 BPF_MAP_ADD(whitelist);
 
-// Shadow whitelist (B slot) — Phase 8 dual-buffer for atomic full-sync
-BPF_MAP_DEF(whitelist_b) = {
+// Verifier prune map - private to xdp_firewall_main, NEVER written by control plane.
+// Provides verifier early-return pruning point to keep xdp_firewall_main within
+// the 1M instruction budget. max_entries=1 (intentionally tiny, stores no real data).
+// PinNone in Go loader — must not appear in handlers/CRUD/sync/clear/reconcile.
+// WARNING: prune_hit is a real XDP_PASS branch. Any write to this map would bypass
+// blacklist/CIDR/rate/anomaly checks (over-allow). T51 verifies it stays empty.
+BPF_MAP_DEF(verifier_prune_map) = {
     .map_type = BPF_MAP_TYPE_HASH,
     .key_size = sizeof(struct rule_key),
     .value_size = sizeof(__u8),
-    .max_entries = MAX_WHITELIST,
+    .max_entries = 1,
 };
-BPF_MAP_ADD(whitelist_b);
+BPF_MAP_ADD(verifier_prune_map);
 
 // Global statistics (PERCPU for high-performance counters)
 BPF_MAP_DEF(stats) = {
@@ -225,12 +229,6 @@ static INLINE void stats_inc(__u32 idx) {
         ? bpf_map_lookup_elem(&cidr_blacklist, (key_ptr))        \
         : bpf_map_lookup_elem(&cidr_blist_b, (key_ptr)))
 
-// Phase 8: Whitelist dual-buffer lookup macro (mirrors BLACKLIST_LOOKUP)
-#define WHITELIST_LOOKUP(wl_sel, key_ptr)                \
-    ((wl_sel) == 0                                        \
-        ? bpf_map_lookup_elem(&whitelist, (key_ptr))      \
-        : bpf_map_lookup_elem(&whitelist_b, (key_ptr)))
-
 // Helper: read active config slot (call once per function entry)
 static INLINE __u64 read_active_slot(void) {
   __u32 sel_key = ACTIVE_CONFIG_KEY;
@@ -251,14 +249,6 @@ static INLINE __u64 *config_lookup(__u64 slot, __u32 key_idx) {
 // Returns 0 (use blacklist/cidr_blacklist) or 1 (use blacklist_b/cidr_blist_b)
 static INLINE int read_rule_map_selector(__u64 slot) {
   __u32 key = CONFIG_RULE_MAP_SELECTOR;
-  __u64 *sel = config_lookup(slot, key);
-  return sel ? (int)*sel : 0;
-}
-
-// Phase 8: read whitelist map selector from the given config slot (independent from blacklist)
-// Returns 0 (use whitelist) or 1 (use whitelist_b)
-static INLINE int read_wl_map_selector(__u64 slot) {
-  __u32 key = CONFIG_WL_MAP_SELECTOR;
   __u64 *sel = config_lookup(slot, key);
   return sel ? (int)*sel : 0;
 }
@@ -307,7 +297,8 @@ static INLINE void ipv6_copy(struct ip_addr *dst, const __u8 *src) {
 }
 
 // Helper: check if packet length matches rule constraints
-static INLINE int pkt_len_matches(struct rule_value *rule, __u16 pkt_len) {
+// __noinline: 134 call sites — noinline reduces verifier path explosion by ~100×
+static __attribute__((noinline)) int pkt_len_matches(struct rule_value *rule, __u16 pkt_len) {
   if (rule->pkt_len_min > 0 && pkt_len < rule->pkt_len_min)
     return 0;
   if (rule->pkt_len_max > 0 && pkt_len > rule->pkt_len_max)
@@ -317,7 +308,8 @@ static INLINE int pkt_len_matches(struct rule_value *rule, __u16 pkt_len) {
 
 // Helper: check if TCP flags match rule constraints
 // Returns 1 if matches (or no flags check), 0 if mismatch
-static INLINE int tcp_flags_matches(struct rule_value *rule, __u8 proto, __u8 tcp_flags) {
+// __noinline: 134 call sites — noinline reduces verifier path explosion by ~100×
+static __attribute__((noinline)) int tcp_flags_matches(struct rule_value *rule, __u8 proto, __u8 tcp_flags) {
   if (rule->tcp_flags_mask == 0)
     return 1;  // no flags filter on this rule
   if (proto != PROTO_TCP)
@@ -397,12 +389,14 @@ static INLINE __u8 parse_v4_anomaly(struct iphdr *ip, bool *is_frag_out) {
 // check after lookup returns) to keep verifier state space bounded —
 // inlining anomaly_matches into all 33 combo checks pushed load time past
 // the BPF verifier's practical limit on real kernels.
-static INLINE struct rule_value *lookup_rule(struct rule_key *key,
+// len_flags = ((__u32)pkt_len << 8) | tcp_flags  [packed to stay within 5-arg BPF limit]
+static __attribute__((noinline)) struct rule_value *lookup_rule(struct rule_key *key,
                                              struct rule_key *matched_key,
-                                             __u16 pkt_len,
-                                             __u8 tcp_flags,
+                                             __u32 len_flags,
                                              int rule_sel,
                                              __u64 slot) {
+  __u16 pkt_len  = (__u16)(len_flags >> 8);
+  __u8  tcp_flags = (__u8)(len_flags & 0xFF);
 
   // Phase 1: Fast-return if no blacklist rules exist
   __u32 bl_count_idx = CONFIG_BLACKLIST_COUNT;
@@ -933,12 +927,17 @@ static INLINE struct rule_value *lookup_rule(struct rule_key *key,
 // post-match failure — fallback semantics preserved inside the anomaly
 // rule subset.
 
-static INLINE struct rule_value *lookup_rule_anomaly(struct rule_key *key,
+// len_flags = ((__u32)pkt_len << 8) | tcp_flags
+// anom_sel  = ((__u32)pkt_anomaly << 1) | (rule_sel & 1)  [packed to stay within 5-arg BPF limit]
+static __attribute__((noinline)) struct rule_value *lookup_rule_anomaly(struct rule_key *key,
                                              struct rule_key *matched_key,
-                                             __u16 pkt_len,
-                                             __u8 tcp_flags,
-                                             __u8 pkt_anomaly, int rule_sel,
+                                             __u32 len_flags,
+                                             __u32 anom_sel,
                                              __u64 slot) {
+  __u16 pkt_len    = (__u16)(len_flags >> 8);
+  __u8  tcp_flags  = (__u8)(len_flags & 0xFF);
+  __u8  pkt_anomaly = (__u8)(anom_sel >> 1);
+  int   rule_sel   = (int)(anom_sel & 1);
 
   // Phase 1: Fast-return if no blacklist rules exist
   __u32 bl_count_idx = CONFIG_BLACKLIST_COUNT;
@@ -1461,10 +1460,13 @@ static INLINE struct rule_value *lookup_rule_anomaly(struct rule_key *key,
 // Uses integer IDs (from LPM trie stage) instead of IP addresses.
 // Same 34-combo expansion as lookup_rule(), but with much lower instruction cost
 // (simple integer assignment vs 16-byte ip_copy/ip_zero loops).
-static INLINE struct rule_value *
+// len_flags = ((__u32)pkt_len << 8) | tcp_flags  [packed to stay within 5-arg BPF limit]
+static __attribute__((noinline)) struct rule_value *
 lookup_cidr_rule(struct cidr_rule_key *key,
-                 struct cidr_rule_key *matched_key, __u16 pkt_len,
-                 __u8 tcp_flags, int rule_sel, __u64 slot) {
+                 struct cidr_rule_key *matched_key, __u32 len_flags,
+                 int rule_sel, __u64 slot) {
+  __u16 pkt_len  = (__u16)(len_flags >> 8);
+  __u8  tcp_flags = (__u8)(len_flags & 0xFF);
 
   // Fast-return if no CIDR rules exist
   __u32 cnt_idx = CONFIG_CIDR_RULE_COUNT;
@@ -1984,10 +1986,16 @@ lookup_cidr_rule(struct cidr_rule_key *key,
 // lookup_rule_anomaly has to lookup_rule. 33 CIDR combos with anomaly
 // post-match. Called only from xdp_anomaly_verify.
 
-static INLINE struct rule_value *
+// len_flags = ((__u32)pkt_len << 8) | tcp_flags
+// anom_sel  = ((__u32)pkt_anomaly << 1) | (rule_sel & 1)  [packed to stay within 5-arg BPF limit]
+static __attribute__((noinline)) struct rule_value *
 lookup_cidr_rule_anomaly(struct cidr_rule_key *key,
-                 struct cidr_rule_key *matched_key, __u16 pkt_len,
-                 __u8 tcp_flags, __u8 pkt_anomaly, int rule_sel, __u64 slot) {
+                 struct cidr_rule_key *matched_key, __u32 len_flags,
+                 __u32 anom_sel, __u64 slot) {
+  __u16 pkt_len    = (__u16)(len_flags >> 8);
+  __u8  tcp_flags  = (__u8)(len_flags & 0xFF);
+  __u8  pkt_anomaly = (__u8)(anom_sel >> 1);
+  int   rule_sel   = (int)(anom_sel & 1);
 
   // Fast-return if no CIDR rules exist
   __u32 cnt_idx = CONFIG_CIDR_RULE_COUNT;
@@ -2503,23 +2511,10 @@ lookup_cidr_rule_anomaly(struct cidr_rule_key *key,
   return NULL;
 }
 
-// Phase 8: is_whitelisted macro — expands 31-combo whitelist lookup inline.
-// MUST only be used inside xdp_whitelist_gate to avoid polluting
-// xdp_firewall_main's verifier path budget. Expects: rule_key *key,
-// __u64 config_slot, int wl_sel already in scope.
-// Returns (via goto): wl_hit label on match, falls through on miss.
-//
-// This is intentionally NOT a static INLINE function — keeping it as a
-// function caused clang/BPF to include it in xdp_firewall_main's verifier
-// exploration context even though main never called it, pushing main's
-// processed insn count over the 1M verifier limit.
-#define WL_COMBO_CHECK(combo_bit, setup_code)          \
-  if (wl_bitmap & (1ULL << (combo_bit))) {             \
-    setup_code;                                        \
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;\
-    if (WHITELIST_LOOKUP(wl_sel, &lookup))             \
-      goto wl_hit;                                     \
-  }
+// Phase 8: is_whitelisted() REMOVED from xdp_firewall_main.
+// Real whitelist lookup is now in xdp_whitelist_gate (xdrop_gate.c).
+// Verifier pruning is done via verifier_prune_map lookups below in
+// xdp_firewall_main, after L2/L3/L4 parse + rule_key construction.
 
 // Helper: check if fast forward mode is enabled
 static INLINE int is_fast_forward_enabled(void) {
@@ -2622,344 +2617,16 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
   return nexthdr;
 }
 
-// Phase 8: tailcall_fail_stats — per-CPU counter for gate→main tail-call failure.
-// Fail-open path increments this so ops can detect prog_array anomalies.
-// Normal operation: always 0. Non-zero = investigate immediately.
-BPF_MAP_DEF(tailcall_fail_stats) = {
-    .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
-    .key_size = sizeof(__u32),
-    .value_size = sizeof(__u64),
-    .max_entries = 1,
-};
-BPF_MAP_ADD(tailcall_fail_stats);
-
-// Helper: increment tailcall fail counter
-static INLINE void tailcall_fail_inc(void) {
-  __u32 key = 0;
-  __u64 *counter = bpf_map_lookup_elem(&tailcall_fail_stats, &key);
-  if (counter) {
-    (*counter)++;
-  }
-}
-
-// ============================================================================
-// Phase 8 — xdp_whitelist_gate: new XDP entry point (attach to NIC)
-// ============================================================================
-//
-// Packet flow: NIC → xdp_whitelist_gate → [miss/no-wl] → tail_call slot 1
-//              → xdp_firewall_main → [anomaly] → tail_call slot 0
-//              → xdp_anomaly_verify
-//
-// Stats: STATS_TOTAL_PACKETS is incremented ONLY here (gate is the unique entry).
-// Verifier: independent 1M budget (separate from xdp_firewall_main and anomaly).
-SEC("xdp")
-int xdp_whitelist_gate(struct xdp_md *ctx) {
-  void *data_end = (void *)(long)ctx->data_end;
-  void *data = (void *)(long)ctx->data;
-  __u32 ingress_ifindex = ctx->ingress_ifindex;
-
-  // 1. Unique total packet counter
-  stats_inc(STATS_TOTAL_PACKETS);
-
-  // 2. Parse Ethernet header
-  struct ethhdr *eth = data;
-  if ((void *)(eth + 1) > data_end) {
-    return XDP_ABORTED;
-  }
-  __u16 eth_proto = eth->h_proto;
-  void *l3_data = (void *)(eth + 1);
-
-  // Handle VLAN tags (802.1Q and QinQ)
-  if (eth_proto == ETH_P_8021Q_BE || eth_proto == ETH_P_8021AD_BE) {
-    struct vlan_hdr *vlan = l3_data;
-    if ((void *)(vlan + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    eth_proto = vlan->h_vlan_encapsulated_proto;
-    l3_data = (void *)(vlan + 1);
-    if (eth_proto == ETH_P_8021Q_BE) {
-      vlan = l3_data;
-      if ((void *)(vlan + 1) > data_end) {
-        return XDP_ABORTED;
-      }
-      eth_proto = vlan->h_vlan_encapsulated_proto;
-      l3_data = (void *)(vlan + 1);
-    }
-  }
-
-  // 3. FF early bypass — reuse existing helpers (each reads active_slot internally,
-  //    same as v2.6.4 behavior; helper signatures not changed).
-  int fast_forward = is_fast_forward_enabled();
-
-  // Non-IP traffic (ARP, LLDP, etc.)
-  if (fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
-    stats_inc(STATS_PASSED_PACKETS);
-    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-  }
-
-  // Traditional mode: non-IP traffic pass
-  if (!fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
-    stats_inc(STATS_PASSED_PACKETS);
-    return XDP_PASS;
-  }
-
-  // FF: IP traffic on non-filter interface — redirect directly
-  if (fast_forward && !should_filter(ingress_ifindex)) {
-    stats_inc(STATS_PASSED_PACKETS);
-    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-  }
-
-  // 4. Read config slot for whitelist bitmap + selector
-  __u64 config_slot = read_active_slot();
-
-  // 5. Fast path: no whitelist rules → skip L3/L4 parse, tail_call to main
-  __u32 wl_bitmap_idx = CONFIG_WL_BITMAP;
-  __u64 *wl_bitmap_ptr = config_lookup(config_slot, wl_bitmap_idx);
-  __u64 wl_bitmap = wl_bitmap_ptr ? *wl_bitmap_ptr : 0ULL;
-
-  if (wl_bitmap == 0) {
-    bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
-    // Fallthrough: slot 1 not registered — fail-open (availability-first)
-    tailcall_fail_inc();
-    stats_inc(STATS_PASSED_PACKETS);
-    if (fast_forward) {
-      return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-    }
-    return XDP_PASS;
-  }
-
-  // 6. wl_bitmap != 0: parse L3/L4 and build rule_key for whitelist lookup
-  struct rule_key key = {0};
-  void *l4_data = NULL;
-
-  if (eth_proto == ETH_P_IP_BE) {
-    struct iphdr *ip = l3_data;
-    if ((void *)(ip + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    ipv4_to_mapped(&key.src_ip, ip->saddr);
-    ipv4_to_mapped(&key.dst_ip, ip->daddr);
-    key.protocol = ip->protocol;
-    l4_data = l3_data + (ip->ihl * 4);
-    if (l4_data > data_end) {
-      return XDP_ABORTED;
-    }
-  } else if (eth_proto == ETH_P_IPV6_BE) {
-    struct ip6hdr *ip6 = l3_data;
-    if ((void *)(ip6 + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    ipv6_copy(&key.src_ip, ip6->saddr);
-    ipv6_copy(&key.dst_ip, ip6->daddr);
-    void *ext_data = l3_data + sizeof(*ip6);
-    key.protocol = parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data);
-    if (l4_data == NULL || l4_data > data_end) {
-      // Can't find L4 — pass through to main (might still match BL by IP)
-      bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
-      tailcall_fail_inc();
-      stats_inc(STATS_PASSED_PACKETS);
-      if (fast_forward) {
-        return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-      }
-      return XDP_PASS;
-    }
-  } else {
-    // Should not reach here (non-IP already handled above)
-    bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
-    tailcall_fail_inc();
-    stats_inc(STATS_PASSED_PACKETS);
-    return XDP_PASS;
-  }
-
-  // Parse L4 ports for TCP/UDP
-  if (key.protocol == PROTO_TCP) {
-    struct tcphdr *tcp = l4_data;
-    if ((void *)(tcp + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    key.src_port = tcp->source;
-    key.dst_port = tcp->dest;
-  } else if (key.protocol == PROTO_UDP) {
-    struct udphdr *udp = l4_data;
-    if ((void *)(udp + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    key.src_port = udp->source;
-    key.dst_port = udp->dest;
-  }
-
-  // 7-8. Bitmap-gated 31-combo whitelist lookup (inline, not a function call).
-  //      Uses WL_COMBO_CHECK macro. On hit → goto wl_hit.
-  {
-    int wl_sel = read_wl_map_selector(config_slot);
-    struct rule_key lookup;
-
-    WL_COMBO_CHECK(COMBO_EXACT_5TUPLE, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_WILDCARD_SRC_IP, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_WILDCARD_SRC_IP_PORT, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_PROTO, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_ONLY, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_PROTO_ONLY, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_PORT_ONLY, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_DST_PORT_ONLY, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_ONLY, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_DST_PORT, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_DST_PORT, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_DST_PORT_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_PORT_PROTO, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_DST_PORT_PROTO, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_SRC_PORT, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_SRC_PORT_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    // bits 19, 20, 32 are dead aliases — skipped
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP_DST_PORT, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP_DST_PORT_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = 0; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_PORTS, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_IP_PORTS_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_SRC_PORT, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_SRC_PORT_PROTO, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_PORTS_ONLY, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_PORTS_PROTO, {
-      ip_zero(&lookup.src_ip); ip_zero(&lookup.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP_SRC_PORT, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_SRC_DST_IP_SRC_PORT_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = 0; lookup.protocol = key.protocol;
-    })
-    WL_COMBO_CHECK(COMBO_DST_IP_PORTS, {
-      ip_zero(&lookup.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-    WL_COMBO_CHECK(COMBO_ALL_EXCEPT_PROTO, {
-      ip_copy(&lookup.src_ip, &key.src_ip); ip_copy(&lookup.dst_ip, &key.dst_ip);
-      lookup.src_port = key.src_port; lookup.dst_port = key.dst_port; lookup.protocol = 0;
-    })
-  }
-
-  // 9. Whitelist miss — tail_call to main firewall for blacklist/CIDR/rate/anomaly
-  bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
-
-  // Fallthrough: slot 1 tail_call failed — runtime fail-open (availability-first)
-  // BL/CIDR/rate/anomaly are bypassed but business traffic is preserved.
-  tailcall_fail_inc();
-  stats_inc(STATS_PASSED_PACKETS);
-  if (fast_forward) {
-    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-  }
-  return XDP_PASS;
-
-wl_hit:
-  // Whitelist matched — pass immediately, no blacklist check needed.
-  stats_inc(STATS_WHITELISTED);
-  stats_inc(STATS_PASSED_PACKETS);
-  if (fast_forward) {
-    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-  }
-  return XDP_PASS;
-}
-
-// ============================================================================
-// xdp_firewall_main — blacklist + CIDR + rate_limit + anomaly dispatch.
-// Phase 8: this is a tail-call target (prog_tail_map slot 1), NOT the XDP entry point.
-// Called by xdp_whitelist_gate after whitelist miss or wl_bitmap==0.
-// Does NOT increment STATS_TOTAL_PACKETS (gate does that).
-// ============================================================================
+// XDP program entry point
 SEC("xdp")
 int xdp_firewall_main(struct xdp_md *ctx) {
   void *data_end = (void *)(long)ctx->data_end;
   void *data = (void *)(long)ctx->data;
   __u32 ingress_ifindex = ctx->ingress_ifindex;
 
-  // No stats_inc(STATS_TOTAL_PACKETS) — gate already counted this packet.
+  // STATS_TOTAL_PACKETS moved to xdp_whitelist_gate (Phase 8)
 
-  // Read FF mode. Gate already handled non-IP and non-filter bypass, so
-  // packets reaching here are IP + filter interface. We still need fast_forward
-  // for PASS-vs-redirect decisions on rule match results.
+  // Check if fast forward mode is enabled
   int fast_forward = is_fast_forward_enabled();
 
   // Parse Ethernet header
@@ -2993,9 +2660,7 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     }
   }
 
-  // Fast forward mode: Non-IP traffic - redirect directly
-  // (redundant with gate bypass, but kept for safety when main is
-  // called directly during testing or if gate logic changes)
+  // Fast forward mode: Non-IP traffic (ARP, LLDP, etc.) - redirect directly
   if (fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
     stats_inc(STATS_PASSED_PACKETS);
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
@@ -3093,12 +2758,44 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     key.dst_port = udp->dest;
   }
 
-  // Read config slot once per packet (tail_call does not pass args, re-read here).
+  // Read rule map selector once per packet (dual rule map, Phase 4.2)
   __u64 config_slot = read_active_slot();
-
-  // Whitelist already checked by xdp_whitelist_gate (tail_call caller).
-  // Read rule map selector (dual rule map, Phase 4.2)
   int rule_sel = read_rule_map_selector(config_slot);
+
+  // Phase 8: verifier_prune_map lookups — provide verifier early-return pruning.
+  // These 3 unconditional lookups replace the old is_whitelisted() to give the
+  // verifier an early-exit branch before the large blacklist/CIDR/rate/anomaly
+  // code block, keeping xdp_firewall_main within 1M processed instructions.
+  //
+  // verifier_prune_map is NEVER written by control plane (max_entries=1, PinNone).
+  // prune_hit is a real XDP_PASS — but it NEVER fires at runtime because the map
+  // is always empty. DO NOT add any blacklist/drop logic to prune_hit.
+  {
+    struct rule_key prune_lookup = {0};
+
+    // Prune lookup 1: exact 5-tuple
+    ip_copy(&prune_lookup.src_ip, &key.src_ip);
+    ip_copy(&prune_lookup.dst_ip, &key.dst_ip);
+    prune_lookup.src_port = key.src_port;
+    prune_lookup.dst_port = key.dst_port;
+    prune_lookup.protocol = key.protocol;
+    if (bpf_map_lookup_elem(&verifier_prune_map, &prune_lookup))
+      goto prune_hit;
+
+    // Prune lookup 2: src_ip-only
+    ip_zero(&prune_lookup.dst_ip);
+    prune_lookup.src_port = 0;
+    prune_lookup.dst_port = 0;
+    prune_lookup.protocol = 0;
+    if (bpf_map_lookup_elem(&verifier_prune_map, &prune_lookup))
+      goto prune_hit;
+
+    // Prune lookup 3: dst_ip-only
+    ip_zero(&prune_lookup.src_ip);
+    ip_copy(&prune_lookup.dst_ip, &key.dst_ip);
+    if (bpf_map_lookup_elem(&verifier_prune_map, &prune_lookup))
+      goto prune_hit;
+  }
 
   // Lookup blacklist with wildcard fallback (pkt_len / tcp_flags / anomaly
   // checked inline per combo). v2.6.1 Phase 4 B5:
@@ -3113,7 +2810,8 @@ int xdp_firewall_main(struct xdp_md *ctx) {
   //     the system has anomaly rules registered. See the dispatch block
   //     after the rate-limit handling.
   struct rule_key matched_key = {0};
-  struct rule_value *rule = lookup_rule(&key, &matched_key, pkt_len, tcp_flags, rule_sel, config_slot);
+  struct rule_value *rule = lookup_rule(&key, &matched_key,
+      ((__u32)pkt_len << 8) | tcp_flags, rule_sel, config_slot);
 
   if (rule) {
     // Update match counter
@@ -3232,7 +2930,8 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     // processed by xdp_anomaly_verify after the main lookup miss dispatch.
     struct cidr_rule_key cidr_matched_key = {0};
     struct rule_value *cidr_rule =
-        lookup_cidr_rule(&ck, &cidr_matched_key, pkt_len, tcp_flags, rule_sel, config_slot);
+        lookup_cidr_rule(&ck, &cidr_matched_key,
+            ((__u32)pkt_len << 8) | tcp_flags, rule_sel, config_slot);
 
     if (cidr_rule) {
       cidr_rule->match_count++;
@@ -3339,6 +3038,18 @@ int xdp_firewall_main(struct xdp_md *ctx) {
   }
 
   // Default: pass/redirect
+  stats_inc(STATS_PASSED_PACKETS);
+  if (fast_forward) {
+    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
+  }
+  return XDP_PASS;
+
+prune_hit:
+  // Phase 8: verifier pruning branch — NEVER fires at runtime.
+  // verifier_prune_map is always empty (max_entries=1, never written).
+  // This label exists solely to give the BPF verifier an early-return path
+  // that terminates exploration before the blacklist/CIDR/rate/anomaly block.
+  // DO NOT add any blacklist/drop/stat logic here.
   stats_inc(STATS_PASSED_PACKETS);
   if (fast_forward) {
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
@@ -3494,8 +3205,10 @@ int xdp_anomaly_verify(struct xdp_md *ctx) {
   // Anomaly-aware lookup 1: exact 33-combo (lookup_rule_anomaly).
   struct rule_key matched_key = {0};
   struct rule_value *rule = lookup_rule_anomaly(
-      &st->key, &matched_key, st->pkt_len, st->tcp_flags, pkt_anomaly,
-      rule_sel, config_slot);
+      &st->key, &matched_key,
+      ((__u32)st->pkt_len << 8) | st->tcp_flags,
+      ((__u32)pkt_anomaly << 1) | (rule_sel & 1),
+      config_slot);
 
   if (rule) {
     rule->match_count++;
@@ -3560,8 +3273,10 @@ int xdp_anomaly_verify(struct xdp_md *ctx) {
     };
     struct cidr_rule_key cidr_matched_key = {0};
     struct rule_value *cidr_rule = lookup_cidr_rule_anomaly(
-        &ck, &cidr_matched_key, st->pkt_len, st->tcp_flags, pkt_anomaly,
-        rule_sel, config_slot);
+        &ck, &cidr_matched_key,
+        ((__u32)st->pkt_len << 8) | st->tcp_flags,
+        ((__u32)pkt_anomaly << 1) | (rule_sel & 1),
+        config_slot);
     if (cidr_rule) {
       cidr_rule->match_count++;
       if (cidr_rule->action == ACTION_DROP) {
