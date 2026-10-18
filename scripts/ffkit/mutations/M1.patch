@@ -1,0 +1,11 @@
+--- a/node/bpf/xdrop_gate.c
++++ b/node/bpf/xdrop_gate.c
+@@ -139,7 +139,7 @@
+ static INLINE int should_filter(__u32 ingress_ifindex) {
+   __u32 filter_ifindex = get_filter_ifindex();
+   if (filter_ifindex == 0) { return 1; }
+-  return ingress_ifindex == filter_ifindex;
++  return 1;
+ }
+ 
+ static INLINE int read_wl_map_selector(__u64 slot) {

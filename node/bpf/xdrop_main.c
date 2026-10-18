@@ -1,3 +1,4 @@
+#define B1_LOOKUP_GENERATION 54
 // SPDX-License-Identifier: GPL-2.0
 // XDrop - XDP Firewall with five-tuple matching
 //
@@ -10,6 +11,23 @@
 // - Per-rule and global statistics
 
 #include "xdrop.h"
+#include "combo_masks.h"
+
+// Numeric open-coded iterator kfuncs (Linux >= 6.4).  These declarations
+// deliberately stay local to xdrop_main.c: xdrop_gate.c remains outside M1.
+struct bpf_iter_num {
+  __u64 __opaque[1];
+};
+
+extern int bpf_iter_num_new(struct bpf_iter_num *it, int start, int end)
+    __attribute__((section(".ksyms")));
+extern int *bpf_iter_num_next(struct bpf_iter_num *it)
+    __attribute__((section(".ksyms")));
+extern void bpf_iter_num_destroy(struct bpf_iter_num *it)
+    __attribute__((section(".ksyms")));
+
+_Static_assert(sizeof(combo_field_mask) == COMBO_TABLE_SLOTS,
+               "mask table must span the full __u8 index range, not just COMBO_MAX");
 
 // Blacklist Map - Five-tuple hash map
 BPF_MAP_DEF(blacklist) = {
@@ -19,6 +37,106 @@ BPF_MAP_DEF(blacklist) = {
     .max_entries = MAX_RULES,
 };
 BPF_MAP_ADD(blacklist);
+
+// B1 condition rows follow the same rule_sel as their referencing rules.
+BPF_MAP_DEF(cond_a) = {
+    .map_type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(struct rule_key),
+    .value_size = sizeof(struct cond_value),
+    .max_entries = MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(cond_a);
+
+BPF_MAP_DEF(cond_b) = {
+    .map_type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(struct rule_key),
+    .value_size = sizeof(struct cond_value),
+    .max_entries = MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(cond_b);
+
+BPF_MAP_DEF(cidr_cond_a) = {
+    .map_type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(struct cidr_rule_key),
+    .value_size = sizeof(struct cond_value),
+    .max_entries = MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(cidr_cond_a);
+
+BPF_MAP_DEF(cidr_cond_b) = {
+    .map_type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(struct cidr_rule_key),
+    .value_size = sizeof(struct cond_value),
+    .max_entries = MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(cidr_cond_b);
+
+// Shared by exact and CIDR candidates, including physical splits of one rule.
+BPF_MAP_DEF(id_counts) = {
+    .map_type = BPF_MAP_TYPE_PERCPU_HASH,
+    .key_size = sizeof(__u32),
+    .value_size = sizeof(struct logical_rule_counters),
+    .max_entries = 2 * MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(id_counts);
+
+BPF_MAP_DEF(hot_ids) = {
+    .map_type = BPF_MAP_TYPE_LRU_HASH,
+    .key_size = sizeof(__u32),
+    .value_size = sizeof(__u64),
+    .max_entries = 16384,
+    .map_flags = 0,
+};
+BPF_MAP_ADD(hot_ids);
+
+BPF_MAP_DEF(id_rl_states) = {
+    .map_type = BPF_MAP_TYPE_PERCPU_HASH,
+    .key_size = sizeof(__u32),
+    .value_size = sizeof(struct rate_limit_state),
+    .max_entries = 2 * MAX_RULES,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(id_rl_states);
+
+// A flagged rule without its condition row falls back and records a diagnostic.
+BPF_MAP_DEF(cond_row_missing) = {
+    .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
+    .key_size = sizeof(__u32),
+    .value_size = sizeof(__u64),
+    .max_entries = 1,
+};
+BPF_MAP_ADD(cond_row_missing);
+
+
+static INLINE struct logical_rule_counters *count_logical_match(__u32 *id, __u64 bytes) {
+  struct logical_rule_counters *counter = bpf_map_lookup_elem(&id_counts, id);
+  if (!counter) {
+    struct logical_rule_counters zero = {0};
+    bpf_map_update_elem(&id_counts, id, &zero, BPF_NOEXIST);
+    counter = bpf_map_lookup_elem(&id_counts, id);
+  }
+  // Counter allocation failure loses accounting only, never the decision.
+  if (counter) {
+    counter->match++;
+    counter->match_bytes += bytes;
+    __u64 now = bpf_ktime_get_coarse_ns();
+    if (counter->last_hit_ns != now) {
+      counter->last_hit_ns = now;
+      __u64 *v = bpf_map_lookup_elem(&hot_ids, id);
+      if (v) {
+        if (*v != now) *v = now;
+      } else {
+        bpf_map_update_elem(&hot_ids, id, &counter->last_hit_ns, BPF_NOEXIST);
+      }
+    }
+  }
+  return counter;
+}
 
 // Whitelist Map - shared map, mainColl creates, gate references via MapReplacements.
 // xdp_firewall_main does NOT reference this map in program logic; it exists here
@@ -50,7 +168,7 @@ BPF_MAP_DEF(stats) = {
     .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u64),
-    .max_entries = 5,
+    .max_entries = 9,
 };
 BPF_MAP_ADD(stats);
 
@@ -83,13 +201,6 @@ BPF_MAP_DEF(active_config) = {
 BPF_MAP_ADD(active_config);
 
 // Rate limit state map (per-rule token bucket)
-BPF_MAP_DEF(rl_states) = {
-    .map_type = BPF_MAP_TYPE_PERCPU_HASH,
-    .key_size = sizeof(struct rule_key),
-    .value_size = sizeof(struct rate_limit_state),
-    .max_entries = MAX_RULES,
-};
-BPF_MAP_ADD(rl_states);
 
 // === CIDR Maps ===
 
@@ -103,6 +214,15 @@ BPF_MAP_DEF(sv4_cidr_trie) = {
 };
 BPF_MAP_ADD(sv4_cidr_trie);
 
+BPF_MAP_DEF(sv4_cidr_trie_b) = {
+    .map_type = BPF_MAP_TYPE_LPM_TRIE,
+    .key_size = sizeof(struct cidr_v4_lpm_key),
+    .value_size = sizeof(__u32),
+    .max_entries = 50000,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(sv4_cidr_trie_b);
+
 // IPv4 LPM Trie: dst IP → CIDR ID
 BPF_MAP_DEF(dv4_cidr_trie) = {
     .map_type = BPF_MAP_TYPE_LPM_TRIE,
@@ -112,6 +232,15 @@ BPF_MAP_DEF(dv4_cidr_trie) = {
     .map_flags = BPF_F_NO_PREALLOC,
 };
 BPF_MAP_ADD(dv4_cidr_trie);
+
+BPF_MAP_DEF(dv4_cidr_trie_b) = {
+    .map_type = BPF_MAP_TYPE_LPM_TRIE,
+    .key_size = sizeof(struct cidr_v4_lpm_key),
+    .value_size = sizeof(__u32),
+    .max_entries = 50000,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(dv4_cidr_trie_b);
 
 // IPv6 LPM Trie: src IP → CIDR ID
 BPF_MAP_DEF(sv6_cidr_trie) = {
@@ -123,6 +252,15 @@ BPF_MAP_DEF(sv6_cidr_trie) = {
 };
 BPF_MAP_ADD(sv6_cidr_trie);
 
+BPF_MAP_DEF(sv6_cidr_trie_b) = {
+    .map_type = BPF_MAP_TYPE_LPM_TRIE,
+    .key_size = sizeof(struct cidr_v6_lpm_key),
+    .value_size = sizeof(__u32),
+    .max_entries = 50000,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(sv6_cidr_trie_b);
+
 // IPv6 LPM Trie: dst IP → CIDR ID
 BPF_MAP_DEF(dv6_cidr_trie) = {
     .map_type = BPF_MAP_TYPE_LPM_TRIE,
@@ -132,6 +270,15 @@ BPF_MAP_DEF(dv6_cidr_trie) = {
     .map_flags = BPF_F_NO_PREALLOC,
 };
 BPF_MAP_ADD(dv6_cidr_trie);
+
+BPF_MAP_DEF(dv6_cidr_trie_b) = {
+    .map_type = BPF_MAP_TYPE_LPM_TRIE,
+    .key_size = sizeof(struct cidr_v6_lpm_key),
+    .value_size = sizeof(__u32),
+    .max_entries = 50000,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+BPF_MAP_ADD(dv6_cidr_trie_b);
 
 // CIDR blacklist hash map (key uses integer IDs, not IP addresses)
 BPF_MAP_DEF(cidr_blacklist) = {
@@ -143,13 +290,6 @@ BPF_MAP_DEF(cidr_blacklist) = {
 BPF_MAP_ADD(cidr_blacklist);
 
 // CIDR rate limit state map
-BPF_MAP_DEF(cidr_rl_states) = {
-    .map_type = BPF_MAP_TYPE_PERCPU_HASH,
-    .key_size = sizeof(struct cidr_rule_key),
-    .value_size = sizeof(struct rate_limit_state),
-    .max_entries = MAX_RULES,
-};
-BPF_MAP_ADD(cidr_rl_states);
 
 // === Dual Rule Map (Phase 4.2) — Shadow maps for atomic FullSync ===
 
@@ -174,7 +314,7 @@ BPF_MAP_ADD(cidr_blist_b);
 // Device map for XDP redirect (fast forward mode)
 // Key: ingress interface index, Value: egress interface index
 BPF_MAP_DEF(devmap) = {
-    .map_type = BPF_MAP_TYPE_DEVMAP,
+    .map_type = BPF_MAP_TYPE_DEVMAP_HASH,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u32),
     .max_entries = 16,
@@ -185,9 +325,8 @@ BPF_MAP_ADD(devmap);
 
 // prog_tail_map — PROG_ARRAY dispatch table for tail-called XDP programs.
 // D6 kernel hard constraint: key_size=4, value_size=4. Both explicitly 4 B
-// (not sizeof(X) wrappers). D2 slot allocation: slot 0 = xdp_anomaly_verify,
-// slots 1-15 reserved for future matchers (payload / GeoIP / TLS). All
-// occupants must be BPF_PROG_TYPE_XDP (D6 constraint).
+// (not sizeof(X) wrappers). Slot 0 is retired and cleared by the agent at
+// startup; do not reuse. All occupants must be BPF_PROG_TYPE_XDP (D6 constraint).
 BPF_MAP_DEF(prog_tail_map) = {
     .map_type = BPF_MAP_TYPE_PROG_ARRAY,
     .key_size = 4,  // D6: must be exactly 4 bytes, not sizeof()
@@ -196,19 +335,6 @@ BPF_MAP_DEF(prog_tail_map) = {
 };
 BPF_MAP_ADD(prog_tail_map);
 
-// tail_stash — per-CPU single-slot scratch used to transfer state from main
-// program to tail-called program across bpf_tail_call. D1 design: one map,
-// value is a wide union struct, all tail-called nodes share. Single entry
-// per CPU (max_entries=1); same-CPU guarantee validated by §7.8.8 smoke
-// test. RT kernels excluded (D1 RT boundary — see proposal §7.8.5).
-BPF_MAP_DEF(tail_stash) = {
-    .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
-    .key_size = sizeof(__u32),
-    .value_size = sizeof(struct tail_stash),
-    .max_entries = 1,
-};
-BPF_MAP_ADD(tail_stash);
-
 // Helper: increment stats counter
 static INLINE void stats_inc(__u32 idx) {
   __u64 *counter = bpf_map_lookup_elem(&stats, &idx);
@@ -216,6 +342,12 @@ static INLINE void stats_inc(__u32 idx) {
     (*counter)++;
   }
 }
+static INLINE void stats_add(__u32 idx, __u64 bytes) {
+  __u64 *counter = bpf_map_lookup_elem(&stats, &idx);
+  if (counter)
+    *counter += bytes;
+}
+
 
 // === Dual Rule Map lookup macros (Phase 4.2) ===
 // Select blacklist or blacklist_b based on rule_sel value
@@ -228,6 +360,12 @@ static INLINE void stats_inc(__u32 idx) {
     ((rule_sel) == 0                                             \
         ? bpf_map_lookup_elem(&cidr_blacklist, (key_ptr))        \
         : bpf_map_lookup_elem(&cidr_blist_b, (key_ptr)))
+
+// Prefix and rule lookups share the packet's single rule selector snapshot.
+#define CIDR_TRIE_LOOKUP(rule_sel, trie, key_ptr)             \
+    ((rule_sel) == 0                                         \
+        ? bpf_map_lookup_elem(&(trie), (key_ptr))             \
+        : bpf_map_lookup_elem(&trie##_b, (key_ptr)))
 
 // Helper: read active config slot (call once per function entry)
 static INLINE __u64 read_active_slot(void) {
@@ -245,20 +383,71 @@ static INLINE __u64 *config_lookup(__u64 slot, __u32 key_idx) {
   }
 }
 
-static INLINE __u64 rate_limit_percpu_rate(__u64 total_rate, __u64 slot) {
+// TD-074: constants stay local; bucket layout and timestamp units are unchanged.
+#define RL_MAX_DIVISOR 4096ULL
+#define RL_NS 1000000000ULL
+
+static INLINE __u64 rate_limit_divisor(__u64 slot) {
   __u32 idx = CONFIG_RL_CPU_DIVISOR;
   __u64 divisor = RL_DIVISOR_FALLBACK;
   __u64 *configured = config_lookup(slot, idx);
-  if (configured && *configured > 0) {
-    divisor = *configured;
+  if (configured) {
+    __u64 value = *configured;
+    if (value > 0) {
+      divisor = value;
+    }
   }
-
-  __u64 rate = (total_rate + divisor - 1) / divisor;
-  return rate > 0 ? rate : 1;
+  return divisor > RL_MAX_DIVISOR ? RL_MAX_DIVISOR : divisor;
 }
 
-static INLINE __u64 rate_limit_elapsed_cap(void) {
-  return RATE_LIMIT_BURST_MULTIPLIER * 1000000000ULL;
+static INLINE __u64 rate_limit_capacity(__u64 rate, __u64 divisor) {
+  return (2ULL * rate + divisor - 1) / divisor;
+}
+
+// Pure arithmetic, PLAN ③-2 steps 0–6. The caller owns maps and accounting.
+// Overflow bounds: C*d < 2R+d; cap_ns*R < C*d*NS+R;
+// add*d*NS <= elapsed*R. R < 2^32 and d <= 4096 imply every product
+// is < (3R+d)*NS < 1.3e19 < 2^64. Clamp persistent tokens BEFORE adding.
+static INLINE int rate_limit_take(struct rate_limit_state *state, __u64 now,
+                                  __u64 rate, __u64 divisor) {
+  __u64 capacity = rate_limit_capacity(rate, divisor);
+  if (state->last_update == 0) {
+    state->tokens = capacity - 1;
+    state->last_update = now;
+    return 1;
+  }
+  // 0: future timestamps must not wrap into the new-bucket sentinel.
+  if (state->last_update > now) {
+    state->last_update = now;
+  }
+  // 1: normalize an old bucket before tokens + add.
+  __u64 tokens = state->tokens;
+  if (tokens > capacity) {
+    tokens = capacity;
+  }
+  // 2: fractional low rates may need much more than two seconds.
+  __u64 elapsed = now - state->last_update;
+  __u64 cap_ns = (capacity * divisor * RL_NS + rate - 1) / rate;
+  if (elapsed > cap_ns) {
+    elapsed = cap_ns;
+  }
+  // 3: retain the fractional rate until the final division.
+  __u64 add = elapsed * rate / (divisor * RL_NS);
+  // 4: cap after replenishment as well as before it.
+  __u64 t = tokens + add;
+  if (t > capacity) {
+    t = capacity;
+  }
+  // 5: full stops timing; otherwise exchange only rounded-up consumed time.
+  if (t == capacity) {
+    state->last_update = now;
+  } else if (add > 0) {
+    state->last_update += (add * divisor * RL_NS + rate - 1) / rate;
+  }
+  // 6: consume, retaining the time remainder on add-zero passes.
+  int allowed = t >= 1;
+  state->tokens = allowed ? t - 1 : t;
+  return allowed;
 }
 
 // Helper: read rule map selector from the given config slot
@@ -283,6 +472,45 @@ static INLINE void ip_zero(struct ip_addr *ip) {
   for (int i = 0; i < 16; i++) {
     ip->addr[i] = 0;
   }
+}
+
+// Return an all-zero or all-one machine word using arithmetic only.  BPF has
+// no conditional-move instruction, so a conditional expression would put a
+// branch back into every field selection in every iterator trip.
+#define COMBO_WORD_MASK(combo, field_bit)                                     \
+  (-(((__u64)combo_field_mask[(combo)] >> (field_bit)) & 1ULL))
+
+// Both builders overwrite the caller-owned matched_key in full.  Keeping the
+// candidate out of these subprograms' stack is required by the 512-byte
+// combined-call-chain limit.
+static INLINE void build_rule_key(struct rule_key *matched_key,
+                                  const struct rule_key *key, __u32 combo) {
+  __u64 *kw = (__u64 *)matched_key;
+  const __u64 *pk = (const __u64 *)key;
+
+  kw[0] = pk[0] & COMBO_WORD_MASK(combo, 0);
+  kw[1] = pk[1] & COMBO_WORD_MASK(combo, 0);
+  kw[2] = pk[2] & COMBO_WORD_MASK(combo, 1);
+  kw[3] = pk[3] & COMBO_WORD_MASK(combo, 1);
+  kw[4] = pk[4] &
+          ((COMBO_WORD_MASK(combo, 2) & 0x000000000000FFFFULL) |
+           (COMBO_WORD_MASK(combo, 3) & 0x00000000FFFF0000ULL) |
+           (COMBO_WORD_MASK(combo, 4) & 0x000000FF00000000ULL));
+}
+
+static INLINE void build_cidr_rule_key(struct cidr_rule_key *matched_key,
+                                       const struct cidr_rule_key *key,
+                                       __u32 combo) {
+  __u64 *kw = (__u64 *)matched_key;
+  const __u64 *pk = (const __u64 *)key;
+
+  kw[0] = pk[0] &
+          ((COMBO_WORD_MASK(combo, 0) & 0x00000000FFFFFFFFULL) |
+           (COMBO_WORD_MASK(combo, 1) & 0xFFFFFFFF00000000ULL));
+  kw[1] = pk[1] &
+          ((COMBO_WORD_MASK(combo, 2) & 0x000000000000FFFFULL) |
+           (COMBO_WORD_MASK(combo, 3) & 0x00000000FFFF0000ULL) |
+           (COMBO_WORD_MASK(combo, 4) & 0x000000FF00000000ULL));
 }
 
 // Helper: convert IPv4 address to IPv4-mapped IPv6
@@ -313,7 +541,7 @@ static INLINE void ipv6_copy(struct ip_addr *dst, const __u8 *src) {
 }
 
 // Helper: check if packet length matches rule constraints
-// __noinline: 134 call sites — noinline reduces verifier path explosion by ~100×
+// __noinline: shared by all four combo iterators to bound verifier state growth.
 static __attribute__((noinline)) int pkt_len_matches(struct rule_value *rule, __u16 pkt_len) {
   if (rule->pkt_len_min > 0 && pkt_len < rule->pkt_len_min)
     return 0;
@@ -324,12 +552,14 @@ static __attribute__((noinline)) int pkt_len_matches(struct rule_value *rule, __
 
 // Helper: check if TCP flags match rule constraints
 // Returns 1 if matches (or no flags check), 0 if mismatch
-// __noinline: 134 call sites — noinline reduces verifier path explosion by ~100×
-static __attribute__((noinline)) int tcp_flags_matches(struct rule_value *rule, __u8 proto, __u8 tcp_flags) {
+// __noinline: shared by all four combo iterators to bound verifier state growth.
+static __attribute__((noinline)) int tcp_flags_matches(struct rule_value *rule, __u8 proto, __u8 tcp_flags, __u8 l4_valid) {
   if (rule->tcp_flags_mask == 0)
     return 1;  // no flags filter on this rule
   if (proto != PROTO_TCP)
     return 1;  // flags only apply to TCP
+  if (!l4_valid)
+    return 0;
   return (tcp_flags & rule->tcp_flags_mask) == rule->tcp_flags_value;
 }
 
@@ -397,22 +627,116 @@ static INLINE __u8 parse_v4_anomaly(struct iphdr *ip, bool *is_frag_out) {
   return anom;
 }
 
+// F-125 shape: preserve the runtime value while hiding its range from callers.
+__attribute__((noinline)) int xdrop_launder(int x) {
+  asm volatile("" : "+r"(x));
+  return x;
+}
+
+// Parsed packet attributes shared by the four lookup interfaces.
+struct pkt_attrs {
+  __u16 pkt_len;
+  __u8 tcp_flags;
+  __u8 pkt_anomaly;
+  __u8 ttl;
+  __u8 dscp;
+  __u8 icmp_type;
+  __u8 icmp_code;
+  __u8 frag_class;
+  __u8 icmp_valid;
+  __u8 l4_valid;
+  __u8 pad[1];
+  struct cond_output out;
+};
+_Static_assert(sizeof(struct pkt_attrs) == 24, "pkt_attrs ABI");
+_Static_assert(__builtin_offsetof(struct pkt_attrs, l4_valid) == 10, "pkt_attrs.l4_valid ABI");
+_Static_assert(__builtin_offsetof(struct pkt_attrs, out) == 12, "pkt_attrs.out ABI");
+_Static_assert(sizeof(((struct pkt_attrs *)0)->pkt_len) == 2, "pkt_len must stay 16-bit");
+_Static_assert(sizeof(((struct pkt_attrs *)0)->tcp_flags) == 1, "tcp_flags must stay 8-bit");
+_Static_assert(sizeof(((struct pkt_attrs *)0)->pkt_anomaly) == 1, "pkt_anomaly must stay 8-bit");
+
+// Each byte packs the vectors for two successive attribute values.
+#define COND_VEC(tab, x) (((tab)[((__u32)(x) & 255) >> 1] >> (((x) & 1) * 4)) & 15)
+#define COND_LOOKUP(sel, k) ((sel) == 0 ? bpf_map_lookup_elem(&cond_a, (k)) : bpf_map_lookup_elem(&cond_b, (k)))
+#define CIDR_COND_LOOKUP(sel, k) ((sel) == 0 ? bpf_map_lookup_elem(&cidr_cond_a, (k)) : bpf_map_lookup_elem(&cidr_cond_b, (k)))
+
+// F-125's branchless closed-interval comparison, including empty intervals.
+static INLINE __u64 cond_span_matches(__u16 x, __u16 lo, __u16 hi) {
+  long long d = (long long)x - lo, w = (long long)hi - lo;
+  return (~(__u64)(d | (w - d)) >> 63) & 1;
+}
+
+// Global BTF memory arguments are checked here. The caller initializes every
+// attrs byte. Outputs are taken from this one row, at constant candidate indices;
+// the caller never uses this function's unknown-scalar return to index a row.
+__attribute__((noinline)) int cond_match(const struct cond_value *c, struct pkt_attrs *a) {
+  if (!c || !a)
+    return -1;
+  __u32 v = c->active & 15;
+  v &= COND_VEC(c->tab[0], a->ttl);
+  v &= COND_VEC(c->tab[1], a->dscp);
+  v &= COND_VEC(c->tab[2], a->tcp_flags);
+  v &= COND_VEC(c->tab[3], a->icmp_type);
+  v &= COND_VEC(c->tab[4], a->icmp_code);
+  v &= COND_VEC(c->tab[5], a->pkt_anomaly);
+  __u32 z = a->frag_class & 7;
+  v &= (c->frag[z >> 1] >> ((z & 1) * 4)) & 15;
+  if (!a->icmp_valid)
+    v &= ~c->icmp_req;
+  if (!a->l4_valid) v &= ~c->tcp_req;
+  __u16 len = a->pkt_len;
+  if ((v & (1U << 0)) &&
+      (cond_span_matches(len, c->len[0][0].lo, c->len[0][0].hi) |
+       cond_span_matches(len, c->len[0][1].lo, c->len[0][1].hi))) {
+    a->out.winner = 0;
+    a->out.action = c->action[0];
+    a->out.rate = c->rate[0];
+    a->out.rule_id = c->rule_id[0];
+    return 0;
+  }
+  if ((v & (1U << 1)) &&
+      (cond_span_matches(len, c->len[1][0].lo, c->len[1][0].hi) |
+       cond_span_matches(len, c->len[1][1].lo, c->len[1][1].hi))) {
+    a->out.winner = 1;
+    a->out.action = c->action[1];
+    a->out.rate = c->rate[1];
+    a->out.rule_id = c->rule_id[1];
+    return 1;
+  }
+  if ((v & (1U << 2)) &&
+      (cond_span_matches(len, c->len[2][0].lo, c->len[2][0].hi) |
+       cond_span_matches(len, c->len[2][1].lo, c->len[2][1].hi))) {
+    a->out.winner = 2;
+    a->out.action = c->action[2];
+    a->out.rate = c->rate[2];
+    a->out.rule_id = c->rule_id[2];
+    return 2;
+  }
+  if ((v & (1U << 3)) &&
+      (cond_span_matches(len, c->len[3][0].lo, c->len[3][0].hi) |
+       cond_span_matches(len, c->len[3][1].lo, c->len[3][1].hi))) {
+    a->out.winner = 3;
+    a->out.action = c->action[3];
+    a->out.rate = c->rate[3];
+    a->out.rule_id = c->rule_id[3];
+    return 3;
+  }
+  return -1;
+}
+
 // Helper: lookup rule with wildcard fallback (bitmap optimized)
 // pkt_len and tcp_flags are checked inline: if a rule matches the 5-tuple
 // but fails the length or flags constraint, lookup continues to the next
 // (more wildcard) combo instead of returning NULL and silently passing.
-// v2.6 Phase 4: anomaly post-match is handled OUTSIDE this function (single
-// check after lookup returns) to keep verifier state space bounded —
-// inlining anomaly_matches into all 33 combo checks pushed load time past
-// the BPF verifier's practical limit on real kernels.
-// len_flags = ((__u32)pkt_len << 8) | tcp_flags  [packed to stay within 5-arg BPF limit]
+// The non-anomaly post-match predicate stays inside the iterator so a failed
+// candidate continues to the next, more-wildcard combo.
 static __attribute__((noinline)) struct rule_value *lookup_rule(struct rule_key *key,
                                              struct rule_key *matched_key,
-                                             __u32 len_flags,
+                                             struct pkt_attrs *attrs,
                                              int rule_sel,
                                              __u64 slot) {
-  __u16 pkt_len  = (__u16)(len_flags >> 8);
-  __u8  tcp_flags = (__u8)(len_flags & 0xFF);
+  __u16 pkt_len = attrs->pkt_len;
+  __u8 tcp_flags = attrs->tcp_flags;
 
   // Phase 1: Fast-return if no blacklist rules exist
   __u32 bl_count_idx = CONFIG_BLACKLIST_COUNT;
@@ -421,1068 +745,64 @@ static __attribute__((noinline)) struct rule_value *lookup_rule(struct rule_key 
     return NULL;
   }
 
-  // Phase 2: Get rule bitmap for combo-level skip optimization
-  // Bitmap is always valid in double-buffer mode (no BITMAP_VALID needed)
+  // Phase 2: Get rule bitmap for combo-level skip optimization.
   __u32 bitmap_idx = CONFIG_RULE_BITMAP;
   __u64 *bitmap_ptr = config_lookup(slot, bitmap_idx);
   __u64 bitmap = bitmap_ptr ? *bitmap_ptr : ~0ULL;
-
-  struct rule_value *rule;
-  struct rule_key lookup;
-
-  // Combo 0: Exact five-tuple (src_ip + dst_ip + src_port + dst_port +
-  // protocol)
-  if (bitmap & (1ULL << COMBO_EXACT_5TUPLE)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 1: Wildcard src_ip (dst_ip + src_port + dst_port + protocol)
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 2: dst_ip + dst_port + protocol (no src_ip, no src_port)
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 3: dst_ip + protocol only
-  if (bitmap & (1ULL << COMBO_DST_IP_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 4: dst_ip only
-  if (bitmap & (1ULL << COMBO_DST_IP_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 5: protocol only
-  if (bitmap & (1ULL << COMBO_PROTO_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 6: src_port only
-  if (bitmap & (1ULL << COMBO_SRC_PORT_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 7: dst_port only
-  if (bitmap & (1ULL << COMBO_DST_PORT_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 8: src_ip only
-  if (bitmap & (1ULL << COMBO_SRC_IP_ONLY)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 9: src_ip + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 10: src_ip + dst_ip
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 11: src_ip + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 12: dst_ip + dst_port
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 13: src_ip + dst_ip + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 14: src_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 15: src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 16: dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 17: src_ip + src_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 18: src_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Note: Combo 19 was removed (duplicate of Combo 3: COMBO_DST_IP_PROTO)
-
-  // Combo 20: dst_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 21: src_ip + dst_ip + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 22: src_ip + dst_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 23: src_ip + src_port + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 24: src_ip + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 25: dst_ip + src_port
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 26: dst_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 27: src_port + dst_port
-  if (bitmap & (1ULL << COMBO_PORTS_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 28: src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_PORTS_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 29: src_ip + dst_ip + src_port
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 30: src_ip + dst_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 31: dst_ip + src_port + dst_port
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 32: dst_ip + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 33: src_ip + dst_ip + src_port + dst_port (all except protocol)
-  if (bitmap & (1ULL << COMBO_ALL_EXCEPT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  return NULL;
-}
-
-// === v2.6.1 Phase 4 B5: ANOMALY-aware lookup variants ===
-// lookup_rule_anomaly mirrors lookup_rule structurally (33 combos, same
-// bitmap optimization) but replaces the post-match condition with:
-//   `&& rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0`
-// — i.e. it only returns ANOMALY rules whose bits intersect pkt_anomaly.
-// Called ONLY from xdp_anomaly_verify, which has an independent 1M insn
-// budget from xdp_firewall (proposal §7.8.7).
-//
-// D8 invariant: this function iterates ALL 33 combos and goto next_combo on
-// post-match failure — fallback semantics preserved inside the anomaly
-// rule subset.
-
-// len_flags = ((__u32)pkt_len << 8) | tcp_flags
-// anom_sel  = ((__u32)pkt_anomaly << 1) | (rule_sel & 1)  [packed to stay within 5-arg BPF limit]
-static __attribute__((noinline)) struct rule_value *lookup_rule_anomaly(struct rule_key *key,
-                                             struct rule_key *matched_key,
-                                             __u32 len_flags,
-                                             __u32 anom_sel,
-                                             __u64 slot) {
-  __u16 pkt_len    = (__u16)(len_flags >> 8);
-  __u8  tcp_flags  = (__u8)(len_flags & 0xFF);
-  __u8  pkt_anomaly = (__u8)(anom_sel >> 1);
-  int   rule_sel   = (int)(anom_sel & 1);
-
-  // Phase 1: Fast-return if no blacklist rules exist
-  __u32 bl_count_idx = CONFIG_BLACKLIST_COUNT;
-  __u64 *bl_count = config_lookup(slot, bl_count_idx);
-  if (!bl_count || *bl_count == 0) {
-    return NULL;
-  }
-
-  // Phase 2: Get rule bitmap for combo-level skip optimization
-  // Bitmap is always valid in double-buffer mode (no BITMAP_VALID needed)
-  __u32 bitmap_idx = CONFIG_RULE_BITMAP;
-  __u64 *bitmap_ptr = config_lookup(slot, bitmap_idx);
-  __u64 bitmap = bitmap_ptr ? *bitmap_ptr : ~0ULL;
-
-  struct rule_value *rule;
-  struct rule_key lookup;
-
-  // Combo 0: Exact five-tuple (src_ip + dst_ip + src_port + dst_port +
-  // protocol)
-  if (bitmap & (1ULL << COMBO_EXACT_5TUPLE)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 1: Wildcard src_ip (dst_ip + src_port + dst_port + protocol)
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 2: dst_ip + dst_port + protocol (no src_ip, no src_port)
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 3: dst_ip + protocol only
-  if (bitmap & (1ULL << COMBO_DST_IP_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 4: dst_ip only
-  if (bitmap & (1ULL << COMBO_DST_IP_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 5: protocol only
-  if (bitmap & (1ULL << COMBO_PROTO_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 6: src_port only
-  if (bitmap & (1ULL << COMBO_SRC_PORT_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 7: dst_port only
-  if (bitmap & (1ULL << COMBO_DST_PORT_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 8: src_ip only
-  if (bitmap & (1ULL << COMBO_SRC_IP_ONLY)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 9: src_ip + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 10: src_ip + dst_ip
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 11: src_ip + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 12: dst_ip + dst_port
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 13: src_ip + dst_ip + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 14: src_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 15: src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 16: dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 17: src_ip + src_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 18: src_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Note: Combo 19 was removed (duplicate of Combo 3: COMBO_DST_IP_PROTO)
-
-  // Combo 20: dst_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 21: src_ip + dst_ip + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 22: src_ip + dst_ip + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = 0;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 23: src_ip + src_port + dst_port
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 24: src_ip + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 25: dst_ip + src_port
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 26: dst_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 27: src_port + dst_port
-  if (bitmap & (1ULL << COMBO_PORTS_ONLY)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 28: src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_PORTS_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_zero(&lookup.dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 29: src_ip + dst_ip + src_port
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 30: src_ip + dst_ip + src_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = 0;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 31: dst_ip + src_port + dst_port
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 32: dst_ip + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS_PROTO)) {
-    ip_zero(&lookup.src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = key->protocol;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  // Combo 33: src_ip + dst_ip + src_port + dst_port (all except protocol)
-  if (bitmap & (1ULL << COMBO_ALL_EXCEPT_PROTO)) {
-    ip_copy(&lookup.src_ip, &key->src_ip);
-    ip_copy(&lookup.dst_ip, &key->dst_ip);
-    lookup.src_port = key->src_port;
-    lookup.dst_port = key->dst_port;
-    lookup.protocol = 0;
-    lookup.pad[0] = lookup.pad[1] = lookup.pad[2] = 0;
-    rule = BLACKLIST_LOOKUP(rule_sel, &lookup);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = lookup;
-      return rule;
-    }
-  }
-
-  return NULL;
+  // Filter even the ~0ULL fallback through the generator-owned roster bitmap,
+  // so no mask-table hole can construct a five-field wildcard candidate.
+  bitmap &= COMBO_VALID_BITMAP;
+
+  struct rule_value *rule = NULL;
+  struct bpf_iter_num iter;
+  int *pos;
+
+  bpf_iter_num_new(&iter, 0, COMBO_ORDER_LEN);
+  while ((pos = bpf_iter_num_next(&iter))) {
+    __u32 i = (__u32)*pos;
+    if (i >= COMBO_ORDER_LEN)
+      break;
+    __u32 b = combo_order[i];
+    if (b >= COMBO_MAX)
+      break;
+    if (!(bitmap & (1ULL << b)))
+      continue;
+
+    build_rule_key(matched_key, key, b);
+    rule = BLACKLIST_LOOKUP(rule_sel, matched_key);
+    // B1: a missing condition row is a miss, so D8 keeps looking.
+    if (rule && (rule->pad2[0] & RULE_HAS_CONDITIONS)) {
+      const struct cond_value *cv = COND_LOOKUP(rule_sel, matched_key);
+      if (!cv) {
+        __u32 zero = 0;
+        __u64 *missing = bpf_map_lookup_elem(&cond_row_missing, &zero);
+        if (missing)
+          (*missing)++;
+      }
+      if (cv && cond_match(cv, attrs) >= 0)
+        break;
+      rule = NULL;
+      continue;
+    }
+    if (rule && pkt_len_matches(rule, pkt_len) &&
+        tcp_flags_matches(rule, key->protocol, tcp_flags, attrs->l4_valid) &&
+        rule->match_anomaly == 0)
+      break;
+    rule = NULL;
+  }
+  bpf_iter_num_destroy(&iter);
+  return rule;
 }
 
 // Helper: CIDR rule lookup with wildcard fallback (bitmap optimized)
 // Uses integer IDs (from LPM trie stage) instead of IP addresses.
-// Same 34-combo expansion as lookup_rule(), but with much lower instruction cost
-// (simple integer assignment vs 16-byte ip_copy/ip_zero loops).
-// len_flags = ((__u32)pkt_len << 8) | tcp_flags  [packed to stay within 5-arg BPF limit]
+// Same 34-slot/33-present ordered mask table as lookup_rule().
 static __attribute__((noinline)) struct rule_value *
 lookup_cidr_rule(struct cidr_rule_key *key,
-                 struct cidr_rule_key *matched_key, __u32 len_flags,
+                 struct cidr_rule_key *matched_key, struct pkt_attrs *attrs,
                  int rule_sel, __u64 slot) {
-  __u16 pkt_len  = (__u16)(len_flags >> 8);
-  __u8  tcp_flags = (__u8)(len_flags & 0xFF);
+  __u16 pkt_len = attrs->pkt_len;
+  __u8 tcp_flags = attrs->tcp_flags;
 
   // Fast-return if no CIDR rules exist
   __u32 cnt_idx = CONFIG_CIDR_RULE_COUNT;
@@ -1490,1041 +810,55 @@ lookup_cidr_rule(struct cidr_rule_key *key,
   if (!cnt || *cnt == 0)
     return NULL;
 
-  // Get CIDR bitmap (always valid in double-buffer mode)
+  // Get CIDR bitmap (always valid in double-buffer mode).
   __u32 bm_idx = CONFIG_CIDR_BITMAP;
   __u64 *bm_ptr = config_lookup(slot, bm_idx);
   __u64 bitmap = bm_ptr ? *bm_ptr : ~0ULL;
-
-  struct rule_value *rule;
-  struct cidr_rule_key k;
-
-  // Combo 0: exact (src_id + dst_id + src_port + dst_port + protocol)
-  if (bitmap & (1ULL << COMBO_EXACT_5TUPLE)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 1: * + dst_id + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 2: * + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 3: * + dst_id + * + * + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 4: * + dst_id + * + * + *
-  if (bitmap & (1ULL << COMBO_DST_IP_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 5: * + * + * + * + protocol
-  if (bitmap & (1ULL << COMBO_PROTO_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 6: * + * + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_PORT_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 7: * + * + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_PORT_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 8: src_id + * + * + * + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_ONLY)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 9: src_id + * + * + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 10: src_id + dst_id + * + * + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 11: src_id + * + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 12: * + dst_id + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 13: src_id + dst_id + * + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 14: src_id + * + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 15: * + * + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 16: * + * + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 17: src_id + * + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 18: src_id + * + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Note: Combo 19 was removed (duplicate of Combo 3)
-
-  // Combo 20: * + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 21: src_id + dst_id + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 22: src_id + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 23: src_id + * + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 24: src_id + * + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 25: * + dst_id + src_port + * + *
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 26: * + dst_id + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 27: * + * + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_PORTS_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 28: * + * + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_PORTS_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 29: src_id + dst_id + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 30: src_id + dst_id + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 31: * + dst_id + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 32: * + dst_id + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 33: src_id + dst_id + src_port + dst_port + * (all except protocol)
-  if (bitmap & (1ULL << COMBO_ALL_EXCEPT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly == 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  return NULL;
-}
-
-// lookup_cidr_rule_anomaly — same relation to lookup_cidr_rule that
-// lookup_rule_anomaly has to lookup_rule. 33 CIDR combos with anomaly
-// post-match. Called only from xdp_anomaly_verify.
-
-// len_flags = ((__u32)pkt_len << 8) | tcp_flags
-// anom_sel  = ((__u32)pkt_anomaly << 1) | (rule_sel & 1)  [packed to stay within 5-arg BPF limit]
-static __attribute__((noinline)) struct rule_value *
-lookup_cidr_rule_anomaly(struct cidr_rule_key *key,
-                 struct cidr_rule_key *matched_key, __u32 len_flags,
-                 __u32 anom_sel, __u64 slot) {
-  __u16 pkt_len    = (__u16)(len_flags >> 8);
-  __u8  tcp_flags  = (__u8)(len_flags & 0xFF);
-  __u8  pkt_anomaly = (__u8)(anom_sel >> 1);
-  int   rule_sel   = (int)(anom_sel & 1);
-
-  // Fast-return if no CIDR rules exist
-  __u32 cnt_idx = CONFIG_CIDR_RULE_COUNT;
-  __u64 *cnt = config_lookup(slot, cnt_idx);
-  if (!cnt || *cnt == 0)
-    return NULL;
-
-  // Get CIDR bitmap (always valid in double-buffer mode)
-  __u32 bm_idx = CONFIG_CIDR_BITMAP;
-  __u64 *bm_ptr = config_lookup(slot, bm_idx);
-  __u64 bitmap = bm_ptr ? *bm_ptr : ~0ULL;
-
-  struct rule_value *rule;
-  struct cidr_rule_key k;
-
-  // Combo 0: exact (src_id + dst_id + src_port + dst_port + protocol)
-  if (bitmap & (1ULL << COMBO_EXACT_5TUPLE)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 1: * + dst_id + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 2: * + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_WILDCARD_SRC_IP_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 3: * + dst_id + * + * + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 4: * + dst_id + * + * + *
-  if (bitmap & (1ULL << COMBO_DST_IP_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 5: * + * + * + * + protocol
-  if (bitmap & (1ULL << COMBO_PROTO_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 6: * + * + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_PORT_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 7: * + * + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_PORT_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 8: src_id + * + * + * + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_ONLY)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 9: src_id + * + * + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 10: src_id + dst_id + * + * + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 11: src_id + * + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 12: * + dst_id + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 13: src_id + dst_id + * + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 14: src_id + * + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_DST_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 15: * + * + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 16: * + * + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 17: src_id + * + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 18: src_id + * + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_SRC_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Note: Combo 19 was removed (duplicate of Combo 3)
-
-  // Combo 20: * + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_DST_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 21: src_id + dst_id + * + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 22: src_id + dst_id + * + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_DST_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = 0;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 23: src_id + * + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 24: src_id + * + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_SRC_IP_PORTS_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 25: * + dst_id + src_port + * + *
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 26: * + dst_id + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_SRC_PORT_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 27: * + * + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_PORTS_ONLY)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 28: * + * + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_PORTS_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = 0;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 29: src_id + dst_id + src_port + * + *
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 30: src_id + dst_id + src_port + * + protocol
-  if (bitmap & (1ULL << COMBO_SRC_DST_IP_SRC_PORT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = 0;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 31: * + dst_id + src_port + dst_port + *
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 32: * + dst_id + src_port + dst_port + protocol
-  if (bitmap & (1ULL << COMBO_DST_IP_PORTS_PROTO)) {
-    k.src_id = 0;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = key->protocol;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  // Combo 33: src_id + dst_id + src_port + dst_port + * (all except protocol)
-  if (bitmap & (1ULL << COMBO_ALL_EXCEPT_PROTO)) {
-    k.src_id = key->src_id;
-    k.dst_id = key->dst_id;
-    k.src_port = key->src_port;
-    k.dst_port = key->dst_port;
-    k.protocol = 0;
-    k.pad[0] = k.pad[1] = k.pad[2] = 0;
-    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, &k);
-    if (rule && pkt_len_matches(rule, pkt_len) && tcp_flags_matches(rule, key->protocol, tcp_flags) && rule->match_anomaly != 0 && (pkt_anomaly & rule->match_anomaly) != 0) {
-      *matched_key = k;
-      return rule;
-    }
-  }
-
-  return NULL;
+  bitmap &= COMBO_VALID_BITMAP;
+
+  struct rule_value *rule = NULL;
+  struct bpf_iter_num iter;
+  int *pos;
+
+  bpf_iter_num_new(&iter, 0, COMBO_ORDER_LEN);
+  while ((pos = bpf_iter_num_next(&iter))) {
+    __u32 i = (__u32)*pos;
+    if (i >= COMBO_ORDER_LEN)
+      break;
+    __u32 b = combo_order[i];
+    if (b >= COMBO_MAX)
+      break;
+    if (!(bitmap & (1ULL << b)))
+      continue;
+
+    if (((combo_field_mask[b] & CM_SRC_IP) && key->src_id == 0) ||
+        ((combo_field_mask[b] & CM_DST_IP) && key->dst_id == 0))
+      continue;
+
+    build_cidr_rule_key(matched_key, key, b);
+    rule = CIDR_BLACKLIST_LOOKUP(rule_sel, matched_key);
+    // B1: a missing condition row is a miss, so D8 keeps looking.
+    if (rule && (rule->pad2[0] & RULE_HAS_CONDITIONS)) {
+      const struct cond_value *cv = CIDR_COND_LOOKUP(rule_sel, matched_key);
+      if (!cv) {
+        __u32 zero = 0;
+        __u64 *missing = bpf_map_lookup_elem(&cond_row_missing, &zero);
+        if (missing)
+          (*missing)++;
+      }
+      if (cv && cond_match(cv, attrs) >= 0)
+        break;
+      rule = NULL;
+      continue;
+    }
+    if (rule && pkt_len_matches(rule, pkt_len) &&
+        tcp_flags_matches(rule, key->protocol, tcp_flags, attrs->l4_valid) &&
+        rule->match_anomaly == 0)
+      break;
+    rule = NULL;
+  }
+  bpf_iter_num_destroy(&iter);
+  return rule;
 }
 
 // Phase 8: is_whitelisted() REMOVED from xdp_firewall_main.
@@ -2561,8 +895,11 @@ static INLINE int should_filter(__u32 ingress_ifindex) {
 
 // Helper: Get next header and offset for IPv6 extension headers
 // Returns the final protocol number, updates data pointer to L4 header
+// nonfirst also marks an unreadable extension header: L4 is unavailable.
 static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
-                                      void **l4_data) {
+                                      void **l4_data, bool *fragment_seen, bool *nonfirst) {
+  *nonfirst = false;
+  *fragment_seen = false;
 // Walk through extension headers (limited iterations for BPF verifier)
 #pragma unroll
   for (int i = 0; i < IPV6_EXT_MAX_DEPTH; i++) {
@@ -2581,40 +918,57 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
     {
       // Extension header format: next_header(1), length(1), data(variable)
       if (data + 2 > data_end) {
-        return 0;
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
       }
       __u8 *hdr = data;
       __u8 next = hdr[0];
       __u8 len = hdr[1];
       data += (len + 1) * 8; // Length in 8-byte units
       if (data > data_end) {
-        return 0;
+        *l4_data = hdr;
+        *nonfirst = true;
+        return nexthdr;
       }
       nexthdr = next;
       break;
     }
     case 44: // Fragment
     {
+      *fragment_seen = true; // ICMP validity still uses Fragment-header presence.
       // Fragment header: 8 bytes fixed
       if (data + 8 > data_end) {
-        return 0;
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
       }
       __u8 *hdr = data;
+      __u16 field = bpf_ntohs(*(__u16 *)(hdr + 2));
       nexthdr = hdr[0];
       data += 8;
+      if (field & 0xfff8) {
+        *nonfirst = true;
+        *l4_data = data;
+        return nexthdr;
+      }
       break;
     }
     case 51: // AH (Authentication Header)
     {
       if (data + 2 > data_end) {
-        return 0;
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
       }
       __u8 *hdr = data;
       __u8 next = hdr[0];
       __u8 len = hdr[1];
       data += (len + 2) * 4; // AH length in 4-byte units
       if (data > data_end) {
-        return 0;
+        *l4_data = hdr;
+        *nonfirst = true;
+        return nexthdr;
       }
       nexthdr = next;
       break;
@@ -2679,20 +1033,28 @@ int xdp_firewall_main(struct xdp_md *ctx) {
   // Fast forward mode: Non-IP traffic (ARP, LLDP, etc.) - redirect directly
   if (fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }
 
   // Fast forward mode: IP traffic on non-filter interface - redirect directly
   if (fast_forward && !should_filter(ingress_ifindex)) {
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }
 
   // Initialize rule key, packet length (L3), and TCP flags
-  struct rule_key key = {0};
+  struct rule_key key __attribute__((aligned(8))) = {0};
   void *l4_data = NULL;
+  bool nonfirst = false;
   __u16 pkt_len = 0;    // L3 (IP layer) packet length
   __u8 tcp_flags = 0;   // TCP flags byte (0 for non-TCP)
+  __u8 pkt_anomaly = 0;
+  __u8 ttl = 0, dscp = 0, icmp_type = 0, icmp_code = 0;
+  __u8 frag_class = 0, icmp_valid = 0;
+  bool icmp_allowed = false;
+  __u32 declared_len = 0; // Unlike pkt_len, the length check must not wrap.
 
   // Process based on EtherType
   if (eth_proto == ETH_P_IP_BE) {
@@ -2710,10 +1072,30 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     // Get L3 packet length (IPv4 total length)
     pkt_len = bpf_ntohs(ip->tot_len);
 
-    // Parse L4 header. v2.5 behavior preserved — IHL<5 packets get garbage
-    // ports but typically miss all rules. v2.6 Phase 4 anomaly detection
-    // happens LAZILY in the post-lookup gate, never before the 33-combo
-    // chain, to stay within the BPF verifier's 1M-insn budget.
+    declared_len = pkt_len;
+    ttl = ip->ttl;
+    dscp = ip->tos >> 2;
+    __u16 frag = bpf_ntohs(ip->frag_off);
+    nonfirst = (frag & 0x1fff) != 0;
+    frag_class = ((frag & 0x4000) >> 12) | ((frag & 0x2000) >> 12) |
+                 ((frag & 0x1fff) != 0);
+    icmp_allowed = ip->ihl >= 5 && ip->protocol == PROTO_ICMP && !(frag & 0x1fff);
+    bool is_frag = false;
+    pkt_anomaly = parse_v4_anomaly(ip, &is_frag);
+    // A TCP data offset below five is invalid.
+    if (ip->ihl >= 5 && !is_frag && ip->protocol == PROTO_TCP) {
+      void *l4 = l3_data + (ip->ihl * 4);
+      if (l4 + 14 <= data_end) {
+        __u8 doff = ((struct tcphdr *)l4)->doff_res >> 4;
+        if (doff < 5) {
+          pkt_anomaly |= ANOMALY_INVALID;
+        }
+      }
+    }
+    if (ip->protocol == PROTO_TCP && (frag & 0x1fff) == 1)
+      pkt_anomaly |= ANOMALY_TCP_OFFSET_ONE;
+
+    // Keep the existing L4 parse and early-return decisions, including IHL<5.
     l4_data = l3_data + (ip->ihl * 4);
     if (l4_data > data_end) {
       return XDP_ABORTED;
@@ -2732,15 +1114,32 @@ int xdp_firewall_main(struct xdp_md *ctx) {
 
     // Get L3 packet length (IPv6 payload + 40-byte header)
     pkt_len = bpf_ntohs(ip6->payload_len) + 40;
+    declared_len = (__u32)bpf_ntohs(ip6->payload_len) + sizeof(*ip6);
+    ttl = ip6->hop_limit;
+    dscp = (((__u8 *)ip6)[0] & 0x0f) << 2 | (((__u8 *)ip6)[1] >> 6);
+    // Validate the data offset for direct TCP only.
+    if (ip6->nexthdr == PROTO_TCP) {
+      void *v6_l4 = l3_data + sizeof(*ip6);
+      if (v6_l4 + 14 <= data_end) {
+        __u8 doff = ((struct tcphdr *)v6_l4)->doff_res >> 4;
+        if (doff < 5) {
+          pkt_anomaly |= ANOMALY_INVALID;
+        }
+      }
+    }
 
     // Parse extension headers to find transport protocol
     void *ext_data = l3_data + sizeof(*ip6);
+    bool fragment_seen = false;
     key.protocol =
-        parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data);
+        parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data,
+                          &fragment_seen, &nonfirst);
+    icmp_allowed = key.protocol == PROTO_ICMPV6 && !fragment_seen;
 
     if (l4_data == NULL || l4_data > data_end) {
       // Could not find transport header - pass/redirect
       stats_inc(STATS_PASSED_PACKETS);
+      stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
       if (fast_forward) {
         return bpf_redirect_map(&devmap, ingress_ifindex, 0);
       }
@@ -2750,28 +1149,67 @@ int xdp_firewall_main(struct xdp_md *ctx) {
   } else {
     // Not IPv4 or IPv6 - pass/redirect (should not reach here in fast_forward)
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     if (fast_forward) {
       return bpf_redirect_map(&devmap, ingress_ifindex, 0);
     }
     return XDP_PASS;
   }
 
+  // Measure from L3; VLAN/QinQ consume part of the 60-byte minimum frame
+  // (FCS excluded). Excess bytes beyond its possible padding are anomalous.
+  __u64 actual_len = data_end - l3_data;
+  __u64 l2_len = l3_data - data;
+  __u64 padding = l2_len + declared_len < 60 ? 60 - l2_len - declared_len : 0;
+  if (actual_len < declared_len || actual_len - declared_len > padding)
+    pkt_anomaly |= ANOMALY_LENGTH_MISMATCH;
+
+  if (icmp_allowed && l4_data + 2 <= data_end) {
+    icmp_type = ((__u8 *)l4_data)[0];
+    icmp_code = ((__u8 *)l4_data)[1];
+    icmp_valid = 1;
+  }
+
+  __u8 l4_valid = !nonfirst;
+
   // Parse L4 ports for TCP/UDP
-  if (key.protocol == PROTO_TCP) {
-    struct tcphdr *tcp = l4_data;
-    if ((void *)(tcp + 1) > data_end) {
-      return XDP_ABORTED;
+  if (l4_valid) {
+    if (key.protocol == PROTO_TCP) {
+      struct tcphdr *tcp = l4_data;
+      if ((void *)(tcp + 1) > data_end) {
+        return XDP_ABORTED;
+      }
+      key.src_port = tcp->source;
+      key.dst_port = tcp->dest;
+      tcp_flags = tcp->flags;
+    } else if (key.protocol == PROTO_UDP) {
+      struct udphdr *udp = l4_data;
+      if ((void *)(udp + 1) > data_end) {
+        return XDP_ABORTED;
+      }
+      key.src_port = udp->source;
+      key.dst_port = udp->dest;
     }
-    key.src_port = tcp->source;
-    key.dst_port = tcp->dest;
-    tcp_flags = tcp->flags;
-  } else if (key.protocol == PROTO_UDP) {
-    struct udphdr *udp = l4_data;
-    if ((void *)(udp + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    key.src_port = udp->source;
-    key.dst_port = udp->dest;
+  }
+
+  // Extraction is complete. Launder before the first rule/config lookup.
+  {
+    __u32 w0 = (__u32)xdrop_launder((int)((__u32)pkt_len |
+        ((__u32)tcp_flags << 16) | ((__u32)pkt_anomaly << 24)));
+    __u32 w1 = (__u32)xdrop_launder((int)((__u32)ttl | ((__u32)dscp << 8) |
+        ((__u32)icmp_type << 16) | ((__u32)icmp_code << 24)));
+    __u32 w2 = (__u32)xdrop_launder((int)((__u32)frag_class | ((__u32)icmp_valid << 8) |
+        ((__u32)l4_valid << 16)));
+    pkt_len = w0 & 0xffff;
+    tcp_flags = (w0 >> 16) & 0xff;
+    pkt_anomaly = w0 >> 24;
+    ttl = w1 & 0xff;
+    dscp = (w1 >> 8) & 0xff;
+    icmp_type = (w1 >> 16) & 0xff;
+    icmp_code = w1 >> 24;
+    frag_class = w2 & 0xff;
+    icmp_valid = (w2 >> 8) & 0xff;
+    l4_valid = (w2 >> 16) & 0xff;
   }
 
   // Read rule map selector once per packet (dual rule map, Phase 4.2)
@@ -2814,52 +1252,76 @@ int xdp_firewall_main(struct xdp_md *ctx) {
   }
 
   // Lookup blacklist with wildcard fallback (pkt_len / tcp_flags / anomaly
-  // checked inline per combo). v2.6.1 Phase 4 B5:
+  // checked per iterator candidate). v2.6.1 Phase 4 B5:
   //   - The post-match condition `&& rule->match_anomaly == 0` is now
-  //     inlined in every one of the 33 combos in lookup_rule (see xdrop.c
-  //     combo checks). lookup_rule therefore only returns NON-anomaly
+  //     applied to every enabled candidate in lookup_rule. lookup_rule only returns NON-anomaly
   //     rules; anomaly-specialized rules are transparently skipped and
   //     lookup continues fallback to more-wildcard combos. This preserves
   //     the D8 fallback invariant (proposal §7.8.7).
-  //   - Anomaly rules are processed in a tail-called program
-  //     `xdp_anomaly_verify` invoked below, only when lookup misses AND
-  //     the system has anomaly rules registered. See the dispatch block
-  //     after the rate-limit handling.
-  struct rule_key matched_key = {0};
+  struct rule_key matched_key __attribute__((aligned(8))) = {0};
+  struct pkt_attrs attrs = {
+      .pkt_len = pkt_len,
+      .tcp_flags = tcp_flags,
+      .pkt_anomaly = pkt_anomaly,
+      .ttl = ttl,
+      .dscp = dscp,
+      .icmp_type = icmp_type,
+      .icmp_code = icmp_code,
+      .frag_class = frag_class,
+      .icmp_valid = icmp_valid,
+      .l4_valid = l4_valid, .pad = {0},
+      .out = {.winner = COND_NO_WINNER, .action = 0, .pad = {0, 0},
+              .rate = 0, .rule_id = 0},
+  };
   struct rule_value *rule = lookup_rule(&key, &matched_key,
-      ((__u32)pkt_len << 8) | tcp_flags, rule_sel, config_slot);
+      &attrs, rule_sel, config_slot);
 
   if (rule) {
     // Update match counter
-    rule->match_count++;
+    int has_conditions = rule->pad2[0] & RULE_HAS_CONDITIONS;
+    __u32 logical_id = has_conditions ? attrs.out.rule_id : rule->logical_id;
+    struct logical_rule_counters *counter = has_conditions ?
+        count_logical_match(&logical_id, ctx->data_end - ctx->data) : count_logical_match(&rule->logical_id, ctx->data_end - ctx->data);
+    __u8 action = (rule->pad2[0] & RULE_HAS_CONDITIONS) ?
+        attrs.out.action : rule->action;
+    __u32 rate = (rule->pad2[0] & RULE_HAS_CONDITIONS) ?
+        attrs.out.rate : rule->rate_limit;
 
-    if (rule->action == ACTION_DROP) {
-      rule->drop_count++;
+    if (action == ACTION_DROP) {
+      if (counter) {
+        counter->drop++;
+        counter->drop_bytes += ctx->data_end - ctx->data;
+      }
       stats_inc(STATS_DROPPED_PACKETS);
+      stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
       return XDP_DROP;
     }
 
-    if (rule->action == ACTION_RATE_LIMIT && rule->rate_limit > 0) {
+    if (action == ACTION_RATE_LIMIT && rate > 0) {
       // Token bucket rate limiting
       __u64 now = bpf_ktime_get_ns();
-      __u64 rate_pps = rate_limit_percpu_rate(rule->rate_limit, config_slot);
-      __u64 max_tokens = rate_pps * RATE_LIMIT_BURST_MULTIPLIER;
+      __u64 divisor = rate_limit_divisor(config_slot);
+      __u64 max_tokens = rate_limit_capacity((__u64)rate, divisor);
 
       struct rate_limit_state *state =
-          bpf_map_lookup_elem(&rl_states, &matched_key);
+          bpf_map_lookup_elem(&id_rl_states, &logical_id);
       if (!state) {
         struct rate_limit_state new_state = {
             .tokens = max_tokens - 1,
             .last_update = now,
         };
-        if (bpf_map_update_elem(&rl_states, &matched_key, &new_state,
-                                BPF_ANY) != 0) {
-          rule->drop_count++;
+        if (bpf_map_update_elem(&id_rl_states, &logical_id, &new_state, BPF_ANY) != 0) {
+          if (counter) {
+            counter->drop++;
+            counter->drop_bytes += ctx->data_end - ctx->data;
+          }
           stats_inc(STATS_RATE_LIMITED);
           stats_inc(STATS_DROPPED_PACKETS);
+          stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
           return XDP_DROP;
         }
         stats_inc(STATS_PASSED_PACKETS);
+        stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
         if (fast_forward) {
           return bpf_redirect_map(&devmap, ingress_ifindex, 0);
         }
@@ -2867,42 +1329,30 @@ int xdp_firewall_main(struct xdp_md *ctx) {
       }
 
       if (state->last_update == 0) {
-        state->tokens = max_tokens - 1;
-        state->last_update = now;
+        rate_limit_take(state, now, (__u64)rate, divisor);
         stats_inc(STATS_PASSED_PACKETS);
+        stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
         if (fast_forward) {
           return bpf_redirect_map(&devmap, ingress_ifindex, 0);
         }
         return XDP_PASS;
       }
 
-      __u64 elapsed_ns = now - state->last_update;
-      __u64 max_elapsed_ns = rate_limit_elapsed_cap();
-      if (elapsed_ns > max_elapsed_ns) {
-        elapsed_ns = max_elapsed_ns;
-      }
-      __u64 tokens_to_add = (elapsed_ns * rate_pps) / 1000000000ULL;
-
-      __u64 new_tokens = state->tokens + tokens_to_add;
-      if (new_tokens > max_tokens) {
-        new_tokens = max_tokens;
-      }
-
-      if (new_tokens >= 1) {
-        state->tokens = new_tokens - 1;
-        state->last_update = now;
+      if (rate_limit_take(state, now, (__u64)rate, divisor)) {
         stats_inc(STATS_PASSED_PACKETS);
+        stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
         if (fast_forward) {
           return bpf_redirect_map(&devmap, ingress_ifindex, 0);
         }
         return XDP_PASS;
       } else {
-        if (tokens_to_add > 0) {
-          state->last_update = now;
+        if (counter) {
+          counter->drop++;
+          counter->drop_bytes += ctx->data_end - ctx->data;
         }
-        rule->drop_count++;
         stats_inc(STATS_RATE_LIMITED);
         stats_inc(STATS_DROPPED_PACKETS);
+        stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
         return XDP_DROP;
       }
     }
@@ -2920,13 +1370,13 @@ int xdp_firewall_main(struct xdp_md *ctx) {
       // src lookup
       lpm_k.prefixlen = 32;
       __builtin_memcpy(lpm_k.addr, &cidr_ip->saddr, 4);
-      __u32 *sid = bpf_map_lookup_elem(&sv4_cidr_trie, &lpm_k);
+      __u32 *sid = CIDR_TRIE_LOOKUP(rule_sel, sv4_cidr_trie, &lpm_k);
       if (sid)
         src_cidr_id = *sid;
       // dst lookup
       lpm_k.prefixlen = 32;
       __builtin_memcpy(lpm_k.addr, &cidr_ip->daddr, 4);
-      __u32 *did = bpf_map_lookup_elem(&dv4_cidr_trie, &lpm_k);
+      __u32 *did = CIDR_TRIE_LOOKUP(rule_sel, dv4_cidr_trie, &lpm_k);
       if (did)
         dst_cidr_id = *did;
     }
@@ -2938,21 +1388,21 @@ int xdp_firewall_main(struct xdp_md *ctx) {
       // src lookup
       lpm_k6.prefixlen = 128;
       __builtin_memcpy(lpm_k6.addr, cidr_ip6->saddr, 16);
-      __u32 *sid6 = bpf_map_lookup_elem(&sv6_cidr_trie, &lpm_k6);
+      __u32 *sid6 = CIDR_TRIE_LOOKUP(rule_sel, sv6_cidr_trie, &lpm_k6);
       if (sid6)
         src_cidr_id = *sid6;
       // dst lookup
       lpm_k6.prefixlen = 128;
       __builtin_memcpy(lpm_k6.addr, cidr_ip6->daddr, 16);
-      __u32 *did6 = bpf_map_lookup_elem(&dv6_cidr_trie, &lpm_k6);
+      __u32 *did6 = CIDR_TRIE_LOOKUP(rule_sel, dv6_cidr_trie, &lpm_k6);
       if (did6)
         dst_cidr_id = *did6;
     }
   }
 
-  // Stage 2: If any CIDR ID matched, do hash lookup with 34-combo expansion
+  // Stage 2: If any CIDR ID matched, do the ordered mask-table hash lookup
   if (src_cidr_id != 0 || dst_cidr_id != 0) {
-    struct cidr_rule_key ck = {
+    struct cidr_rule_key ck __attribute__((aligned(8))) = {
         .src_id = src_cidr_id,
         .dst_id = dst_cidr_id,
         .src_port = key.src_port,
@@ -2961,45 +1411,71 @@ int xdp_firewall_main(struct xdp_md *ctx) {
         .pad = {0},
     };
 
-    // v2.6.1 Phase 4 B5: lookup_cidr_rule inlines `&& rule->match_anomaly == 0`
-    // in each combo (same treatment as lookup_rule). Anomaly CIDR rules are
-    // processed by xdp_anomaly_verify after the main lookup miss dispatch.
-    struct cidr_rule_key cidr_matched_key = {0};
+    // v2.6.1 Phase 4 B5: lookup_cidr_rule applies `&& rule->match_anomaly == 0`
+    // to each enabled candidate (same treatment as lookup_rule).
+    struct cidr_rule_key cidr_matched_key __attribute__((aligned(8))) = {0};
+    struct pkt_attrs cidr_attrs = {
+        .pkt_len = pkt_len,
+        .tcp_flags = tcp_flags,
+        .pkt_anomaly = pkt_anomaly,
+        .ttl = ttl,
+        .dscp = dscp,
+        .icmp_type = icmp_type,
+        .icmp_code = icmp_code,
+        .frag_class = frag_class,
+        .icmp_valid = icmp_valid,
+        .l4_valid = l4_valid, .pad = {0},
+        .out = {.winner = COND_NO_WINNER, .action = 0, .pad = {0, 0},
+                .rate = 0, .rule_id = 0},
+    };
     struct rule_value *cidr_rule =
         lookup_cidr_rule(&ck, &cidr_matched_key,
-            ((__u32)pkt_len << 8) | tcp_flags, rule_sel, config_slot);
+            &cidr_attrs, rule_sel, config_slot);
 
     if (cidr_rule) {
-      cidr_rule->match_count++;
+      int has_conditions = cidr_rule->pad2[0] & RULE_HAS_CONDITIONS;
+      __u32 logical_id = has_conditions ? cidr_attrs.out.rule_id : cidr_rule->logical_id;
+      struct logical_rule_counters *counter = has_conditions ?
+          count_logical_match(&logical_id, ctx->data_end - ctx->data) : count_logical_match(&cidr_rule->logical_id, ctx->data_end - ctx->data);
+      __u8 action = (cidr_rule->pad2[0] & RULE_HAS_CONDITIONS) ?
+          cidr_attrs.out.action : cidr_rule->action;
+      __u32 rate = (cidr_rule->pad2[0] & RULE_HAS_CONDITIONS) ?
+          cidr_attrs.out.rate : cidr_rule->rate_limit;
 
-      if (cidr_rule->action == ACTION_DROP) {
-        cidr_rule->drop_count++;
+      if (action == ACTION_DROP) {
+        if (counter) {
+          counter->drop++;
+          counter->drop_bytes += ctx->data_end - ctx->data;
+        }
         stats_inc(STATS_DROPPED_PACKETS);
+        stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
         return XDP_DROP;
       }
 
-      if (cidr_rule->action == ACTION_RATE_LIMIT &&
-          cidr_rule->rate_limit > 0) {
+      if (action == ACTION_RATE_LIMIT && rate > 0) {
         __u64 now = bpf_ktime_get_ns();
-        __u64 rate_pps = rate_limit_percpu_rate(cidr_rule->rate_limit,
-                                                config_slot);
-        __u64 max_tokens = rate_pps * RATE_LIMIT_BURST_MULTIPLIER;
+        __u64 divisor = rate_limit_divisor(config_slot);
+        __u64 max_tokens = rate_limit_capacity((__u64)rate, divisor);
 
         struct rate_limit_state *state =
-            bpf_map_lookup_elem(&cidr_rl_states, &cidr_matched_key);
+            bpf_map_lookup_elem(&id_rl_states, &logical_id);
         if (!state) {
           struct rate_limit_state new_state = {
               .tokens = max_tokens - 1,
               .last_update = now,
           };
-          if (bpf_map_update_elem(&cidr_rl_states, &cidr_matched_key,
-                                  &new_state, BPF_ANY) != 0) {
-            cidr_rule->drop_count++;
+          if (bpf_map_update_elem(&id_rl_states, &logical_id, &new_state, BPF_ANY) != 0) {
+            if (counter) {
+              counter->drop++;
+              counter->drop_bytes += ctx->data_end - ctx->data;
+            }
             stats_inc(STATS_RATE_LIMITED);
             stats_inc(STATS_DROPPED_PACKETS);
+            stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
             return XDP_DROP;
           }
           stats_inc(STATS_PASSED_PACKETS);
+          stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
           if (fast_forward) {
             return bpf_redirect_map(&devmap, ingress_ifindex, 0);
           }
@@ -3007,94 +1483,41 @@ int xdp_firewall_main(struct xdp_md *ctx) {
         }
 
         if (state->last_update == 0) {
-          state->tokens = max_tokens - 1;
-          state->last_update = now;
+          rate_limit_take(state, now, (__u64)rate, divisor);
           stats_inc(STATS_PASSED_PACKETS);
+          stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
           if (fast_forward) {
             return bpf_redirect_map(&devmap, ingress_ifindex, 0);
           }
           return XDP_PASS;
         }
 
-        __u64 elapsed_ns = now - state->last_update;
-        __u64 max_elapsed_ns = rate_limit_elapsed_cap();
-        if (elapsed_ns > max_elapsed_ns) {
-          elapsed_ns = max_elapsed_ns;
-        }
-        __u64 tokens_to_add = (elapsed_ns * rate_pps) / 1000000000ULL;
-
-        __u64 new_tokens = state->tokens + tokens_to_add;
-        if (new_tokens > max_tokens) {
-          new_tokens = max_tokens;
-        }
-
-        if (new_tokens >= 1) {
-          state->tokens = new_tokens - 1;
-          state->last_update = now;
+        if (rate_limit_take(state, now, (__u64)rate, divisor)) {
           stats_inc(STATS_PASSED_PACKETS);
+          stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
           if (fast_forward) {
             return bpf_redirect_map(&devmap, ingress_ifindex, 0);
           }
           return XDP_PASS;
         } else {
-          if (tokens_to_add > 0) {
-            state->last_update = now;
+          if (counter) {
+            counter->drop++;
+            counter->drop_bytes += ctx->data_end - ctx->data;
           }
-          cidr_rule->drop_count++;
           stats_inc(STATS_RATE_LIMITED);
           stats_inc(STATS_DROPPED_PACKETS);
+          stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
           return XDP_DROP;
         }
       }
     }
   }
 
-  // === v2.6.1 Phase 4 B5: anomaly dispatch on lookup miss ===
-  //
-  // Both exact and CIDR lookups (above) missed. If the system has at least
-  // one anomaly rule registered (CONFIG_ANOMALY_RULE_COUNT > 0), tail_call
-  // into xdp_anomaly_verify for an anomaly-aware re-lookup in its own 1M
-  // verifier budget. If no anomaly rules exist, skip the tail_call entirely
-  // — hot path (§7.8.4 scenario "no anomaly rules") stays zero-cost.
-  //
-  // Per D1 (proposal §7.8.5): stash main's parsed state into the per-CPU
-  // tail_stash map so anomaly_verify can run its lookup without re-parsing
-  // the full packet again (though it DOES still re-parse to compute
-  // pkt_anomaly bits — that's its specialty).
-  //
-  // Per D4: static dispatch — only one tail_call site in main program,
-  // targeting TAIL_SLOT_ANOMALY_VERIFY. Future payload / GeoIP slots
-  // reserved but not wired in B5 (proposal §7.8.5 D4).
-  //
-  // Per D8: fallback invariant is preserved because lookup_rule already
-  // iterated all 33 non-anomaly combos; anomaly_verify will iterate all
-  // 33 anomaly combos independently.
-  __u64 *anomaly_count_ptr = config_lookup(config_slot, CONFIG_ANOMALY_RULE_COUNT);
-  if (anomaly_count_ptr && *anomaly_count_ptr > 0) {
-    __u32 stash_zero = 0;
-    struct tail_stash stash = {
-        .stage = 0,
-        .action = 0,
-        .match_anomaly = 0,
-        .pkt_len = pkt_len,
-        .tcp_flags = tcp_flags,
-        .eth_proto_is_v6 = (eth_proto == ETH_P_IPV6_BE) ? 1 : 0,
-        // v2.6.1 FF regression fix: stash FF state so anomaly_verify can
-        // redirect without re-reading config/ctx (verifier insn budget).
-        .is_ff = fast_forward ? 1 : 0,
-        .ingress_ifindex = ingress_ifindex,
-        .key = key,
-    };
-    bpf_map_update_elem(&tail_stash, &stash_zero, &stash, 0 /* BPF_ANY */);
-    bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_ANOMALY_VERIFY);
-    // Fallthrough: tail_call failed (prog_array slot empty, callee missing,
-    // verifier constraint). Safe default: PASS, same as "no anomaly rule"
-    // branch. Ops will see anomaly rules as inactive; config counter >0
-    // while tail_call consistently fallthrough-s signals loader bug.
-  }
+  // Both exact and CIDR lookups missed; use the default pass/redirect path.
 
   // Default: pass/redirect
   stats_inc(STATS_PASSED_PACKETS);
+  stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
   if (fast_forward) {
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }
@@ -3107,253 +1530,7 @@ prune_hit:
   // that terminates exploration before the blacklist/CIDR/rate/anomaly block.
   // DO NOT add any blacklist/drop/stat logic here.
   stats_inc(STATS_PASSED_PACKETS);
-  if (fast_forward) {
-    return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-  }
-  return XDP_PASS;
-}
-
-// ============================================================================
-// v2.6.1 Phase 4 B5 — xdp_anomaly_verify: tail-called program
-// ============================================================================
-//
-// Invoked by xdp_firewall_main via `bpf_tail_call(ctx, &prog_tail_map,
-// TAIL_SLOT_ANOMALY_VERIFY)` when:
-//   1. Main program lookup_rule / lookup_cidr_rule both missed (no
-//      match_anomaly=0 rule matches this packet).
-//   2. CONFIG_ANOMALY_RULE_COUNT > 0 (system has at least one anomaly rule).
-//
-// Responsibilities:
-//   1. Read saved state (key, pkt_len, tcp_flags, eth_proto hint) from
-//      per-CPU tail_stash.
-//   2. Re-parse packet headers to compute pkt_anomaly bits. The main
-//      program already parsed the packet but cannot pass parse results
-//      across bpf_tail_call except via the stash (D1).
-//   3. Run anomaly-aware 33-combo lookup (lookup_rule_anomaly +
-//      lookup_cidr_rule_anomaly) filtered by pkt_anomaly intersection.
-//   4. If matched: execute action (DROP or rate_limit). On rate_limit,
-//      use a fresh reference to the rule (re-lookup by matched_key) —
-//      rule pointers from the anomaly-aware lookup already point at the
-//      map value, fine to increment counters directly.
-//   5. If not matched: XDP_PASS.
-//
-// D8 fallback invariant: this program's lookup_rule_anomaly iterates ALL
-// 33 combos and continues on post-match failure. Fallback is preserved
-// within the ANOMALY rule subset.
-//
-// D7 stack budget: keep ≤ 256 B. All helper calls are __always_inline.
-//
-// Performance note (§7.8.4): this program runs only on main lookup miss
-// with anomaly_rule_count > 0. Typical DDoS mitigation cold path.
-SEC("xdp")
-int xdp_anomaly_verify(struct xdp_md *ctx) {
-  void *data_end = (void *)(long)ctx->data_end;
-  void *data = (void *)(long)ctx->data;
-  // FF state is pulled from the stash (main resolved it once and wrote it
-  // before tail_call). Doing config_lookup() again here would re-explode the
-  // verifier's insn budget: in the v2.6.1 FF regression fix attempt, adding
-  // a second config-map null check at the top pushed xdp_anomaly_verify past
-  // 1M insns on 6.12. Keeping FF state on the stash avoids that.
-  //
-  // B5 v2.6.1 initial release missed the FF branch entirely because D8 ran
-  // in traditional mode. Symptom: FF bridge dropped all non-anomaly traffic
-  // once any anomaly rule was registered (every miss in main → tail_call →
-  // anomaly_verify XDP_PASS → Linux stack on a no-IP interface).
-  __u8 fast_forward = 0;
-  __u32 ingress_ifindex = 0;
-
-  // Read stashed state (main program wrote this before tail_call).
-  __u32 zero = 0;
-  struct tail_stash *st = bpf_map_lookup_elem(&tail_stash, &zero);
-  if (!st) {
-    // Stash unavailable (should never happen). Without FF context we cannot
-    // safely redirect — fall back to XDP_PASS. Under a compliant main
-    // program this branch is unreachable.
-    return XDP_PASS;
-  }
-  fast_forward = st->is_ff;
-  ingress_ifindex = st->ingress_ifindex;
-
-  // Parse ethernet + vlan again (tail_call scrubs stack).
-  struct ethhdr *eth = data;
-  if ((void *)(eth + 1) > data_end) {
-    return XDP_ABORTED;
-  }
-  __u16 eth_proto = eth->h_proto;
-  void *l3_data = (void *)(eth + 1);
-  if (eth_proto == ETH_P_8021Q_BE || eth_proto == ETH_P_8021AD_BE) {
-    struct vlan_hdr *vlan = l3_data;
-    if ((void *)(vlan + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    eth_proto = vlan->h_vlan_encapsulated_proto;
-    l3_data = (void *)(vlan + 1);
-    if (eth_proto == ETH_P_8021Q_BE) {
-      vlan = l3_data;
-      if ((void *)(vlan + 1) > data_end) {
-        return XDP_ABORTED;
-      }
-      eth_proto = vlan->h_vlan_encapsulated_proto;
-      l3_data = (void *)(vlan + 1);
-    }
-  }
-
-  // Compute pkt_anomaly.
-  __u8 pkt_anomaly = 0;
-  if (eth_proto == ETH_P_IP_BE) {
-    struct iphdr *ip = l3_data;
-    if ((void *)(ip + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    bool is_frag = false;
-    pkt_anomaly = parse_v4_anomaly(ip, &is_frag);
-    // TCP doff check — only when L4 header is safely reachable.
-    if (ip->ihl >= 5 && !is_frag && ip->protocol == PROTO_TCP) {
-      void *l4 = l3_data + (ip->ihl * 4);
-      if (l4 + 14 <= data_end) {
-        __u8 doff = ((struct tcphdr *)l4)->doff_res >> 4;
-        if (doff < 5) {
-          pkt_anomaly |= ANOMALY_INVALID;
-        }
-      }
-    }
-  } else if (eth_proto == ETH_P_IPV6_BE) {
-    // IPv6 scope (proposal §7.4.1 / codex round 9 P1.2 fix):
-    //   - bad_fragment: NOT detected on IPv6 (extension header walking for
-    //     fragment detection stays deferred; Controller's IPv6 scope guard
-    //     in decoder.go rejects bad_fragment+v6 targets up front).
-    //   - invalid: fires ONLY on DIRECT TCP doff<5 — i.e. ip6->nexthdr is
-    //     literally PROTO_TCP, no extension header in between. This matches
-    //     xsight.c parse_ip IPv6 branch contract: `if (nexthdr == TCP)` only,
-    //     no walker. Proposal §13.4.1 P4-UT-15b and §14 LT-D-4-11b explicitly
-    //     lock this as a contract — an HBH/Routing/Fragment ext header before
-    //     TCP must NOT trigger invalid, even with doff<5. If a future revision
-    //     wants to walk ext headers for invalid detection, that's an opt-in
-    //     contract change and these two locks must move first.
-    struct ip6hdr *ip6 = l3_data;
-    if ((void *)(ip6 + 1) > data_end) {
-      return XDP_ABORTED;
-    }
-    if (ip6->nexthdr == PROTO_TCP) {
-      void *v6_l4 = l3_data + sizeof(*ip6);
-      // TCP header is 20 bytes fixed; doff lives in byte 12. Require enough
-      // bytes bounded before reading.
-      if (v6_l4 + 14 <= data_end) {
-        __u8 doff = ((struct tcphdr *)v6_l4)->doff_res >> 4;
-        if (doff < 5) {
-          pkt_anomaly |= ANOMALY_INVALID;
-        }
-      }
-    }
-  }
-
-  if (pkt_anomaly == 0) {
-    // Packet carries no anomaly bits — no anomaly rule can match. Fast exit
-    // via the unified pass_or_redirect sink (FF mode redirects, traditional
-    // mode XDP_PASS).
-    goto pass_or_redirect;
-  }
-
-  // Read active slot / rule_sel (same as main program).
-  __u64 config_slot = read_active_slot();
-  int rule_sel = read_rule_map_selector(config_slot);
-
-  // Anomaly-aware lookup 1: exact 33-combo (lookup_rule_anomaly).
-  struct rule_key matched_key = {0};
-  struct rule_value *rule = lookup_rule_anomaly(
-      &st->key, &matched_key,
-      ((__u32)st->pkt_len << 8) | st->tcp_flags,
-      ((__u32)pkt_anomaly << 1) | (rule_sel & 1),
-      config_slot);
-
-  if (rule) {
-    rule->match_count++;
-    if (rule->action == ACTION_DROP) {
-      rule->drop_count++;
-      stats_inc(STATS_DROPPED_PACKETS);
-      return XDP_DROP;
-    }
-    if (rule->action == ACTION_RATE_LIMIT && rule->rate_limit > 0) {
-      // Safety net: Controller (normalizeDecoder P1.1 guard in decoder.go)
-      // rejects rate_limit on anomaly rules in v2.6.1, so under a compliant
-      // control plane this branch is unreachable. We keep the XDP_DROP
-      // fallback so that a downgraded / rogue / stale Controller (or
-      // manually edited SQLite DB) cannot leak a silently-enforced rule
-      // that bypasses cross-program rate_limit coordination. If you need
-      // real anomaly-side rate limiting, land cross-program token-bucket
-      // first, then relax both this comment and the Controller guard.
-      rule->drop_count++;
-      stats_inc(STATS_DROPPED_PACKETS);
-      return XDP_DROP;
-    }
-  }
-
-  // Anomaly-aware lookup 2: CIDR (lookup_cidr_rule_anomaly).
-  // Re-derive src/dst CIDR IDs from LPM tries (same as main xdrop_firewall did).
-  __u32 src_cidr_id = 0, dst_cidr_id = 0;
-  if (eth_proto == ETH_P_IP_BE) {
-    struct iphdr *cidr_ip = l3_data;
-    if ((void *)(cidr_ip + 1) <= data_end) {
-      struct cidr_v4_lpm_key lpm_k;
-      lpm_k.prefixlen = 32;
-      __builtin_memcpy(lpm_k.addr, &cidr_ip->saddr, 4);
-      __u32 *sid = bpf_map_lookup_elem(&sv4_cidr_trie, &lpm_k);
-      if (sid) src_cidr_id = *sid;
-      lpm_k.prefixlen = 32;
-      __builtin_memcpy(lpm_k.addr, &cidr_ip->daddr, 4);
-      __u32 *did = bpf_map_lookup_elem(&dv4_cidr_trie, &lpm_k);
-      if (did) dst_cidr_id = *did;
-    }
-  } else if (eth_proto == ETH_P_IPV6_BE) {
-    struct ip6hdr *cidr_ip6 = l3_data;
-    if ((void *)(cidr_ip6 + 1) <= data_end) {
-      struct cidr_v6_lpm_key lpm_k6;
-      lpm_k6.prefixlen = 128;
-      __builtin_memcpy(lpm_k6.addr, cidr_ip6->saddr, 16);
-      __u32 *sid6 = bpf_map_lookup_elem(&sv6_cidr_trie, &lpm_k6);
-      if (sid6) src_cidr_id = *sid6;
-      lpm_k6.prefixlen = 128;
-      __builtin_memcpy(lpm_k6.addr, cidr_ip6->daddr, 16);
-      __u32 *did6 = bpf_map_lookup_elem(&dv6_cidr_trie, &lpm_k6);
-      if (did6) dst_cidr_id = *did6;
-    }
-  }
-
-  if (src_cidr_id != 0 || dst_cidr_id != 0) {
-    struct cidr_rule_key ck = {
-        .src_id = src_cidr_id,
-        .dst_id = dst_cidr_id,
-        .src_port = st->key.src_port,
-        .dst_port = st->key.dst_port,
-        .protocol = st->key.protocol,
-    };
-    struct cidr_rule_key cidr_matched_key = {0};
-    struct rule_value *cidr_rule = lookup_cidr_rule_anomaly(
-        &ck, &cidr_matched_key,
-        ((__u32)st->pkt_len << 8) | st->tcp_flags,
-        ((__u32)pkt_anomaly << 1) | (rule_sel & 1),
-        config_slot);
-    if (cidr_rule) {
-      cidr_rule->match_count++;
-      if (cidr_rule->action == ACTION_DROP) {
-        cidr_rule->drop_count++;
-        stats_inc(STATS_DROPPED_PACKETS);
-        return XDP_DROP;
-      }
-      if (cidr_rule->action == ACTION_RATE_LIMIT && cidr_rule->rate_limit > 0) {
-        // Safety net — see exact-match branch above. Controller rejects
-        // rate_limit on anomaly rules (codex round 9 P1.1); reaching here
-        // means stale state. Fall through as DROP.
-        cidr_rule->drop_count++;
-        stats_inc(STATS_DROPPED_PACKETS);
-        return XDP_DROP;
-      }
-    }
-  }
-
-  // No anomaly rule matched — funnel through the unified sink.
-pass_or_redirect:
-  stats_inc(STATS_PASSED_PACKETS);
+  stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
   if (fast_forward) {
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }

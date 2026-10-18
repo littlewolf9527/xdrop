@@ -1,0 +1,4 @@
+{
+  "status": 500,
+  "body": "{\"code\":\"internal_error\",\"error\":\"config publish failed: failed to copy config index 0 to shadow: update: operation not permitted\",\"withdrawal_pending\":false}"
+}

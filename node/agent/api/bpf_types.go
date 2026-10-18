@@ -3,9 +3,11 @@ package api
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/cilium/ebpf"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
+	"github.com/littlewolf9527/xdrop/node/agent/ratelimit"
 )
 
 // Protocol constants (IANA protocol numbers).
@@ -67,16 +69,39 @@ type RuleKey struct {
 // stays 32 bytes so upgrades don't trigger Phase 3 schema-drift auto-wipe
 // (see proposal xsight-v13-decoder-adaptation.md §7.2.0).
 type RuleValue struct {
-	Action        uint8
-	TcpFlagsMask  uint8 // TCP flags mask (0=don't check)
-	TcpFlagsValue uint8 // TCP flags expected value
-	MatchAnomaly  uint8 // v2.6 Phase 4: bit0=bad_fragment bit1=invalid (0=don't check)
-	RateLimit     uint32
-	MatchCount    uint64
-	DropCount     uint64
-	PktLenMin     uint16   // Minimum L3 packet length (0=no limit)
-	PktLenMax     uint16   // Maximum L3 packet length (0=no limit)
-	Pad2          [4]uint8 // Padding for 32-byte alignment (reserved)
+	Action          uint8
+	TcpFlagsMask    uint8 // TCP flags mask (0=don't check)
+	TcpFlagsValue   uint8 // TCP flags expected value
+	MatchAnomaly    uint8 // v2.6 Phase 4: bit0=bad_fragment bit1=invalid (0=don't check)
+	RateLimit       uint32
+	LogicalID       uint32
+	LogicalReserved [12]uint8
+	PktLenMin       uint16   // Minimum L3 packet length (0=no limit)
+	PktLenMax       uint16   // Maximum L3 packet length (0=no limit)
+	Pad2            [4]uint8 // Padding for 32-byte alignment (reserved)
+}
+
+// B1 condition rows are enabled by the low bit of Pad2[0].
+const RuleHasConditions uint8 = 0x01
+
+type ConditionSpan struct {
+	Lo uint16
+	Hi uint16
+}
+
+// ConditionValue mirrors xdrop.h cond_value (844 bytes). A nibble contains
+// the four candidates allowed by one attribute value; lower bit wins.
+type ConditionValue struct {
+	Tab     [6][128]uint8
+	Frag    [4]uint8
+	Len     [4][2]ConditionSpan
+	Action  [4]uint8
+	Rate    [4]uint32
+	RuleID  [4]uint32
+	Active  uint8
+	ICMPReq uint8
+	TCPReq  uint8
+	Pad     [1]uint8
 }
 
 // Anomaly bits for RuleValue.MatchAnomaly and runtime packet anomaly bitmap.
@@ -98,6 +123,14 @@ type CIDRRuleKey struct {
 
 // StoredRule stores both key and value for API display
 type StoredRule struct {
+	LogicalID uint32  `json:"logical_id,omitempty"`
+	TTL       *string `json:"ttl,omitempty"`
+	DSCP      *string `json:"dscp,omitempty"`
+	ICMPType  *string `json:"icmp_type,omitempty"`
+	ICMPCode  *string `json:"icmp_code,omitempty"`
+	Fragment  *string `json:"fragment,omitempty"`
+	PktLen    *string `json:"pkt_len,omitempty"`
+
 	Key          RuleKey
 	Action       string
 	RateLimit    uint32
@@ -109,6 +142,14 @@ type StoredRule struct {
 
 // StoredCIDRRule stores CIDR rule info for API display and deletion
 type StoredCIDRRule struct {
+	LogicalID uint32  `json:"logical_id,omitempty"`
+	TTL       *string `json:"ttl,omitempty"`
+	DSCP      *string `json:"dscp,omitempty"`
+	ICMPType  *string `json:"icmp_type,omitempty"`
+	ICMPCode  *string `json:"icmp_code,omitempty"`
+	Fragment  *string `json:"fragment,omitempty"`
+	PktLen    *string `json:"pkt_len,omitempty"`
+
 	Key          CIDRRuleKey
 	SrcCIDR      string // original CIDR string (normalized)
 	DstCIDR      string
@@ -122,12 +163,28 @@ type StoredCIDRRule struct {
 
 // Handlers holds the BPF maps and rule storage
 type Handlers struct {
-	blacklist  *ebpf.Map
-	blacklistB *ebpf.Map // shadow blacklist (Phase 4.2 dual rule map)
-	whitelist  *ebpf.Map
-	whitelistB *ebpf.Map // shadow whitelist (Phase 8 dual-buffer)
-	stats      *ebpf.Map
-	rlStates   *ebpf.Map
+	hits              hitsCache
+	publishedState    atomic.Pointer[AgentState]
+	publishedCapacity atomic.Pointer[CapacityReport]
+	// Full snapshots received in this process; commit never marks recovery.
+	rulesSynced, whitelistSynced atomic.Bool
+
+	// Per-instance fault fixture; production always uses the actual BPF maps.
+	configPublishFixture *configPublishTableSet
+
+	condA, condB, cidrCondA, cidrCondB *ebpf.Map
+	idRLStates                         *ebpf.Map
+	quiescer                           quiescer
+	// Zero means pending, including a Handlers constructed around reused maps.
+	// Every access is protected by publishMu.
+	quiescenceConfirmed bool
+	idCounts            *ebpf.Map // logical counters for every active rule
+	blacklist           *ebpf.Map
+	blacklistB          *ebpf.Map // shadow blacklist (Phase 4.2 dual rule map)
+	whitelist           *ebpf.Map
+	whitelistB          *ebpf.Map // shadow whitelist (Phase 8 dual-buffer)
+	stats               *ebpf.Map
+	condRowMissing      *ebpf.Map
 
 	// Double-buffer config maps
 	configA      *ebpf.Map // config_a
@@ -136,7 +193,22 @@ type Handlers struct {
 	activeSlot   int       // 0 = A is active, 1 = B is active (Agent-side tracking)
 
 	// Dual rule map selector (Phase 4.2)
-	activeRuleSlot int // 0 = blacklist/cidrBlacklist active, 1 = blacklistB/cidrBlacklistB active
+	activeRuleSlot atomic.Int32 // writers hold publishMu; lists load once per request
+
+	// Zero means alignment pending, including literal fixtures and reused maps.
+	// All mirror accounting is protected by publishMu.
+	mirrorReady                                      bool
+	mirrorDirty                                      [4]map[string]struct{}
+	mirrorDebt                                       [4]map[string]struct{}
+	ruleRowCounts                                    [4]int
+	ruleRowCountsKnown                               bool
+	mirrorAlignments, mirrorFailures, commitDeferred uint64
+	commitTableCapacity                              [4]int // zero uses the selected map's MaxEntries
+	commitTrieCapacity                               [4]int // source v4, destination v4, source v6, destination v6
+	mirrorTableFixture                               func(int, int) ruleMirrorMap
+	mirrorDirtyTestHook                              func(int, []byte) // nil in production; observes each write/rollback mark
+	commitStageTestHook                              func(string)
+	commitFaultTestHook                              func(string) error
 
 	// Phase 8: whitelist dual-buffer selector (independent from blacklist)
 	activeWLSlot    int     // 0 = whitelist active, 1 = whitelistB active
@@ -151,14 +223,22 @@ type Handlers struct {
 	// Lock order: syncMu → publishMu → rulesMu.
 	syncMu sync.Mutex
 
+	logicalOwners                           map[uint32]string // rulesMu: logical ID -> rule ID
+	logicalReclaimSeq                       uint64            // rulesMu: completed reclamations
+	logicalReclaimedAt                      map[uint32]uint64 // rulesMu: last reclamation per ID
+	pendingLogicalIDs                       map[uint32]bool   // publishMu: not yet safely reclaimed
+	logicalRetireThreshold                  int               // zero selects the production default 1024
+	logicalStateCapacity                    int               // zero derives the actual logical map capacity
+	logicalPayments, logicalPaymentFailures uint64            // publishMu
+
 	rules        map[string]StoredRule
-	ruleKeyIndex map[RuleKey]string // reverse index: key → id (protected by rulesMu)
+	ruleKeyIndex map[RuleKey]ruleIDSet // reverse index: key → id (protected by rulesMu)
 	rulesMu      sync.RWMutex
 	wlEntries    map[string]RuleKey
 	wlKeyIndex   map[RuleKey]string // reverse index: key → id (protected by wlMu)
 	wlMu         sync.RWMutex
 
-	lastStats     [5]uint64
+	lastStats     [6]uint64
 	lastStatsTime int64
 	statsMu       sync.Mutex // protects lastStats and lastStatsTime
 
@@ -173,11 +253,10 @@ type Handlers struct {
 	// === CIDR support ===
 	cidrBlacklist  *ebpf.Map
 	cidrBlacklistB *ebpf.Map // shadow CIDR blacklist (Phase 4.2 dual rule map)
-	cidrRlStates   *ebpf.Map
 	cidrMgr        *cidr.Manager
 
 	cidrRules         map[string]StoredCIDRRule // id → stored CIDR rule
-	cidrRuleKeyIndex  map[CIDRRuleKey]string    // reverse index: key → id
+	cidrRuleKeyIndex  map[CIDRRuleKey]ruleIDSet // reverse index: key → id
 	cidrComboRefCount [64]int                   // per-combo ref count for CIDR bitmap
 
 	// Phase 8: tail-call failure counter (gate-owned PERCPU_ARRAY, max_entries=1).
@@ -188,5 +267,6 @@ type Handlers struct {
 	sysStatsCache *SystemStatsCache
 
 	// XDP mode and attached interfaces (set once at startup, read-only)
-	xdpInfo *XDPInfo
+	xdpInfo   *XDPInfo
+	rateLimit ratelimit.Snapshot // set once before HTTP serving
 }

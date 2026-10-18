@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"count\":0,\"pagination\":{\"limit\":1000,\"page\":1,\"pages\":0,\"total\":0},\"rules\":[]}"
+}

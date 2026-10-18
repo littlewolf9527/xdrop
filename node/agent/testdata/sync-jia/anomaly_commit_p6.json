@@ -1,0 +1,10 @@
+{
+  "cidr=false": {
+    "status": 200,
+    "body": "{\"code\":\"committed\",\"groups\":[{\"index\":0,\"result\":\"created\"}],\"receipt\":\"confirmed\",\"withdrawal_pending\":false}"
+  },
+  "cidr=true": {
+    "status": 200,
+    "body": "{\"code\":\"committed\",\"groups\":[{\"index\":0,\"result\":\"created\"}],\"receipt\":\"confirmed\",\"withdrawal_pending\":false}"
+  }
+}

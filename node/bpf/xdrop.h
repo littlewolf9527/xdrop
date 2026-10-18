@@ -155,16 +155,98 @@ struct rule_value {
   __u8 tcp_flags_value; // TCP flags expected value
   __u8 match_anomaly;   // v2.6 Phase 4: bit0=bad_fragment bit1=invalid (0=don't check)
   __u32 rate_limit;     // PPS limit (when action=2)
-  __u64 match_count;    // Match counter
-  __u64 drop_count;     // Drop counter
+  __u32 logical_id;     // Shared counter and rate-state identity
+  __u8 logical_reserved[12]; // Serialized as zero; no runtime state in the row
   __u16 pkt_len_min;    // Minimum packet length (L3), 0=no limit
   __u16 pkt_len_max;    // Maximum packet length (L3), 0=no limit
-  __u8 pad2[4];         // Padding for 32-byte alignment (reserved for future anomaly widening)
+  __u8 pad2[4];         // pad2[0] bit 0: RULE_HAS_CONDITIONS; other bits reserved.
 } __attribute__((packed));
+
+// B1: only this bit selects the same-generation condition row. Production
+// serialization keeps it zero until knife five; the rule map ABI stays 32 B.
+#define RULE_HAS_CONDITIONS 0x01
+#define COND_NO_WINNER 0xFF
+
+struct cond_span { __u16 lo, hi; }; // Inclusive; lo > hi is an empty span.
+struct cond_value {
+  __u8 tab[6][128]; // TTL, DSCP, TCP flags, ICMP type, ICMP code, anomaly.
+  __u8 frag[4];     // Eight fragment classes, two candidate nibbles per byte.
+  struct cond_span len[4][2];
+  __u8 action[4];
+  __u32 rate[4];
+  __u32 rule_id[4]; // Logical ID, shared by every physical candidate of a rule.
+  __u8 active;
+  __u8 icmp_req;
+  __u8 tcp_req;
+  __u8 pad[1];
+};
+
+struct cond_output {
+  __u8 winner; // COND_NO_WINNER until cond_match selects a candidate.
+  __u8 action;
+  __u8 pad[2];
+  __u32 rate;
+  __u32 rule_id;
+};
+
+_Static_assert(sizeof(struct cond_span) == 4, "cond_span ABI");
+_Static_assert(sizeof(struct cond_value) == 844, "cond_value ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, tab) == 0, "cond_value.tab ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, frag) == 768, "cond_value.frag ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, len) == 772, "cond_value.len ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, action) == 804, "cond_value.action ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, rate) == 808, "cond_value.rate ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, rule_id) == 824, "cond_value.rule_id ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, active) == 840, "cond_value.active ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, icmp_req) == 841, "cond_value.icmp_req ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, tcp_req) == 842, "cond_value.tcp_req ABI");
+_Static_assert(__builtin_offsetof(struct cond_value, pad) == 843, "cond_value.pad ABI");
+_Static_assert(sizeof(struct cond_output) == 12, "cond_output ABI");
+_Static_assert(__builtin_offsetof(struct cond_output, winner) == 0, "cond_output.winner ABI");
+_Static_assert(__builtin_offsetof(struct cond_output, action) == 1, "cond_output.action ABI");
+_Static_assert(__builtin_offsetof(struct cond_output, rate) == 4, "cond_output.rate ABI");
+_Static_assert(__builtin_offsetof(struct cond_output, rule_id) == 8, "cond_output.rule_id ABI");
+
+// ── Phase 0 · 布局契约（编译期）─────────────────────────────────────────────
+//
+// 在此之前，这些尺寸/偏移只有注释在守（"Total: 40 bytes"），而注释不会编译失败。
+//
+// ⚠️ 本节只把 **C 侧钉死在字面量上**，并没有把 C 和 Go 绑在一起——
+//    同时改结构和这里的数字，照样全绿。真正的跨语言网在
+//    node/agent/abi/abi_contract_test.go（读编译产物 ELF 与 Go 结构对比）。
+//    两者缺一不可：本节让错误在 clang 阶段就停，那边保证两种语言不会各走各的。
+//
+// 改这里的数字之前先读 internal_docs/plans/phase0/plan.md §三。
+// 任何一条失败都意味着 BPF map 的 key_size/value_size 会变，进而触发
+// pin schema 不符 → map 被删重建（internal_docs/facts.md F-011）。
+
+_Static_assert(sizeof(struct ip_addr) == 16,
+               "ip_addr must stay 16 bytes (IPv6-sized; IPv4 is mapped into it)");
+
+_Static_assert(sizeof(struct rule_key) == 40,
+               "rule_key must stay 40 bytes — it is the key of blacklist/blacklist_b/"
+               "whitelist/whitelist_b/rl_states/verifier_prune_map (facts.md F-001). "
+               "Changing it changes every one of those maps' key_size at once.");
+_Static_assert(__builtin_offsetof(struct rule_key, src_port) == 32, "rule_key.src_port moved");
+_Static_assert(__builtin_offsetof(struct rule_key, dst_port) == 34, "rule_key.dst_port moved");
+_Static_assert(__builtin_offsetof(struct rule_key, protocol) == 36, "rule_key.protocol moved");
+
+_Static_assert(sizeof(struct rule_value) == 32,
+               "rule_value must stay 32 bytes (facts.md F-005). Only pad2[4] is free.");
+_Static_assert(__builtin_offsetof(struct rule_value, match_anomaly) == 3,
+               "match_anomaly must stay at offset 3 — it reuses the v2.5 pad byte, and the "
+               "Go side hard-asserts the same offset (node/agent/api/rule_value_layout_test.go)");
+_Static_assert(__builtin_offsetof(struct rule_value, rate_limit) == 4, "rule_value.rate_limit moved");
+_Static_assert(__builtin_offsetof(struct rule_value, logical_id) == 8, "rule_value.logical_id moved");
+_Static_assert(__builtin_offsetof(struct rule_value, logical_reserved) == 12, "rule_value.logical_reserved moved");
+_Static_assert(__builtin_offsetof(struct rule_value, pkt_len_min) == 24, "rule_value.pkt_len_min moved");
+_Static_assert(__builtin_offsetof(struct rule_value, pkt_len_max) == 26, "rule_value.pkt_len_max moved");
 
 // v2.6 Phase 4: anomaly bits for rule_value.match_anomaly and runtime pkt_anomaly.
 #define ANOMALY_BAD_FRAGMENT 0x01
 #define ANOMALY_INVALID      0x02
+#define ANOMALY_LENGTH_MISMATCH 0x04
+#define ANOMALY_TCP_OFFSET_ONE  0x08
 
 // Statistics indices (PERCPU)
 #define STATS_TOTAL_PACKETS 0
@@ -172,11 +254,15 @@ struct rule_value {
 #define STATS_PASSED_PACKETS 2
 #define STATS_WHITELISTED 3
 #define STATS_RATE_LIMITED 4
+#define STATS_MAPPED_V6_DROPPED 5
+#define STATS_TOTAL_BYTES 6
+#define STATS_DROPPED_BYTES 7
+#define STATS_PASSED_BYTES 8
 
 // Config map indices (used in config_a / config_b double-buffer maps)
 #define CONFIG_BLACKLIST_COUNT 0
 #define CONFIG_WHITELIST_COUNT 1      // Agent-side only; BPF no longer gates on this
-#define CONFIG_RULE_BITMAP 2          // 64-bit bitmap for 34 combo types
+#define CONFIG_RULE_BITMAP 2          // 64-bit bitmap, stable slots 0..33 (31 active)
 #define CONFIG_WL_BITMAP 3            // 64-bit whitelist combo bitmap (was CONFIG_BITMAP_VALID)
 #define CONFIG_FAST_FORWARD_ENABLED 4 // 1 = fast forward mode enabled
 #define CONFIG_FILTER_IFINDEX 5       // Interface index to filter (0 = all/both)
@@ -203,7 +289,6 @@ struct rule_value {
 #define COMBO_SRC_IP_SRC_PORT 17       // src_ip + * + src_port + * + *
 #define COMBO_SRC_IP_SRC_PORT_PROTO 18 // src_ip + * + src_port + * + protocol
 // Note: combo 19 was removed (duplicate of COMBO_DST_IP_PROTO)
-#define COMBO_DST_IP_DST_PORT_PROTO 20 // * + dst_ip + * + dst_port + protocol
 #define COMBO_SRC_DST_IP_DST_PORT 21   // src_ip + dst_ip + * + dst_port + *
 #define COMBO_SRC_DST_IP_DST_PORT_PROTO                                        \
   22                          // src_ip + dst_ip + * + dst_port + protocol
@@ -218,9 +303,8 @@ struct rule_value {
 #define COMBO_SRC_DST_IP_SRC_PORT_PROTO                                        \
   30                          // src_ip + dst_ip + src_port + * + protocol
 #define COMBO_DST_IP_PORTS 31 // * + dst_ip + src_port + dst_port + *
-#define COMBO_DST_IP_PORTS_PROTO                                               \
-  32                              // * + dst_ip + src_port + dst_port + protocol
 #define COMBO_ALL_EXCEPT_PROTO 33 // src_ip + dst_ip + src_port + dst_port + *
+// S2a: slots 20 and 32 are retired aliases. Preserve all surviving IDs.
 #define COMBO_MAX 34
 
 // CIDR LPM Trie keys
@@ -252,6 +336,33 @@ struct rate_limit_state {
   __u64 last_update; // Last update timestamp (nanoseconds)
 } __attribute__((packed));
 
+// B1: exact and CIDR candidates share counters by logical rule ID.
+struct logical_rule_counters {
+  __u64 match;
+  __u64 drop;
+  __u64 match_bytes;
+  __u64 drop_bytes;
+  __u64 last_hit_ns;
+};
+_Static_assert(sizeof(struct logical_rule_counters) == 40,
+               "logical_rule_counters ABI");
+_Static_assert(__builtin_offsetof(struct logical_rule_counters, match) == 0,
+               "logical_rule_counters.match ABI");
+_Static_assert(__builtin_offsetof(struct logical_rule_counters, drop) == 8,
+               "logical_rule_counters.drop ABI");
+
+// ── Phase 0 · 布局契约（续）───────────────────────────────────────────────
+_Static_assert(sizeof(struct cidr_rule_key) == 16,
+               "cidr_rule_key must stay 16 bytes (facts.md F-045) — key of cidr_blacklist/"
+               "cidr_blist_b/cidr_rl_states (F-002). Note it is a DIFFERENT identity from "
+               "rule_key: src_id/dst_id are node-local integer IDs, not IP addresses.");
+_Static_assert(__builtin_offsetof(struct cidr_rule_key, protocol) == 12, "cidr_rule_key.protocol moved");
+
+_Static_assert(sizeof(struct rate_limit_state) == 16,
+               "rate_limit_state must stay 16 bytes — value of rl_states/cidr_rl_states. "
+               "Phase 1 will re-key these maps per candidate slot (facts.md F-014); "
+               "the VALUE layout should stay put unless that plan says otherwise.");
+
 // Rate limit configuration
 #define RATE_LIMIT_BURST_MULTIPLIER 2 // Allow burst = rate * 2
 // Conservative fallback used before userspace writes CONFIG_RL_CPU_DIVISOR.
@@ -267,11 +378,7 @@ struct rate_limit_state {
 // Dual rule map selector (Phase 4.2)
 #define CONFIG_RULE_MAP_SELECTOR 9   // 0 = blacklist/cidr_blacklist, 1 = blacklist_b/cidr_blist_b
 
-// v2.6.1 Phase 4 B5: total number of anomaly rules (match_anomaly != 0)
-// across both exact blacklist and CIDR blacklist. Non-zero triggers tail_call
-// to xdp_anomaly_verify on main program lookup miss. Updated by Go agent
-// on every rule add / delete / update / sync that changes anomaly rule count.
-#define CONFIG_ANOMALY_RULE_COUNT 10
+// Config slot 10 is retired; the agent keeps it zero. Do not reuse or shrink CONFIG_MAP_ENTRIES.
 
 // Auto-selected divisor for PERCPU_HASH rate-limit buckets.
 #define CONFIG_RL_CPU_DIVISOR 11
@@ -281,42 +388,14 @@ struct rate_limit_state {
 
 // tail_call prog_array slot assignments.
 // max_entries=16, reserved slot layout:
-//   0      = xdp_anomaly_verify (v2.6.1 Phase 4 B5)
+//   0      = retired; agent clears legacy occupants at startup. Do not reuse.
 //   1      = xdp_firewall_main (Phase 8 — blacklist+CIDR+rate+anomaly)
 //   2-3    = payload match (reserved)
 //   4      = GeoIP filter (reserved)
 //   5-7    = TLS / SNI / JA3 match (reserved)
 //   8-15   = dynamic allocation
-#define TAIL_SLOT_ANOMALY_VERIFY 0
 #define TAIL_SLOT_FIREWALL_MAIN  1
 #define TAIL_SLOT_MAX            16
-
-// v2.6.1 Phase 4 B5: stash struct for tail_call state transfer (D1 — proposal §7.8.5).
-// Per-CPU single-slot map; main program writes before bpf_tail_call, callee
-// reads after. Layout must be stable across tail_call chain; reserved padding
-// allows future tail-called programs (payload / GeoIP / TLS) to extend without
-// changing map schema.
-struct tail_stash {
-  __u32 stage;               // D4 dispatch state; B5 uses 0 = anomaly_verify
-  __u8  action;              // ACTION_DROP / RATE_LIMIT — unused in B5 (anomaly_verify re-looks up rule)
-  __u8  match_anomaly;       // anomaly bitmask caller wants matched (0 in B5; anomaly_verify compute fresh)
-  __u16 pkt_len;             // L3 packet length (from main program parse)
-  __u32 rate_limit;          // payload match future use
-  __u32 payload_pattern_id;  // payload match future use
-  __u8  tcp_flags;           // TCP flags byte (from main program parse)
-  __u8  eth_proto_is_v6;     // 0 = IPv4, 1 = IPv6 (so anomaly_verify skips re-parse dispatch)
-  __u8  is_ff;               // v2.6.1 FF regression fix: 1 = fast_forward mode active, 0 = traditional.
-                             // Caller (main program) resolves is_fast_forward_enabled() once and passes
-                             // via stash so anomaly_verify can decide pass-vs-redirect without a second
-                             // config_lookup + null-check (verifier insn budget).
-  __u8  reserved_b[1];
-  __u32 ingress_ifindex;     // v2.6.1 FF regression fix: main program's ctx->ingress_ifindex, stashed so
-                             // anomaly_verify can bpf_redirect_map(&devmap, ingress_ifindex, 0) on FF
-                             // fallthrough. Re-reading ctx->ingress_ifindex in the callee would double
-                             // verifier work across every anomaly-lookup miss path.
-  struct rule_key key;       // main program's parsed 5-tuple for re-lookup in anomaly-aware path
-  __u8  reserved[28];        // future extensions (D1 — 32B total padding budget, 4B now consumed)
-} __attribute__((aligned(8)));
 
 // Active config selector map key
 #define ACTIVE_CONFIG_KEY 0

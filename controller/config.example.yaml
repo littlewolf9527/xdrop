@@ -1,90 +1,13 @@
-# XDrop Controller - Example Configuration
-# Copy this file to config.yaml and adjust the values for your environment.
-
-server:
-  host: "0.0.0.0"   # Bind address. Use "0.0.0.0" to listen on all interfaces.
-  port: 8000
-
-database:
-  driver: sqlite
-  dsn: ./data/controller.db   # SQLite database file path. Created automatically on first run.
-
-# Authentication
-auth:
-  enabled: true
-
-  # API key for external callers (scripts, integrations, Prometheus scrapers).
-  # Node agents also use this key when pushing sync reports to the controller.
-  # Must be a long random string — treat it like a password.
-  external_api_key: "CHANGE_ME_RANDOM_32_CHARS"
-
-  # Secret used to sign Web UI session cookies (HMAC-SHA256).
-  # Generate with: openssl rand -hex 32
-  session_secret: "CHANGE_ME_RANDOM_64_CHARS"
-
-  # Web UI login credentials.
-  web_username: "admin"
-  web_password: "CHANGE_ME"
-
-  # Set Secure flag on session cookie.
-  # MUST be true when deploying behind HTTPS (recommended for production).
-  # Leave false for HTTP-only dev/lab environments.
-  secure_cookie: false
-
-# Pre-registered nodes (registered at startup, before any API calls).
-# You can also register nodes dynamically via POST /api/v1/nodes.
-nodes:
-  # - name: "node-01"
-  #   endpoint: "http://10.0.1.10:8080"   # Node agent HTTP address
-  #   api_key: "node-01-api-key"           # Key the controller uses when calling this node
-
-# Sync settings — used when pushing rule/whitelist updates to nodes.
-sync:
-  retry_count: 3          # Number of retries on failure
-  retry_interval: 5s      # Wait between retries
-  timeout: 10s            # Per-request timeout
-  concurrent: 10          # Max concurrent sync goroutines
-
-# Health check — controller periodically polls each node's /health endpoint.
-healthcheck:
-  interval: 30s
-  timeout: 5s
-
-# Sync checker — periodically compares controller state with each node and
-# triggers a full sync if they diverge.
-synccheck:
-  enabled: true
-  interval: 1m    # How often to check. Recommended: 1m–5m.
-
-# Rule lifecycle settings.
-rules:
-  default_expire: 24h       # Default TTL for rules that don't specify an expiry
-  cleanup_interval: 10m     # How often expired rules are purged from the database
-
-logging:
-  level: info   # One of: debug, info, warn, error
-
-# Stats cache (v2.6.3) — periodically aggregates per-rule stats from nodes
-# in the background, so /api/v1/rules?page=... returns rules WITH stats
-# without fanning out on every request.
-#
-# Tradeoff: introduces a new periodic Controller→Node GET /api/v1/rules call
-# (every refresh_interval_seconds). Default settings are sized for ≤10 nodes
-# and ≤1000 rules. Tune up the interval or set disabled=true if your scale
-# is much larger.
-#
-# Operational fields are exposed at /api/v1/stats/cache_health for diagnosing
-# stuck refresh loops, partial fan-out failures, etc.
-#
-# All fields are optional — leaving stats_cache: out entirely also works,
-# defaults are applied during config load.
-stats_cache:
-  refresh_interval_seconds: 5      # How often to refresh. 1-60.
-  stale_threshold_seconds: 15      # Snapshot considered stale after this. Must be > refresh_interval.
-  per_node_timeout_seconds: 2      # Per-node HTTP timeout. Must be < refresh_interval.
-  max_concurrency: 4               # Max concurrent node fetches per refresh.
-  backoff_on_all_fail_seconds: 30  # Delay added to next tick when ALL nodes fail.
-  top_n_cache_size: 50             # Top-N rules pre-computed at refresh. Must be >= 50 (matches /rules/top max limit).
-  disabled: false                  # Set true to skip the cache entirely.
-                                   # listAll falls back to old realtime fan-out;
-                                   # paginated /rules and /rules/top return without stats.
+# XDrop controller/core configuration. Copy and edit before initialization.
+# listen is required: host:port, port 1..65535. Use a local HTTPS reverse proxy
+# for browsers: session cookies always carry Secure.
+listen: "127.0.0.1:8000"
+# Required absolute SQLite path; create its parent directory first.
+database: "/var/lib/xdrop/controller.db"
+# Required absolute path. Initialize with:
+# xdrop-controller -config <file> secret-key init
+# The command creates a 0600 file and refuses to overwrite an existing file.
+secret_key_file: "/var/lib/xdrop/master.key"
+# Register nodes using the UI/API or the offline node add CLI.
+# nodes and reconcile_interval are rejected here; reconciliation is a setting.
+# Unknown fields and multiple YAML documents are rejected.

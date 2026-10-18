@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "source_commit": "b07a004950e2f813545db540599767e2a4dc214e",
+  "source_root": "<source-root>",
+  "purpose": "Frozen post-S2a inputs for the unchanged S2a contract and before C replay; no ELF or kernel acceptance.",
+  "files": {
+    "node/agent/api/combo.go": "86c4c3f80074a0145a12dca58cbee56e130e5afef840c6ffdaef1bfc00fa630e",
+    "node/agent/eval/calibrate_lab_test.go": "94bcac892b61c4419076cab26d0b7783b7b29db5dfc0a43c48e7a69310628db4",
+    "node/agent/eval/contracts.go": "cc8f334536051b120a065eb7855e6ea63154292a1db0e003dd7f3404f422fb84",
+    "node/agent/eval/eval.go": "4ebd3422e1c236a1e1f77591daf982718b01e7ef82b101e25ada1e46f746d946",
+    "node/agent/eval/eval_test.go": "1cbe7647bcc5e2c9431581fb40afae46b54117060de4ca168dfeaaa53c1e8bfb",
+    "node/agent/eval/fixtures_test.go": "955d0d631ff445494c848e2e3660ceac187a05c217d4271fc426a310b6b76529",
+    "node/agent/eval/masks.go": "d8faffa16011f0d60f111e935646b8ef0a9d8999ef86fefe31c2ef8c5d6acb10",
+    "node/agent/eval/s2a_test.go": "b8cf1db3bea5b16c83b8cf0ee163cca1e2a1108902bdceeb47f82f71f0aa79b4",
+    "node/agent/eval/wire_test.go": "f32657180ed86a2e1972405b92c065a9325be8d48321612fa22b26f10bfde994",
+    "node/bpf/Makefile": "be83e5a238950554e9d5638e05119783d9b4089964cbfa334e412abeb0eaf837",
+    "node/bpf/combo_masks.h": "0246f4655ea2cad3adfa958112a6db800d05705064efc634a5360796e92318f5",
+    "node/bpf/headers/bpf_helpers.h": "ac22dae8c99e5702073d8ecd9fc75beb9fc29c67a2a1face4211cca579ba2d13",
+    "node/bpf/tools/combo_masks_pre_m1.json": "dfc9d788cc2ec4a87521711cf6e84bde51dcd64f2865f252f806197c42f72dc6",
+    "node/bpf/tools/extract_combo_masks.py": "aabec32c3b5fb1d03da4a298e621bfe63664829a75de20ca80fd457b09aec8ef",
+    "node/bpf/tools/test_extract_combo_masks.py": "762da424d584da00510963cfbcf7b560b58eaf5b5153857a5b5618c3154fd5a0",
+    "node/bpf/xdrop.h": "d1dd8269ab0dfb0923e565fe075f830f652e150b0e741f9869d1231d967833d2",
+    "node/bpf/xdrop_gate.c": "a15a6d1081d82c7d815d18a0918198876240d69be0ba843e67c4f28ac5f58199",
+    "node/bpf/xdrop_main.c": "e1404a7a53bad29edb787ecab88d2bd3e80b7eddf94fc7859d9ab7ca3867654a",
+    "internal_docs/plans/phase1/gate-mask-parity.py": "4610cace6be8a2f5ac0198acc01a2ff7e7016a54c1b1813f83979354c0cc0bc8",
+    "node/agent/tools/check_s2a.py": "2392a8a9c9062a3ff44af966c78ce6706e7bfa1c11b84b6a5dba11e1ef5bb74a"
+  }
+}

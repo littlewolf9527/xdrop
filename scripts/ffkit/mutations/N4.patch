@@ -1,0 +1,12 @@
+--- a/node/agent/main.go
++++ b/node/agent/main.go
+@@ -625,7 +625,8 @@
+ 		return fmt.Errorf("iterate devmap: %w", err)
+ 	}
+ 	for _, key := range stale {
+-		if err := devmap.Delete(key); err != nil {
++		_ = key
++		if err := error(nil); err != nil {
+ 			return fmt.Errorf("delete devmap[%d]: %w", key, err)
+ 		}
+ 	}

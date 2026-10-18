@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/YiFailures/atomic_config_error_p8": {
+    "status": 500,
+    "body": "{\"added\":1,\"error\":\"copy shadow config index 0: update: operation not permitted\",\"failed\":1}"
+  }
+}

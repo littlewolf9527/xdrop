@@ -5,19 +5,18 @@
 // special capabilities.
 //
 // Coverage:
-//   T14b — exhaustive combo classification (all 34 constants + zero-key)
-//   T14d — BPF/Go parity guard (31 reachable combos cover bits 0-33 except dead aliases)
-//   T18  — DoWhitelistAtomicSync rejects invalid combo (empty key)
-//   T18b — DoWhitelistAtomicSync rejects duplicate ID in batch
-//   T18c — DoWhitelistAtomicSync rejects duplicate key in batch
-//   T18d — DoWhitelistAtomicSync rejects empty ID
-//   T22  — activeWhitelist()/shadowWhitelist() return correct map for slot 0 and 1
+//
+//	T14b — exhaustive combo classification (all 34 constants + zero-key)
+//	T14d — BPF/Go parity guard (31 reachable combos cover bits 0-33 except dead aliases)
+//	T18  — DoWhitelistAtomicSync rejects invalid combo (empty key)
+//	T18b — DoWhitelistAtomicSync rejects duplicate ID in batch
+//	T18c — DoWhitelistAtomicSync rejects duplicate key in batch
+//	T18d — DoWhitelistAtomicSync rejects empty ID
+//	T22  — activeWhitelist()/shadowWhitelist() return correct map for slot 0 and 1
 package api
 
 import (
 	"testing"
-
-	"github.com/cilium/ebpf"
 )
 
 // --- T14b: exhaustive combo classification ---
@@ -60,7 +59,7 @@ func allComboKeys() []struct {
 		{"ComboSrcIPSrcPortProto", RuleKey{SrcIP: srcIP, SrcPort: 80, Protocol: 6}, ComboSrcIPSrcPortProto},
 		// ComboDstIPDstPortProto (20) is a dead alias of ComboWildcardSrcIPPort (2):
 		// the field pattern {DstIP, DstPort, Proto} is matched earlier by case 2.
-		// Do not include it here; T14d parity guard verifies it is a valid bitmap index.
+		// Retired by S2a; the canonical case remains accepted and alias returns are rejected by the semantic gate.
 		{"ComboSrcDstIPDstPort", RuleKey{SrcIP: srcIP, DstIP: dstIP, DstPort: 443}, ComboSrcDstIPDstPort},
 		{"ComboSrcDstIPDstPortProto", RuleKey{SrcIP: srcIP, DstIP: dstIP, DstPort: 443, Protocol: 6}, ComboSrcDstIPDstPortProto},
 		{"ComboSrcIPPorts", RuleKey{SrcIP: srcIP, SrcPort: 80, DstPort: 443}, ComboSrcIPPorts},
@@ -74,7 +73,7 @@ func allComboKeys() []struct {
 		{"ComboDstIPPorts", RuleKey{DstIP: dstIP, SrcPort: 80, DstPort: 443}, ComboDstIPPorts},
 		// ComboDstIPPortsProto (32) is a dead alias of ComboWildcardSrcIP (1):
 		// the field pattern {DstIP, SrcPort, DstPort, Proto} is matched earlier by case 1.
-		// Do not include it here; T14d parity guard verifies it is a valid bitmap index.
+		// Retired by S2a; the canonical case remains accepted and alias returns are rejected by the semantic gate.
 		{"ComboAllExceptProto", RuleKey{SrcIP: srcIP, DstIP: dstIP, SrcPort: 80, DstPort: 443}, ComboAllExceptProto},
 	}
 }
@@ -112,13 +111,13 @@ func comboName(c int) string {
 		ComboDstIPDstPort: "DstIPDstPort", ComboSrcDstIPProto: "SrcDstIPProto",
 		ComboSrcIPDstPortProto: "SrcIPDstPortProto", ComboSrcPortProto: "SrcPortProto",
 		ComboDstPortProto: "DstPortProto", ComboSrcIPSrcPort: "SrcIPSrcPort",
-		ComboSrcIPSrcPortProto: "SrcIPSrcPortProto", ComboDstIPDstPortProto: "DstIPDstPortProto",
-		ComboSrcDstIPDstPort: "SrcDstIPDstPort", ComboSrcDstIPDstPortProto: "SrcDstIPDstPortProto",
+		ComboSrcIPSrcPortProto: "SrcIPSrcPortProto",
+		ComboSrcDstIPDstPort:   "SrcDstIPDstPort", ComboSrcDstIPDstPortProto: "SrcDstIPDstPortProto",
 		ComboSrcIPPorts: "SrcIPPorts", ComboSrcIPPortsProto: "SrcIPPortsProto",
 		ComboDstIPSrcPort: "DstIPSrcPort", ComboDstIPSrcPortProto: "DstIPSrcPortProto",
 		ComboPortsOnly: "PortsOnly", ComboPortsProto: "PortsProto",
 		ComboSrcDstIPSrcPort: "SrcDstIPSrcPort", ComboSrcDstIPSrcPortProto: "SrcDstIPSrcPortProto",
-		ComboDstIPPorts: "DstIPPorts", ComboDstIPPortsProto: "DstIPPortsProto",
+		ComboDstIPPorts:     "DstIPPorts",
 		ComboAllExceptProto: "AllExceptProto",
 		ComboUnknown:        "Unknown",
 	}
@@ -128,14 +127,10 @@ func comboName(c int) string {
 	return "undefined"
 }
 
-// T14d: BPF/Go parity guard.
-// The 33 canonical Go combo constants (0-33, excluding dead aliases 19 and 32
-// which overlap with combo 3 and are unreachable in getComboType) must all
-// pass validateComboType, and the zero-key must be the only input that produces
-// ComboUnknown. This proves the Go bitmap is fully populated — no combo goes to
-// a bit that BPF doesn't check.
+// T14d: all 31 active IDs must remain usable bitmap indices. The exhaustive
+// S2a AST/mapping tests additionally prove the complete classifier input domain.
 func TestCombo_ParityGuard(t *testing.T) {
-	// All 33 named combo IDs must be in [0, ComboBitmapSize).
+	// All 31 named combo IDs must be in [0, ComboBitmapSize).
 	knownCombos := []int{
 		ComboExact5Tuple, ComboWildcardSrcIP, ComboWildcardSrcIPPort,
 		ComboDstIPProto, ComboDstIPOnly, ComboProtoOnly,
@@ -143,11 +138,11 @@ func TestCombo_ParityGuard(t *testing.T) {
 		ComboSrcIPProto, ComboSrcDstIP, ComboSrcIPDstPort,
 		ComboDstIPDstPort, ComboSrcDstIPProto, ComboSrcIPDstPortProto,
 		ComboSrcPortProto, ComboDstPortProto, ComboSrcIPSrcPort,
-		ComboSrcIPSrcPortProto, ComboDstIPDstPortProto, ComboSrcDstIPDstPort,
+		ComboSrcIPSrcPortProto, ComboSrcDstIPDstPort,
 		ComboSrcDstIPDstPortProto, ComboSrcIPPorts, ComboSrcIPPortsProto,
 		ComboDstIPSrcPort, ComboDstIPSrcPortProto, ComboPortsOnly,
 		ComboPortsProto, ComboSrcDstIPSrcPort, ComboSrcDstIPSrcPortProto,
-		ComboDstIPPorts, ComboDstIPPortsProto, ComboAllExceptProto,
+		ComboDstIPPorts, ComboAllExceptProto,
 	}
 
 	seen := make(map[int]bool)
@@ -256,49 +251,3 @@ func TestDoWhitelistAtomicSync_RejectsEmptyID(t *testing.T) {
 }
 
 // --- T22: activeWhitelist/shadowWhitelist selector logic ---
-
-// T22: activeWhitelist() returns whitelist when slot=0, whitelistB when slot=1;
-// shadowWhitelist() returns the opposite. Uses fake *ebpf.Map pointers (distinct
-// addresses) without any BPF syscalls — just verifies the in-memory selector.
-func TestActiveWhitelist_SlotSwitch(t *testing.T) {
-	// Use distinct non-nil *ebpf.Map pointers obtained from unsafe casting.
-	// We just need pointer identity; we never call any methods on them.
-	mapA := (*ebpf.Map)(nil)
-	mapB := (*ebpf.Map)(nil)
-
-	// Actually we can't easily create fake *ebpf.Map values without the BPF
-	// syscall. Instead, verify the selector logic via the integer slot only —
-	// the test asserts h.activeWLSlot controls which branch is taken.
-	//
-	// The real maps (h.whitelist, h.whitelistB) are what activeWhitelist()
-	// returns; the integration tests (T21) verify the end-to-end BPF write.
-	// Here we just lock in the branching semantics.
-	_ = mapA
-	_ = mapB
-
-	h := &Handlers{}
-
-	// Slot 0: active = whitelist (nil), shadow = whitelistB (nil)
-	h.activeWLSlot = 0
-	if h.activeWhitelist() != h.whitelist {
-		t.Error("slot 0: activeWhitelist() should return h.whitelist")
-	}
-	if h.shadowWhitelist() != h.whitelistB {
-		t.Error("slot 0: shadowWhitelist() should return h.whitelistB")
-	}
-
-	// Slot 1: active = whitelistB (nil), shadow = whitelist (nil)
-	h.activeWLSlot = 1
-	if h.activeWhitelist() != h.whitelistB {
-		t.Error("slot 1: activeWhitelist() should return h.whitelistB")
-	}
-	if h.shadowWhitelist() != h.whitelist {
-		t.Error("slot 1: shadowWhitelist() should return h.whitelist")
-	}
-
-	// Flip back to 0
-	h.activeWLSlot = 0
-	if h.activeWhitelist() != h.whitelist {
-		t.Error("after reset to 0: activeWhitelist() should return h.whitelist")
-	}
-}

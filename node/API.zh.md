@@ -1,555 +1,89 @@
-# XDrop Node Agent — API 参考
+# 节点 API — 协议 11
 
-[English](API.md)
+## 传输与鉴权
 
-Base URL：`http://<node-host>:8080`
+HTTP 端口由配置决定，默认 8080；请求体使用 JSON，Content-Type: application/json。仅欢迎与健康检查公开。八条受保护路由每次请求都要求 `X-API-Key: <node-api-key>`。`auth.node_api_key` 必填；空值（含全空白）或占位符拒绝启动（`node/agent/config/config.go` 的 `config.Config.Validate`）。若直接以空密钥调用中间件，`node/agent/api/middleware.go` 的 `api.AuthMiddleware` 以 503 拒绝受保护请求。缺失或错误密钥返回 401，带 error/message 字段。未知路由返回路由器的纯文本 404。
 
-除 `/` 和 `/api/v1/health` 外，所有接口均需要 `X-API-Key` 请求头。
+控制器机器凭证与节点 API 密钥是不同凭证。节点不主动拉取策略；启动后由控制器分别推送规则与白名单完整快照，两者不是一个事务。
 
----
+## 全部路由
 
-## 认证
+| 方法 | 路径 | 鉴权 | 成功码 |
+|---|---|---|---|
+| GET | / | 公开 | 200 |
+| GET | /api/v1/health | 公开 | 200 |
+| GET | /api/v1/rules | 密钥 | 200 |
+| GET | /api/v1/rules/hits | 密钥 | 200 |
+| POST | /api/v1/rules/commit | 密钥 | 200 |
+| GET | /api/v1/whitelist | 密钥 | 200 |
+| POST | /api/v1/sync/atomic | 密钥 | 200 |
+| POST | /api/v1/sync/whitelist | 密钥 | 200 |
+| GET | /api/v1/stats | 密钥 | 200 |
+| GET | /api/v1/stats/cpu | 密钥 | 200 |
 
-每个请求（免认证端点除外）必须携带：
+## 欢迎与健康检查
 
-```
-X-API-Key: <node_api_key>
-```
+`GET /` 无请求体，返回 `{name:"XDrop Agent",version,sync_protocol:11}`。直接源码构建的 version 为 dev，构建脚本注入 git describe 输出；协议号独立于该字符串。
 
-密钥在 `config.yaml` 的 `auth.node_api_key` 字段中配置。
+健康检查始终返回 HTTP 200。两份完整快照均成功前返回 `{status:"degraded",reason:"awaiting_full_sync",rules_synced,whitelist_synced}`，之后返回 `{status:"healthy"}`。标志保持到重启；带拒绝项的成功 atomic 同步也可能设置 rules_synced，commit 不设置该标志。启动清空策略/逻辑状态，因此仅凭健康状态不能证明每条请求规则都存在。
 
-**免认证端点：**
+## 规则对象与匹配
 
-| 端点 | 说明 |
-|------|------|
-| `GET /` | 欢迎信息 / 版本信息 |
-| `GET /api/v1/health` | 健康检查 |
+| 字段 | 含义 |
+|---|---|
+| id, logical_id | 字符串 ID 与非零 uint32 逻辑 ID，所有权唯一 |
+| src_ip, dst_ip, src_cidr, dst_cidr | 地址/前缀字符串，精确地址不能与前缀混用 |
+| src_port, dst_port, protocol | uint16 端口，协议 all/tcp/udp/icmp/icmpv6/igmp/gre/esp |
+| action, rate_limit | drop 或 rate_limit；rate_limit 要求正 uint32 包/秒 |
+| tcp_flags, pkt_len_min, pkt_len_max | TCP 标志；兼容 uint16 长度闭区间，零表示未指定 |
+| ttl, dscp, icmp_type, icmp_code, fragment, pkt_len | 可选条件表达式 |
+| match_anomaly | uint8 任意位掩码：1 异常分片、2 无效、4 长度不一致、8 IPv4 TCP 分片偏移为一 |
+| comment, stats | comment 不持久化/读回；stats 包含 match_count,drop_count,match_bytes,drop_bytes,drop_pps |
 
-受保护端点未提供或提供错误密钥时，返回 **`401`**。
+至少需要一个受支持的五元组维度；拒绝 mapped IPv6 写法与混合地址族。前缀规范化为网络地址，端口须与协议兼容。不同字段条件按 AND 组合；同一规范五元组形成一组，最多四个物理候选，每候选最多两个长度区间。异常条件要求有界目标，IPv6 不允许位 1 或 8。
 
----
+数字条件接受逗号分隔的值/区间及可选前导 !；ttl/dscp/icmp_type/icmp_code/pkt_len 域为 0..255/0..63/0..255/0..255/0..65535。分片名称为 nofrag,first,middle,last,frag,nonfirst，要求 IPv4；ICMP 条件要求 ICMP/ICMPv6。限速桶属于逻辑 ID 与 CPU，使用启动时除数，而非单个全局桶。
 
-## 通用响应格式
+## 读取规则与白名单
 
-所有接口均返回 JSON。错误时返回对应 HTTP 状态码及：
+Rules 接受 page（正数，默认 1）、limit（1..1000，默认 50）和对 ID/地址/前缀不区分大小写的 search。返回 `{rules,count,pagination:{page,limit,total,pages}}`，按 ID 排序；没有查询参数时也只返回第一页。非法 page/limit 和不支持的 sort/order/enabled/action 返回 400 与 error；统计读取失败时计数为零。
 
-```json
-{ "error": "错误描述" }
-```
+Whitelist 无分页，返回 `{entries,count}`；条目包含 id 和规范化精确五元组字段，顺序未规定。两条路由均适用公共 401 错误。
 
----
+## 提交规则组
 
-## 信息与健康检查
+POST commit 接受 `{groups:[{key,rules:[Rule,...]},...]}`。规范 key 含 kind=exact/cidr、src_port、dst_port、protocol 及已提供的地址/前缀字段；每个成员必须匹配该 key。Commit 要求明确 ID，不能更改已有 ID 的逻辑身份。空 rules 删除该组，未声明组保持；移动规则需同时声明旧组与新组。
 
-### `GET /`
+成功为 `{code:"committed",groups:[{index,result}],receipt:"confirmed"}`，result 为 created/replaced/deleted/unchanged。receipt=deferred 表示已发布但回收尚未完成。无变更响应 code=unchanged 且不含 receipt。错误包含 code、error、groups，可带局部规则/键/容量信息。传输或发布结果不确定时，读取并对账确认。
 
-```json
-{
-  "name": "XDrop Agent",
-  "version": "2.7.0",
-  "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match", "whitelist_31combo"]
-}
-```
+## 规则与白名单完整快照
 
-### `GET /api/v1/health`
+POST atomic 接受 `{rules:[Rule,...]}`，通过影子代次替换全部规则；空或省略 rules 会清空规则。全局预检冲突拒绝发布，普通非法项可能被排除而其余合法项仍发布。成功返回 `{success,added,failed,rules,cidr_rules,rejected}`；HTTP 200 也必须检查 failed/rejected。拒绝项含 id、reason，原 ID 为空时含 index；白名单不变。
 
-```json
-{ "status": "healthy" }
-```
+POST sync/whitelist 接受 `{entries:[{id,src_ip?,dst_ip?,src_port?,dst_port?,protocol?},...]}`。空或省略 entries 清空全部白名单。ID 和规范键必须唯一，发布前完整校验输入。成功返回 `{total,failed:0}` 并设置白名单健康标志；格式/条目非法返回 400，map/配置失败返回 500；规则不变。
 
----
+## 统计与最近命中
 
-## 规则
+Stats 返回包计数 total_packets,dropped_packets,passed_packets,whitelisted_packets,rate_limited_packets,mapped_v6_dropped；字节计数 total_bytes,dropped_bytes,passed_bytes；诊断 cond_row_missing,tailcall_fail；rules_count,whitelist_count；total_pps,dropped_pps,passed_pps；以及 system,agent_state,xdp_info,capacity。独立读取不是单一原子快照；字节统计为不含 FCS 的 XDP 二层帧长度。
 
-### 规则对象
+Capacity 报告 blacklist,cidr_blacklist,cond,cidr_cond,whitelist,sv4_cidr_trie,dv4_cidr_trie,sv6_cidr_trie,dv6_cidr_trie,logical_state，各含 limit/used。使用量是已发布内存状态，不是即时内核转储。已 pin 计数可跨 agent 重启保留，但策略不会保留；tailcall_fail 重新开始。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string (UUID) | 规则 ID |
-| `src_ip` | string | 源 IPv4/IPv6（精确匹配），与 `src_cidr` 互斥 |
-| `dst_ip` | string | 目的 IPv4/IPv6（精确匹配），与 `dst_cidr` 互斥 |
-| `src_cidr` | string | 源 CIDR 前缀，如 `10.0.0.0/8`，与 `src_ip` 互斥 |
-| `dst_cidr` | string | 目的 CIDR 前缀，与 `dst_ip` 互斥 |
-| `src_port` | integer | 源端口，`0` = 任意 |
-| `dst_port` | integer | 目的端口，`0` = 任意 |
-| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""`（任意） |
-| `action` | string | `drop` 或 `rate_limit` |
-| `rate_limit` | integer | PPS 限速值，action=`rate_limit` 时必填（> 0） |
-| `pkt_len_min` | integer | L3 最小包长（字节），`0` = 不限 |
-| `pkt_len_max` | integer | L3 最大包长（字节），`0` = 不限 |
-| `tcp_flags` | string | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
-| `match_anomaly` | integer | **v2.6+。** Anomaly 位图（`0x01=bad_fragment`、`0x02=invalid`）。`0` = 不检查。非零值由 `xdp_anomaly_verify` tail-call 程序处理 |
-| `comment` | string | 备注 |
-| `stats` | RuleStats | 每条规则的匹配/丢包计数（列表响应中包含） |
+Stats/cpu 返回 `{per_cpu,rate_limit,divisor_in_map}`，每个 possible CPU 含原有五类包计数。rate_limit 含 divisor,source,online_cpus,possible_cpus。除数读取失败仍返回 200，值为 null 并附 divisor_in_map_error；统计读取失败返回 500、code=stats_read_failed。它不推进全局 PPS 基线。
 
-### RuleStats 对象
+Hits 必须提供 uint64 since_ns，返回 `{now_ns,truncated,scanned,hits}`；行含 rule_id,logical_id,match_count,drop_count,match_bytes,drop_bytes,last_hit_ns。时间戳使用 Linux 单调粗粒度时钟而非 Unix 时间。仅保留当前所有者且 last_hit_ns >= since_ns 的项，按累计 drop_count、再按 logical_id 排序，最多返回 10000 行。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `match_count` | integer | 该规则匹配的总包数 |
-| `drop_count` | integer | 该规则丢弃的总包数 |
-| `drop_pps` | float | 当前丢包速率（包/秒） |
+候选快照缓存 2 秒，并发扫描合并。过滤后超过 10000 行或候选占用 >=8192 时 truncated 为 true。LRU 淘汰可能漏掉活跃规则，因此排名可能不完整。共享 hits 令牌桶默认每秒 20 次、burst 20；超量返回 429 `{error:"rate_limited"}`、Retry-After: 1；非法 since_ns 返回 400，map 读取失败返回 500。
 
-**约束：**
-- `src_ip` 与 `src_cidr` 互斥；`dst_ip` 与 `dst_cidr` 互斥。
-- action=`rate_limit` 时，`rate_limit` 必须 > 0。
+## 变更错误码
 
----
+| 操作 | HTTP | 错误码 / 正文 |
+|---|---|---|
+| Commit | 400 | validation_rejected |
+| Commit | 409 | duplicate_id, duplicate_logical_id, group_undeclared, content_different, cidr_overlap, condition_capacity, table_full |
+| Commit | 500 | quiescence_failed, commit_failed |
+| Atomic | 400 | error（JSON 绑定） |
+| Atomic | 409 | condition_group_invalid, table_full, duplicate_logical_id, duplicate_id, duplicate_key, cidr_overlap |
+| Atomic | 500 | quiescence_failed 或不带 code 的 error |
+| 白名单同步 | 400 / 500 | error |
 
-### `GET /api/v1/rules`
-
-查询规则列表，响应中包含每条规则的统计数据。
-
-**查询参数：**
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | integer | — | 页码（≥ 1），不传则返回全部规则 |
-| `limit` | integer | `50` | 每页条数，范围 1–1000 |
-| `search` | string | — | 搜索 `src_ip`、`dst_ip`、`src_cidr`、`dst_cidr`、`id` |
-
-> Node 不支持 `sort`、`order`、`enabled`、`action` 参数，传入后将返回 `400`。
-
-**行为说明：**
-- **不传任何分页参数**：返回全部规则及统计（兼容旧版）。
-- **传入任意分页参数**：返回分页结果及统计。
-
-**响应 `200`（分页）：**
-
-```json
-{
-  "rules": [
-    {
-      "id": "uuid",
-      "src_ip": "1.2.3.4",
-      "dst_port": 80,
-      "protocol": "tcp",
-      "action": "drop",
-      "rate_limit": 0,
-      "pkt_len_min": 0,
-      "pkt_len_max": 0,
-      "comment": "",
-      "stats": {
-        "match_count": 10000,
-        "drop_count": 9800,
-        "drop_pps": 120.5
-      }
-    }
-  ],
-  "count": 42,
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 42,
-    "pages": 5
-  }
-}
-```
-
-**响应 `200`（全量，不含分页参数）：**
-
-```json
-{
-  "rules": [ { ...规则对象 + stats } ],
-  "count": 42
-}
-```
-
-**响应 `400`：** 参数非法或不支持。
-
----
-
-### `GET /api/v1/rules/:id`
-
-按 ID 查询单条规则。
-
-**响应 `200`：** 规则对象（不含统计数据）。
-
-**响应 `404`：** 规则不存在。
-
----
-
-### `POST /api/v1/rules`
-
-添加规则。触发 AtomicSync（双缓冲配置发布）。
-
-**请求体：**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `action` | string | **是** | `drop` 或 `rate_limit` |
-| `rate_limit` | integer | action=`rate_limit` 时 | PPS 限速值（> 0） |
-| `id` | string | 否 | UUID，不传则自动生成 |
-| `src_ip` | string | 否 | 源 IP（精确） |
-| `dst_ip` | string | 否 | 目的 IP（精确） |
-| `src_cidr` | string | 否 | 源 CIDR 前缀 |
-| `dst_cidr` | string | 否 | 目的 CIDR 前缀 |
-| `src_port` | integer | 否 | 源端口（0 = 任意） |
-| `dst_port` | integer | 否 | 目的端口（0 = 任意） |
-| `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
-| `pkt_len_min` | integer | 否 | 最小包长（0 = 不限） |
-| `pkt_len_max` | integer | 否 | 最大包长（0 = 不限） |
-| `tcp_flags` | string | 否 | TCP 标志过滤（如 `SYN`、`SYN,ACK`、`RST`），需 `protocol=tcp` |
-| `match_anomaly` | integer | 否 | **v2.6+。** Anomaly 位图 —— `bit0=bad_fragment (0x01)`、`bit1=invalid (0x02)`。`0` = 不检查（老语义）。非零值触发主程序 tail_call 到 `xdp_anomaly_verify`。Node 直接接受此字段（Controller 已把 `decoder` 糖展开成底层字段，Node 从不看到 `decoder`）。Anomaly 规则应使用 `action=drop`；`action=rate_limit` + 非零 `match_anomaly` Node 会接受（契约边界在 Controller `normalizeDecoder`），但数据面会 safety-net 映射为 `XDP_DROP`。 |
-| `comment` | string | 否 | 备注 |
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "rule_id": "uuid",
-  "message": "Rule added"
-}
-```
-
-**响应 `400`：** 校验错误（如同时设置 IP 和 CIDR；缺少 `rate_limit`；action 非法等）。
-
-**响应 `409`：** 相同匹配键的规则已以不同 ID 存在。
-
-**响应 `500`：** BPF 映射表写入失败。
-
----
-
-### `DELETE /api/v1/rules/:id`
-
-按 ID 删除规则。触发 AtomicSync。
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "message": "Rule deleted"
-}
-```
-
-**响应 `404`：** 规则不存在。
-
-**响应 `500`：** BPF 映射表删除失败。
-
----
-
-### `POST /api/v1/rules/batch`
-
-批量添加规则。全部规则插入后执行一次 AtomicSync。
-
-**请求体：**
-
-```json
-{
-  "rules": [
-    {
-      "id": "可选uuid",
-      "src_ip": "1.2.3.4",
-      "dst_port": 80,
-      "protocol": "tcp",
-      "action": "drop"
-    }
-  ]
-}
-```
-
-每个元素与 `POST /api/v1/rules` 的请求体字段相同。
-
-**去重规则：** 批次中若有多条规则 `id` 相同，以最后一条为准。
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "added": 8,
-  "failed": 2
-}
-```
-
-支持部分成功，`failed` 为被拒绝的条数。
-
-**响应 `400`：** 请求体格式错误。
-
----
-
-### `DELETE /api/v1/rules/batch`
-
-批量删除规则。执行一次 AtomicSync。
-
-**请求体：**
-
-```json
-{ "ids": ["uuid1", "uuid2", "uuid3"] }
-```
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "deleted": 3,
-  "failed": 0
-}
-```
-
----
-
-## 白名单
-
-白名单条目在所有黑名单规则之前匹配。命中白名单的数据包直接通过（`XDP_PASS`）。
-
-### 白名单条目对象
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string (UUID) | 条目 ID |
-| `src_ip` | string | 源 IPv4/IPv6 |
-| `dst_ip` | string | 目的 IPv4/IPv6 |
-| `src_port` | integer | 源端口（`0` = 任意） |
-| `dst_port` | integer | 目的端口（`0` = 任意） |
-| `protocol` | string | `tcp`、`udp`、`icmp`、`icmpv6` 或 `""` |
-| `comment` | string | 备注 |
-
-**约束（v2.7.0+，Phase 8）：**
-- 至少一个字段不为空/非零（全空条目拒绝）。
-- 单独 `protocol=all`（无 IP 无端口）拒绝——会放行所有流量。
-- 无 L4 端口的协议（`icmp`、`icmpv6`、`igmp`、`gre`、`esp`）不能携带端口字段。
-- 重复五元组 key 返回 `409`。
-- 五元组字段的任意非空子集均有效：如单独 `protocol=udp`、`dst_port=80+protocol=tcp`、`src_ip+protocol=tcp` 等。BPF 数据面使用 31-combo 位图门控查找。
-
----
-
-### `GET /api/v1/whitelist`
-
-查询所有白名单条目。
-
-**响应 `200`：**
-
-```json
-{
-  "entries": [ { ...白名单条目对象 } ],
-  "count": 3
-}
-```
-
----
-
-### `POST /api/v1/whitelist`
-
-添加白名单条目。
-
-**请求体：**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `src_ip` | string | 否 | 源 IP |
-| `dst_ip` | string | 否 | 目的 IP |
-| `src_port` | integer | 否 | 源端口 |
-| `dst_port` | integer | 否 | 目的端口 |
-| `protocol` | string | 否 | `tcp`、`udp`、`icmp`、`icmpv6`、`igmp`、`gre`、`esp` 或 `""` |
-| `id` | string | 否 | UUID，不传则自动生成 |
-| `comment` | string | 否 | 备注 |
-
-至少一个字段不为空/非零。
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "id": "uuid",
-  "message": "Whitelist entry added"
-}
-```
-
-**响应 `400`：** 全空条目；单独 `protocol=all`；无端口协议携带端口；字段格式无效。
-
-**响应 `409`：** 相同匹配键已以不同 ID 存在。
-
-**响应 `500`：** BPF 映射表写入失败。
-
----
-
-### `DELETE /api/v1/whitelist/:id`
-
-删除白名单条目。
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "message": "Whitelist entry deleted"
-}
-```
-
-**响应 `404`：** 条目不存在。
-
----
-
-### `POST /api/v1/whitelist/batch`
-
-批量添加白名单条目。全部写入后执行一次 BPF 更新。
-
-**请求体：**
-
-```json
-{
-  "entries": [
-    {
-      "src_ip": "10.0.0.1",
-      "comment": "受信任主机"
-    }
-  ]
-}
-```
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "added": 5,
-  "failed": 0
-}
-```
-
----
-
-### `DELETE /api/v1/whitelist/batch`
-
-批量删除白名单条目。
-
-**请求体：**
-
-```json
-{ "ids": ["uuid1", "uuid2"] }
-```
-
-**响应 `200`：**
-
-```json
-{
-  "success": true,
-  "deleted": 5,
-  "failed": 0
-}
-```
-
----
-
-## 统计
-
-### `GET /api/v1/stats`
-
-完整统计快照。包含全局计数器、系统指标、XDP 接口信息和 agent 内部状态。
-
-**响应 `200`：**
-
-```json
-{
-  "total_packets": 50000000,
-  "dropped_packets": 2500000,
-  "passed_packets": 47000000,
-  "whitelisted_packets": 500000,
-  "rate_limited_packets": 100000,
-  "rules_count": 42,
-  "whitelist_count": 3,
-  "dropped_pps": 1250.5,
-  "passed_pps": 23500.0,
-  "total_pps": 25000.0,
-  "xdp_info": {
-    "mode": "traditional",
-    "interfaces": [
-      { "name": "eth0", "role": "filter" }
-    ]
-  },
-  "system": {
-    "cpu_percent": 12.5,
-    "mem_total_mb": 8192,
-    "mem_used_mb": 1024,
-    "mem_percent": 12.5,
-    "uptime_seconds": 86400,
-    "load_avg_1": 0.8,
-    "load_avg_5": 0.9,
-    "load_avg_15": 1.0
-  },
-  "agent_state": {
-    "exact_rules": 40,
-    "cidr_rules": 2,
-    "whitelist_entries": 3,
-    "active_slot": 1,
-    "rule_map_selector": 0,
-    "tailcall_fail": 0
-  }
-}
-```
-
-**字段说明：**
-
-| 字段 | 说明 |
-|------|------|
-| `total_packets` | agent 启动以来接收的总包数 |
-| `dropped_packets` | 总丢包数 |
-| `passed_packets` | 总通过包数 |
-| `whitelisted_packets` | 通过白名单直接放行的包数 |
-| `rate_limited_packets` | 被限速的包数 |
-| `*_pps` | 当前速率（包/秒），采样值 |
-| `xdp_info.mode` | `traditional` 或 `fast_forward` |
-| `xdp_info.interfaces` | 已挂载的接口及其角色（`filter`、`inbound`、`outbound`） |
-| `system.cpu_percent` | 主机 CPU 使用率（%） |
-| `system.mem_total_mb` | 主机总内存（MB） |
-| `system.mem_used_mb` | 主机已用内存（MB） |
-| `system.uptime_seconds` | 主机运行时间（秒） |
-| `system.load_avg_1/5/15` | 1/5/15 分钟负载均值 |
-| `agent_state.exact_rules` | 当前活跃 BPF 表中的精确五元组规则数 |
-| `agent_state.cidr_rules` | 当前活跃 BPF 表中的 CIDR 规则数 |
-| `agent_state.whitelist_entries` | BPF 白名单表中的条目数 |
-| `agent_state.active_slot` | 当前活跃配置表槽位（0=A，1=B） |
-| `agent_state.rule_map_selector` | 当前活跃规则表选择器（0=主表，1=影子表） |
-| `agent_state.tailcall_fail` | **v2.7.0+。** `tailcall_fail_stats` 各 CPU 计数器之和——`xdp_whitelist_gate` 向 `xdp_firewall_main` tail-call 失败次数。非零表示 PROG_ARRAY 查找失败；gate 失败时 fail-open（`XDP_PASS`）。正常运行时应始终为 0。 |
-
----
-
-## 内部同步
-
-### `POST /api/v1/sync/whitelist` *(v2.7.0+)*
-
-原子全量白名单快照同步。由 Controller FullSync 路径调用，使用双缓冲协议（`DoWhitelistAtomicSync`）原子替换本节点全部白名单：写入影子表 → 翻转 `CONFIG_WL_MAP_SELECTOR` → 清空旧活跃表，零空窗。不建议直接调用；请通过 Controller 的 `POST /api/v1/nodes/:id/sync` 触发。
-
-**请求体：**
-
-```json
-{
-  "entries": [
-    { "id": "uuid", "src_ip": "", "dst_ip": "", "src_port": 0, "dst_port": 0, "protocol": "udp" }
-  ]
-}
-```
-
-**响应 `200`：**
-
-```json
-{ "success": true, "synced": 5 }
-```
-
-**响应 `400`：** 条目无效（未知 combo、重复 key 等）。
-
-**响应 `500`：** BPF 映射表操作失败。
-
----
-
-## 错误码参考
-
-| HTTP 状态码 | 含义 |
-|------------|------|
-| `400` | 请求参数错误或缺失 |
-| `401` | 未认证或 `X-API-Key` 无效 |
-| `404` | 资源不存在 |
-| `409` | 冲突（重复条目） |
-| `500` | 内部错误（BPF 操作失败） |
-
-所有错误响应均包含：
-
-```json
-{ "error": "错误描述" }
-```
+除 JSON 绑定错误外，Atomic 失败还含 added/failed；Commit 错误含 groups，局部组错误可带 rule_id,undeclared_key,rule_ids,table,excess。节点错误结构与控制器错误对象不同。

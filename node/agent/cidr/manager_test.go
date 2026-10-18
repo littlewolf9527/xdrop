@@ -1,224 +1,285 @@
 package cidr
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/cilium/ebpf"
 )
 
-// NEW-UT-03 (§8.1.2): compile-time assertion that `*ebpf.Map` satisfies
-// cidr.TrieWriter without an explicit adapter. If cilium/ebpf ever tightens
-// Put / Delete signatures, this breaks the test build (not the main binary),
-// giving early warning.
 var _ TrieWriter = (*ebpf.Map)(nil)
 
-// fakeTrie is a minimal cidr.TrieWriter implementation used by Manager's
-// writeTrie / deleteTrie call sites. Only Put and Delete are needed — a
-// two-method narrow interface (§5.3 / §5.7 of the migration proposal)
-// replaces the 19-method goebpf.Map mock we used to need.
 type fakeTrie struct {
-	entries map[string]struct{} // key-bytes hex → presence
-
-	// Injected failures
-	putErr    error
-	deleteErr error
-
-	// Call counters for assertions
-	putCalls    int
-	deleteCalls int
+	entries                               map[string]uint32
+	putErr, deleteErr, nextErr, lookupErr error
+	putCalls, deleteCalls                 int
+	size, capacity                        uint32
+	events                                []string
 }
 
-func newFakeTrie() *fakeTrie {
-	return &fakeTrie{entries: make(map[string]struct{})}
+func newFakeTrie(size uint32) *fakeTrie {
+	return &fakeTrie{entries: map[string]uint32{}, size: size, capacity: 50000}
 }
-
-func (f *fakeTrie) Put(key, _ interface{}) error {
+func fakeKey(key interface{}) string {
+	if b, ok := key.([]byte); ok {
+		return string(b)
+	}
+	var b bytes.Buffer
+	if err := binary.Write(&b, binary.LittleEndian, key); err != nil {
+		panic(err)
+	}
+	return b.String()
+}
+func (f *fakeTrie) KeySize() uint32    { return f.size }
+func (f *fakeTrie) MaxEntries() uint32 { return f.capacity }
+func (f *fakeTrie) Put(key, value interface{}) error {
 	f.putCalls++
+	f.events = append(f.events, "put")
 	if f.putErr != nil {
 		return f.putErr
 	}
-	f.entries[fmt.Sprintf("%v", key)] = struct{}{}
+	k := fakeKey(key)
+	if _, exists := f.entries[k]; !exists && len(f.entries) >= int(f.capacity) {
+		return errors.New("full")
+	}
+	f.entries[k] = value.(uint32)
 	return nil
 }
-
 func (f *fakeTrie) Delete(key interface{}) error {
 	f.deleteCalls++
+	f.events = append(f.events, "delete")
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
-	delete(f.entries, fmt.Sprintf("%v", key))
+	k := fakeKey(key)
+	if _, ok := f.entries[k]; !ok {
+		return ebpf.ErrKeyNotExist
+	}
+	delete(f.entries, k)
 	return nil
 }
-
-func (f *fakeTrie) len() int { return len(f.entries) }
-
-// --- Tests ---
+func (f *fakeTrie) Lookup(key, out interface{}) error {
+	if f.lookupErr != nil {
+		return f.lookupErr
+	}
+	id, ok := f.entries[fakeKey(key)]
+	if !ok {
+		return ebpf.ErrKeyNotExist
+	}
+	*out.(*uint32) = id
+	return nil
+}
+func (f *fakeTrie) NextKey(cursor, out interface{}) error {
+	if f.nextErr != nil {
+		return f.nextErr
+	}
+	keys := make([]string, 0, len(f.entries))
+	for key := range f.entries {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if cursor == nil || key > fakeKey(cursor) {
+			*out.(*[]byte) = []byte(key)
+			return nil
+		}
+	}
+	return ebpf.ErrKeyNotExist
+}
 
 const testCIDR = "10.0.0.0/24"
 const testCIDR2 = "192.168.0.0/24"
 
-func newTestManager() (*Manager, *fakeTrie, *fakeTrie, *fakeTrie, *fakeTrie) {
-	srcV4, dstV4 := newFakeTrie(), newFakeTrie()
-	srcV6, dstV6 := newFakeTrie(), newFakeTrie()
-	return NewManager(srcV4, dstV4, srcV6, dstV6), srcV4, dstV4, srcV6, dstV6
+func newTestManager() (*Manager, [2][4]*fakeTrie) {
+	var ts [2][4]*fakeTrie
+	for slot := range ts {
+		for i := range ts[slot] {
+			size := uint32(8)
+			if i >= 2 {
+				size = 20
+			}
+			ts[slot][i] = newFakeTrie(size)
+		}
+	}
+	return NewManager(ts[0][0], ts[0][1], ts[0][2], ts[0][3], ts[1][0], ts[1][1], ts[1][2], ts[1][3]), ts
 }
-
-// TestAllocSrcID_AssignsUniqueIDs verifies each new CIDR gets a fresh ID and
-// the same CIDR returns the same ID with incremented refcount.
-func TestAllocSrcID_AssignsUniqueIDs(t *testing.T) {
-	m, _, _, _, _ := newTestManager()
-
-	id1, err := m.AllocSrcID(testCIDR)
-	if err != nil {
-		t.Fatalf("first alloc failed: %v", err)
+func TestReserveSrcID_AssignsUniqueIDs(t *testing.T) {
+	m, _ := newTestManager()
+	a, e := m.ReserveSrcID(testCIDR)
+	if e != nil {
+		t.Fatal(e)
 	}
-	id2, err := m.AllocSrcID(testCIDR2)
-	if err != nil {
-		t.Fatalf("second alloc failed: %v", err)
+	b, e := m.ReserveSrcID(testCIDR2)
+	if e != nil || b <= a {
+		t.Fatal(a, b, e)
 	}
-	if id1 == id2 {
-		t.Fatalf("expected different IDs for different CIDRs, got %d for both", id1)
-	}
-
-	// Same CIDR again → same ID, not a new one.
-	id1Again, err := m.AllocSrcID(testCIDR)
-	if err != nil {
-		t.Fatalf("re-alloc failed: %v", err)
-	}
-	if id1Again != id1 {
-		t.Fatalf("re-alloc of same CIDR returned new ID %d (expected %d)", id1Again, id1)
+	again, e := m.ReserveSrcID(testCIDR)
+	if e != nil || again != a {
+		t.Fatal(a, again, e)
 	}
 }
-
-// TestReleaseSrcID_RefcountSemantics verifies BUG-020/021: trie delete happens
-// only on last reference, and map state mirrors trie state.
-func TestReleaseSrcID_RefcountSemantics(t *testing.T) {
-	m, srcV4, _, _, _ := newTestManager()
-
-	// Two allocs → refcount = 2, one trie write
-	if _, err := m.AllocSrcID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.AllocSrcID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-	if got := srcV4.putCalls; got != 1 {
-		t.Errorf("expected 1 trie put for 2 allocs of same CIDR, got %d", got)
-	}
-
-	// First release: refcount 2 → 1, trie untouched
-	if err := m.ReleaseSrcID(testCIDR); err != nil {
-		t.Fatalf("first release failed: %v", err)
-	}
-	if got := srcV4.deleteCalls; got != 0 {
-		t.Errorf("expected 0 trie deletes after first release, got %d", got)
-	}
-	if _, ok := m.GetSrcID(testCIDR); !ok {
-		t.Error("GetSrcID lost entry after first release (should still be present)")
-	}
-
-	// Second release: refcount 1 → 0, trie delete happens
-	if err := m.ReleaseSrcID(testCIDR); err != nil {
-		t.Fatalf("second release failed: %v", err)
-	}
-	if got := srcV4.deleteCalls; got != 1 {
-		t.Errorf("expected 1 trie delete after last release, got %d", got)
-	}
-	if _, ok := m.GetSrcID(testCIDR); ok {
-		t.Error("GetSrcID still has entry after last release")
-	}
-}
-
-// TestReleaseSrcID_TrieFailureLeavesStateUnchanged verifies BUG-020: on trie
-// delete failure, refcount is NOT decremented, so caller can safely retry.
-func TestReleaseSrcID_TrieFailureLeavesStateUnchanged(t *testing.T) {
-	m, srcV4, _, _, _ := newTestManager()
-
-	id, err := m.AllocSrcID(testCIDR)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Inject trie delete failure
-	srcV4.deleteErr = fmt.Errorf("injected trie delete failure")
-
-	// Release should fail, and state must be preserved
-	if err := m.ReleaseSrcID(testCIDR); err == nil {
-		t.Fatal("expected release to return error when trie delete fails")
-	}
-
-	// Entry must still be present with original ID
-	gotID, ok := m.GetSrcID(testCIDR)
-	if !ok {
-		t.Fatal("entry was removed despite trie delete failure")
-	}
-	if gotID != id {
-		t.Errorf("ID mutated after failed release: got %d, want %d", gotID, id)
-	}
-
-	// Clear injection; retry should succeed
-	srcV4.deleteErr = nil
-	if err := m.ReleaseSrcID(testCIDR); err != nil {
-		t.Errorf("retry after cleared failure should succeed, got: %v", err)
-	}
-	if _, ok := m.GetSrcID(testCIDR); ok {
-		t.Error("entry persisted after successful retry")
-	}
-}
-
-// TestReleaseSrcID_UnknownCIDRReturnsError verifies releasing a CIDR that was
-// never alloced is a loud error, not a silent no-op.
 func TestReleaseSrcID_UnknownCIDRReturnsError(t *testing.T) {
-	m, _, _, _, _ := newTestManager()
+	m, _ := newTestManager()
 	if err := m.ReleaseSrcID(testCIDR); err == nil {
-		t.Fatal("expected error when releasing un-alloced CIDR")
+		t.Fatal("unknown release silently accepted")
 	}
 }
 
-// TestReleaseDstID_RefcountSemantics mirrors the src test for the dst path.
-func TestReleaseDstID_RefcountSemantics(t *testing.T) {
-	m, _, dstV4, _, _ := newTestManager()
-
-	if _, err := m.AllocDstID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.AllocDstID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := m.ReleaseDstID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-	if got := dstV4.deleteCalls; got != 0 {
-		t.Errorf("expected 0 trie deletes with ref>1, got %d", got)
-	}
-
-	if err := m.ReleaseDstID(testCIDR); err != nil {
-		t.Fatal(err)
-	}
-	if got := dstV4.deleteCalls; got != 1 {
-		t.Errorf("expected 1 trie delete on last ref, got %d", got)
+// Migrates both refcount tests and the old debt/undo tests to I1/I2/I4/I6.
+func TestDingManagerStatesAndBorrowSettlement(t *testing.T) {
+	for i := 0; i < 4; i++ {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			m, ts := newTestManager()
+			prefix := testCIDR
+			if i >= 2 {
+				prefix = "fd00::/64"
+			}
+			reserve, undo, release, get := m.ReserveSrcID, m.UndoSrcReservation, m.ReleaseSrcID, m.GetSrcID
+			if i%2 == 1 {
+				reserve, undo, release, get = m.ReserveDstID, m.UndoDstReservation, m.ReleaseDstID, m.GetDstID
+			}
+			id, e := reserve(prefix)
+			if e != nil {
+				t.Fatal(e)
+			}
+			same, e := reserve(prefix)
+			if e != nil || same != id {
+				t.Fatal("shared identity", same, id, e)
+			}
+			if ts[0][i].putCalls+ts[1][i].putCalls != 0 {
+				t.Fatal("reservation wrote trie")
+			}
+			if e = undo(prefix); e != nil {
+				t.Fatal(e)
+			}
+			if e = undo(prefix); e != nil {
+				t.Fatal(e)
+			}
+			if _, ok := get(prefix); ok || ts[0][i].deleteCalls+ts[1][i].deleteCalls != 0 {
+				t.Fatal("undo must be memory only")
+			}
+			next, e := reserve(prefix)
+			if e != nil || next <= id {
+				t.Fatal("cancelled ID reused")
+			}
+			if e = m.Align(1, m.Snapshot([2][]string{})); e != nil {
+				t.Fatal(e)
+			}
+			if ts[0][i].putCalls != 0 || ts[1][i].putCalls != 1 {
+				t.Fatal("shadow-only publication")
+			}
+			for n := 0; n < 3; n++ {
+				if _, e = reserve(prefix); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e = m.Align(1, m.Snapshot([2][]string{})); e != nil || ts[1][i].putCalls != 1 {
+				t.Fatal("shared prefix duplicate write", e)
+			}
+			for n := 0; n < 3; n++ {
+				if e = undo(prefix); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if got, ok := get(prefix); !ok || got != next {
+				t.Fatal("borrow rollback lost live identity")
+			}
+			ts[1][i].deleteErr = errors.New("delete fault")
+			if e = release(prefix); e != nil {
+				t.Fatal("release performed trie I/O", e)
+			}
+			if _, ok := get(prefix); ok || len(ts[1][i].entries) != 1 || ts[1][i].deleteCalls != 0 {
+				t.Fatal("old copy changed before receipt")
+			}
+			if e = m.Align(1, m.Snapshot([2][]string{})); e == nil || m.known[1] {
+				t.Fatal("failed alignment not unknown")
+			}
+			ts[1][i].deleteErr = nil
+			if e = m.CatchUp(1); e != nil || len(ts[1][i].entries) != 0 || !m.known[1] {
+				t.Fatal("unknown actual-content recovery", e)
+			}
+		})
 	}
 }
-
-// TestAllocDstID_TrieFailurePreservesIDCounter verifies that when Alloc's
-// writeTrie fails, no state is persisted (no phantom entry in cidrs/refs).
-func TestAllocDstID_TrieFailurePreservesIDCounter(t *testing.T) {
-	m, _, dstV4, _, _ := newTestManager()
-
-	dstV4.putErr = fmt.Errorf("injected put failure")
-
-	if _, err := m.AllocDstID(testCIDR); err == nil {
-		t.Fatal("expected error when trie put fails")
+func TestPrefixABFailedPutCancellationAndIDOverwrite(t *testing.T) {
+	m, ts := newTestManager()
+	id, e := m.ReserveDstID(testCIDR)
+	if e != nil {
+		t.Fatal(e)
 	}
-	if _, ok := m.GetDstID(testCIDR); ok {
-		t.Error("GetDstID has entry despite trie put failure")
+	ts[1][1].putErr = errors.New("put fault")
+	if e = m.Align(1, m.Snapshot([2][]string{})); e == nil || m.known[1] {
+		t.Fatal("put failure missing")
 	}
-
-	// Retry after clearing injection
-	dstV4.putErr = nil
-	if _, err := m.AllocDstID(testCIDR); err != nil {
-		t.Fatalf("retry after cleared failure should succeed, got: %v", err)
+	if e = m.UndoDstReservation(testCIDR); e != nil || ts[1][1].deleteCalls != 0 {
+		t.Fatal("undo performed I/O", e)
+	}
+	ts[1][1].putErr = nil
+	next, e := m.ReserveDstID(testCIDR)
+	if e != nil || next <= id {
+		t.Fatal("ID reused")
+	}
+	key, _ := trieKey(testCIDR, false)
+	ts[1][1].entries[string(key)] = id
+	if e = m.CatchUp(1); e != nil {
+		t.Fatal(e)
+	}
+	if ts[1][1].entries[string(key)] != next || ts[1][1].putCalls != 2 {
+		t.Fatal("stale ID not overwritten")
+	}
+}
+func TestPrefixABUnknownFullDeletesFirst(t *testing.T) {
+	m, ts := newTestManager()
+	trie := ts[1][0]
+	trie.capacity = 2
+	for _, p := range []string{"10.1.0.0/24", "10.2.0.0/24"} {
+		key, _ := trieKey(p, false)
+		trie.entries[string(key)] = 99
+	}
+	for _, p := range []string{"10.3.0.0/24", "10.4.0.0/24"} {
+		if _, e := m.ReserveSrcID(p); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if len(trie.entries) != 2 || trie.MaxEntries() != 2 {
+		t.Fatal("full-copy guard")
+	}
+	if e := m.CatchUp(1); e != nil {
+		t.Fatal(e)
+	}
+	if !reflect.DeepEqual(trie.events, []string{"delete", "delete", "put", "put"}) || len(trie.entries) != 2 {
+		t.Fatal(trie.events)
+	}
+	if !reflect.DeepEqual(trie.entries, m.Snapshot([2][]string{})[0]) {
+		t.Fatal("extra/missing prefix")
+	}
+}
+func TestPrefixABReadFailureIsUnknown(t *testing.T) {
+	for _, kind := range []string{"next", "lookup"} {
+		t.Run(kind, func(t *testing.T) {
+			m, ts := newTestManager()
+			trie := ts[1][0]
+			key, _ := trieKey(testCIDR, false)
+			trie.entries[string(key)] = 8
+			injected := errors.New(kind)
+			if kind == "next" {
+				trie.nextErr = injected
+			} else {
+				trie.lookupErr = injected
+			}
+			if e := m.Align(1, TrieEntries{}); !errors.Is(e, injected) || m.known[1] || trie.deleteCalls != 0 || trie.putCalls != 0 {
+				t.Fatal("read failure changed trie or lost error", e)
+			}
+			trie.nextErr = nil
+			trie.lookupErr = nil
+			if e := m.CatchUp(1); e != nil || len(trie.entries) != 0 {
+				t.Fatal("read failure recovery", e)
+			}
+		})
 	}
 }

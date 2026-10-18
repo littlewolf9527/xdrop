@@ -36,8 +36,9 @@ type Config struct {
 
 // ServerConfig server configuration
 type ServerConfig struct {
-	Port      int    `mapstructure:"port"`
-	Interface string `mapstructure:"interface"`
+	HitsRateLimit int    `mapstructure:"hits_rate_limit"`
+	Port          int    `mapstructure:"port"`
+	Interface     string `mapstructure:"interface"`
 }
 
 // BPFConfig BPF configuration
@@ -58,13 +59,14 @@ type BPFConfig struct {
 	//               for production where restart survival is expected.
 	//   "disable" — skip pinning entirely, matches pre-migration behaviour.
 	Pinning string `mapstructure:"pinning"`
+	// XDPMode selects auto (default), native (no fallback), or generic.
+	XDPMode          string `mapstructure:"xdp_mode"`
+	RateLimitDivisor int    `mapstructure:"rate_limit_divisor"` // 0=system online CPUs; 1..4096=override
 }
 
 // AuthConfig authentication configuration
 type AuthConfig struct {
-	NodeAPIKey        string `mapstructure:"node_api_key"`        // verified when Controller sends requests to this Node
-	ControllerSyncKey string `mapstructure:"controller_sync_key"` // used when Node syncs to Controller
-	ControllerURL     string `mapstructure:"controller_url"`      // Controller address
+	NodeAPIKey string `mapstructure:"node_api_key"` // verified when Controller sends requests to this Node
 }
 
 // InterfacePair interface pair configuration (fast forward mode)
@@ -88,10 +90,13 @@ func Load(configPath string) (*Config, error) {
 	// set defaults
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.interface", "eth0")
-	viper.SetDefault("bpf.path", "../bpf/xdrop.elf")      // deprecated
+	viper.SetDefault("server.hits_rate_limit", 20)
+	viper.SetDefault("bpf.path", "../bpf/xdrop.elf")           // deprecated
 	viper.SetDefault("bpf.main_path", "../bpf/xdrop_main.elf") // Phase 8
 	viper.SetDefault("bpf.gate_path", "../bpf/xdrop_gate.elf") // Phase 8
 	viper.SetDefault("bpf.pinning", "auto")
+	viper.SetDefault("bpf.xdp_mode", "auto")
+	viper.SetDefault("bpf.rate_limit_divisor", 0)
 	viper.SetDefault("fast_forward.enabled", false)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -102,11 +107,37 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
+	if viper.InConfig("auth.controller_url") || viper.InConfig("auth.controller_sync_key") {
+		log.Printf("[WARN] auth.controller_url / auth.controller_sync_key are deprecated and ignored (已废弃、忽略)")
+	}
+
+	// Get falls back to the default for a null leaf; inspect its parent first
+	// so an explicitly empty value cannot silently become auto.
+	if value, present := viper.GetStringMap("bpf")["rate_limit_divisor"]; present && value == nil {
+		return nil, fmt.Errorf("bpf.rate_limit_divisor must be an integer in 0..4096")
+	}
+	switch viper.Get("bpf.rate_limit_divisor").(type) {
+	case int, int64, uint64:
+	default:
+		return nil, fmt.Errorf("bpf.rate_limit_divisor must be an integer in 0..4096")
+	}
+
 	var cfg Config
+	if value, present := viper.GetStringMap("server")["hits_rate_limit"]; present && value == nil {
+		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
+	}
+	switch viper.Get("server.hits_rate_limit").(type) {
+	case int, int64, uint64:
+	default:
+		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
+	}
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
 
+	if cfg.Server.HitsRateLimit < 1 || cfg.Server.HitsRateLimit > 1000 {
+		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
+	}
 	return &cfg, nil
 }
 
@@ -121,6 +152,24 @@ func MustLoad(configPath string) *Config {
 
 // Validate validates configuration
 func (c *Config) Validate() error {
+	if c.Server.HitsRateLimit == 0 {
+		c.Server.HitsRateLimit = 20 // directly constructed configurations retain defaults
+	}
+	if c.Server.HitsRateLimit < 1 || c.Server.HitsRateLimit > 1000 {
+		return fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
+	}
+	if c.BPF.RateLimitDivisor < 0 || c.BPF.RateLimitDivisor > 4096 {
+		return fmt.Errorf("bpf.rate_limit_divisor must be an integer in 0..4096, got %d", c.BPF.RateLimitDivisor)
+	}
+	if c.BPF.XDPMode == "" {
+		c.BPF.XDPMode = "auto"
+	}
+	switch c.BPF.XDPMode {
+	case "auto", "native", "generic":
+	default:
+		return fmt.Errorf("bpf.xdp_mode must be one of auto|native|generic, got %q", c.BPF.XDPMode)
+	}
+
 	// Normalise + validate bpf.pinning. Empty string (no key in config.yaml)
 	// maps to "auto" per the default set in Load() — this check covers
 	// freshly-constructed configs that bypass viper.
@@ -133,14 +182,11 @@ func (c *Config) Validate() error {
 
 	// Reject placeholder credentials (CHANGE_ME_* etc.) from example configs.
 	// Prevents fresh deployments from starting with known-to-be-default keys.
+	if strings.TrimSpace(c.Auth.NodeAPIKey) == "" {
+		return fmt.Errorf("auth.node_api_key is empty; generate a real key before starting")
+	}
 	if looksLikePlaceholder(c.Auth.NodeAPIKey) {
 		return fmt.Errorf("auth.node_api_key still contains a placeholder value (%q); generate a real key before starting", c.Auth.NodeAPIKey)
-	}
-	// controller_sync_key only matters when the Node actively syncs to a Controller.
-	// In pull-only / standalone deployments (no controller_url), the field is unused
-	// and placeholder values should not block startup.
-	if c.Auth.ControllerURL != "" && looksLikePlaceholder(c.Auth.ControllerSyncKey) {
-		return fmt.Errorf("auth.controller_sync_key still contains a placeholder value (%q); generate a real key before starting (or leave controller_url empty for pull-only mode)", c.Auth.ControllerSyncKey)
 	}
 
 	// if fast_forward is enabled, validate fast_forward config

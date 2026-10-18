@@ -1,0 +1,14 @@
+{
+  "TestAFE8/dst": {
+    "status": 400,
+    "body": "{\"error\":\"invalid whitelist entry w: invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}"
+  },
+  "TestAFE8/mixed": {
+    "status": 400,
+    "body": "{\"error\":\"invalid whitelist entry w: address family mismatch: src is IPv4, dst is IPv6\"}"
+  },
+  "TestAFE8/src": {
+    "status": 400,
+    "body": "{\"error\":\"invalid whitelist entry w: invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}"
+  }
+}

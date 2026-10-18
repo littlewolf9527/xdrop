@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/SnapshotsAndWhitelist": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":0,\"rejected\":[],\"rules\":1,\"success\":true}"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "TestBingWelcomeGolden": {
+    "status": 200,
+    "body": "{\"name\":\"XDrop Agent\",\"sync_protocol\":9,\"version\":\"dev\"}"
+  }
+}

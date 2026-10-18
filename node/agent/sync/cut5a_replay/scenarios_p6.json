@@ -1,0 +1,583 @@
+[
+  {
+    "Name": "J8_accept_rate_exact_full",
+    "Authority": "J8 PLAN \u2463-1 / authorization 4 \u00a72",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "rate_limit": 7,
+              "match_anomaly": 4
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "success",
+        "Packets": [
+          "length_mismatch",
+          "length_mismatch",
+          "syn",
+          "miss"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_and_exact_full",
+    "Authority": "J8 PLAN \u2463-1 regression (no allowance)",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "match_anomaly": 4,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "Expect": "success",
+        "ExpectP6": "success",
+        "Packets": [
+          "length_mismatch",
+          "syn",
+          "length_mismatch_ack",
+          "ack"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_unbounded_exact_full",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "rate_limit": 7,
+              "match_anomaly": 4
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_ipv6_exact_full",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "2001:db8::1",
+              "rate_limit": 7,
+              "match_anomaly": 1
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_accept_rate_exact_commit",
+    "Authority": "J8 PLAN \u2463-1 / authorization 4 \u00a72",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "src_ip": "192.0.2.1",
+                  "rate_limit": 7,
+                  "match_anomaly": 4
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "committed",
+        "Packets": [
+          "length_mismatch",
+          "length_mismatch",
+          "syn",
+          "miss"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_and_exact_commit",
+    "Authority": "J8 PLAN \u2463-1 regression (no allowance)",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "match_anomaly": 4,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "ExpectP6": "committed",
+        "Packets": [
+          "length_mismatch",
+          "syn",
+          "length_mismatch_ack",
+          "ack"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_unbounded_exact_commit",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "rate_limit": 7,
+                  "match_anomaly": 4
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_ipv6_exact_commit",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "2001:db8::1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "src_ip": "2001:db8::1",
+                  "rate_limit": 7,
+                  "match_anomaly": 1
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_accept_rate_cidr_full",
+    "Authority": "J8 PLAN \u2463-1 / authorization 4 \u00a72",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "rate_limit": 7,
+              "match_anomaly": 4
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "success",
+        "Packets": [
+          "length_mismatch",
+          "length_mismatch",
+          "syn",
+          "miss"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_and_cidr_full",
+    "Authority": "J8 PLAN \u2463-1 regression (no allowance)",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "match_anomaly": 4,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "Expect": "success",
+        "ExpectP6": "success",
+        "Packets": [
+          "length_mismatch",
+          "syn",
+          "length_mismatch_ack",
+          "ack"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_unbounded_cidr_full",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "0.0.0.0/0",
+              "rate_limit": 7,
+              "match_anomaly": 4
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_ipv6_cidr_full",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "j8",
+              "logical_id": 5617,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "2001:db8::/64",
+              "rate_limit": 7,
+              "match_anomaly": 1
+            }
+          ]
+        },
+        "Expect": "condition_group_invalid",
+        "ExpectP6": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_accept_rate_cidr_commit",
+    "Authority": "J8 PLAN \u2463-1 / authorization 4 \u00a72",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "src_cidr": "192.0.2.0/24",
+                  "rate_limit": 7,
+                  "match_anomaly": 4
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "committed",
+        "Packets": [
+          "length_mismatch",
+          "length_mismatch",
+          "syn",
+          "miss"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_and_cidr_commit",
+    "Authority": "J8 PLAN \u2463-1 regression (no allowance)",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "match_anomaly": 4,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "ExpectP6": "committed",
+        "Packets": [
+          "length_mismatch",
+          "syn",
+          "length_mismatch_ack",
+          "ack"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_unbounded_cidr_commit",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "0.0.0.0/0",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "src_cidr": "0.0.0.0/0",
+                  "rate_limit": 7,
+                  "match_anomaly": 4
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J8_rejected_ipv6_cidr_commit",
+    "Authority": "J8 authorization 4 \u00a72 error text only",
+    "Steps": [
+      {
+        "Name": "install",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "2001:db8::/64",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "j8",
+                  "logical_id": 5617,
+                  "protocol": "tcp",
+                  "action": "rate_limit",
+                  "src_cidr": "2001:db8::/64",
+                  "rate_limit": 7,
+                  "match_anomaly": 1
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "ExpectP6": "invalid",
+        "Packets": [
+          "syn",
+          "length_mismatch"
+        ]
+      }
+    ]
+  }
+]

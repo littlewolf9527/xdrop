@@ -32,6 +32,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
@@ -214,13 +215,7 @@ func loadFromSpec(spec *ebpf.CollectionSpec, opts Options) (*ebpf.Collection, Re
 	// Tag every map for pinning. Replacement maps (owned by another collection)
 	// get PinNone — they'll be replaced by MapReplacements and shouldn't be
 	// pinned under this collection's ownership. PinNoneOverrides also get PinNone.
-	for name, ms := range spec.Maps {
-		if replacementSet[name] || pinNoneSet[name] {
-			ms.Pinning = ebpf.PinNone
-		} else {
-			ms.Pinning = ebpf.PinByName
-		}
-	}
+	tagPinnedMaps(spec, replacementSet, pinNoneSet)
 
 	coll, err := newCollPinned(pinRoot)
 	if err != nil {
@@ -239,6 +234,16 @@ func loadFromSpec(spec *ebpf.CollectionSpec, opts Options) (*ebpf.Collection, Re
 		return coll2, Result{EffectiveMode: ModeDisable, FallbackReason: err.Error(), Wiped: wiped}, nil
 	}
 	return coll, Result{EffectiveMode: mode, PinPath: pinRoot, Wiped: wiped}, nil
+}
+
+func tagPinnedMaps(spec *ebpf.CollectionSpec, replacementSet, pinNoneSet map[string]bool) {
+	for name, ms := range spec.Maps {
+		if replacementSet[name] || pinNoneSet[name] || strings.Contains(name, ".") {
+			ms.Pinning = ebpf.PinNone
+		} else {
+			ms.Pinning = ebpf.PinByName
+		}
+	}
 }
 
 // CleanStalePins removes bpffs pin files for maps that must never be pinned.
@@ -299,7 +304,7 @@ func probeBPFFS(dir string) error {
 func reconcilePinnedMaps(spec *ebpf.CollectionSpec, pinRoot string, skipMaps map[string]bool) ([]string, error) {
 	var wiped []string
 	for name, ms := range spec.Maps {
-		if skipMaps[name] {
+		if skipMaps[name] || strings.Contains(name, ".") {
 			continue // owned by another collection (e.g. mainColl shared maps)
 		}
 		path := filepath.Join(pinRoot, name)
@@ -421,6 +426,36 @@ func clearHashOrTrie(m *ebpf.Map) error {
 		}
 	}
 	return nil
+}
+
+// ClearMapKeys clears collected keys from a logical-ID map during startup.
+// In pin mode, XDP keeps running across agent restarts and may insert keys
+// while keys are collected. Keys inserted after collection remain, as with
+// the legacy collect-then-delete path; this is not an atomic empty-map guarantee.
+// It only reads keys: clearHashOrTrie decodes PERCPU values incorrectly and
+// swallows iteration errors. That legacy path is tracked by TD-070 and stays
+// unchanged. Collect keys before deleting so NextKey cannot restart at a
+// deleted cursor. The returned count includes only successful deletions.
+func ClearMapKeys(m *ebpf.Map) (int, error) {
+	var keys [][]byte
+	var previous any
+	for {
+		key := make([]byte, m.KeySize())
+		if err := m.NextKey(previous, &key); err != nil {
+			if errors.Is(err, ebpf.ErrKeyNotExist) {
+				break
+			}
+			return 0, fmt.Errorf("iterate keys: %w", err)
+		}
+		keys = append(keys, key)
+		previous = key
+	}
+	for deleted, key := range keys {
+		if err := m.Delete(key); err != nil {
+			return deleted, fmt.Errorf("delete key %x: %w", key, err)
+		}
+	}
+	return len(keys), nil
 }
 
 // compareMapSchema returns a human-readable description of the first

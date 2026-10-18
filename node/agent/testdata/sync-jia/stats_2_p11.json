@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/SnapshotsAndWhitelist": {
+    "status": 200,
+    "body": "{\"total_bytes\":0,\"dropped_bytes\":0,\"passed_bytes\":0,\"total_packets\":0,\"dropped_packets\":0,\"passed_packets\":0,\"whitelisted_packets\":0,\"rate_limited_packets\":0,\"mapped_v6_dropped\":0,\"cond_row_missing\":0,\"tailcall_fail\":0,\"rules_count\":2,\"whitelist_count\":0,\"dropped_pps\":0,\"passed_pps\":0,\"total_pps\":0,\"system\":{\"cpu_percent\":0,\"mem_total_mb\":0,\"mem_used_mb\":0,\"mem_percent\":0,\"uptime_seconds\":0,\"load_avg_1\":0,\"load_avg_5\":0,\"load_avg_15\":0},\"agent_state\":{\"exact_rules\":2,\"cidr_rules\":0,\"whitelist_entries\":0,\"active_slot\":1,\"rule_map_selector\":1},\"capacity\":{\"blacklist\":{\"limit\":256,\"used\":2},\"cidr_blacklist\":{\"limit\":256,\"used\":0},\"cond\":{\"limit\":256,\"used\":0},\"cidr_cond\":{\"limit\":256,\"used\":0},\"whitelist\":{\"limit\":256,\"used\":0},\"sv4_cidr_trie\":{\"limit\":1024,\"used\":0},\"dv4_cidr_trie\":{\"limit\":1024,\"used\":0},\"sv6_cidr_trie\":{\"limit\":1024,\"used\":0},\"dv6_cidr_trie\":{\"limit\":1024,\"used\":0},\"logical_state\":{\"limit\":256,\"used\":2}}}"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "status": 400,
+  "body": "{\"error\":\"unexpected EOF\",\"withdrawal_pending\":false}"
+}

@@ -1,0 +1,1264 @@
+[
+  {
+    "name": "P-af-mapped-src-dotted",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-dst-dotted",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-src-hex",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-dst-hex",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-src-expanded",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-dst-expanded",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-src-uppercase",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-dst-uppercase",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-120",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-120",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-96",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-96",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-104",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-104",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-32",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-32",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-0120",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-0120",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-096",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-096",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-src-95",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-95",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mixed-exact",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mixed-cidr",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-mixed-default",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-literal-v6",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "dst_ip": "10.20.0.1",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "dst_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-af-literal-v4",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "dst_ip": "2001:db8::1",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "dst_ip": "2001:db8::1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-af-nonliteral-zero",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-af-positive-default-v6",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "::/0",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "::/0",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-af-positive-unmapped",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "::ffff:0:0:0/96",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "::ffff:0:0:0/96",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-af-positive-nat64",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "64:ff9b::/96",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "64:ff9b::/96",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-af-positive-compatible",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "::a14:1",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "::a14:1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-01",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 1,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"1,3,5,7,9,11,13,15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-02",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"2-3,6-7,10-11,14-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-04",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 4,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"4-7,12-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-08",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 8,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"8-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-0f",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 15,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"1-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-10",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-v6-01",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-v6-08",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-v6-02",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "2001:db8::1",
+        "protocol": "all",
+        "action": "drop",
+        "match_anomaly": 2,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "2001:db8::1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"2-3,6-7,10-11,14-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-v6-04",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "2001:db8::1",
+        "protocol": "all",
+        "action": "drop",
+        "match_anomaly": 4,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "2001:db8::1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"4-7,12-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-unbounded-protocol",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-unbounded-default",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-rate",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "all",
+        "action": "rate_limit",
+        "rate_limit": 100,
+        "match_anomaly": 1,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"1,3,5,7,9,11,13,15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-flags",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN",
+        "match_anomaly": 1,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"2-3,6-7,10-11,14-15,18-19,22-23,26-27,30-31,34-35,38-39,42-43,46-47,50-51,54-55,58-59,62-63,66-67,70-71,74-75,78-79,82-83,86-87,90-91,94-95,98-99,102-103,106-107,110-111,114-115,118-119,122-123,126-127,130-131,134-135,138-139,142-143,146-147,150-151,154-155,158-159,162-163,166-167,170-171,174-175,178-179,182-183,186-187,190-191,194-195,198-199,202-203,206-207,210-211,214-215,218-219,222-223,226-227,230-231,234-235,238-239,242-243,246-247,250-251,254-255\",\"\",\"\",\"1,3,5,7,9,11,13,15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-anom-08-port",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-anom-09-port",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 9,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 80,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"1,3,5,7-15\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-d2-nonfirst-port",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-d2-last-flags",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-d2-nonfirst-icmp",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-d2-frag-port",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "fragment": "first,middle,last",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "dst_port": 53,
+        "protocol": "udp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 53,
+          "protocol": "udp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"first,middle,last\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-d2-fragment-v6",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-d2-fragment-protocol",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-act-drop-rate",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "rate_limit": 100,
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-act-zero-rate",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-act-uppercase",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-act-default",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-proto-TCP",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-proto-6",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-proto-gre",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-proto-GRE",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-proto-all",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "dst_port": 80,
+        "protocol": "all",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 80,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cidr-hostbits",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "10.20.0.0/24",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cidr-uppercase",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "2001:db8:abcd::/64",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "2001:db8:abcd::/64",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cidr-bad-mask",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cidr-bare",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cidr-same-end",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cidr-cross-v4",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cidr-cross-v6",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-num-port",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-num-anomaly",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-num-rate",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-flags-empty-mask",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "udp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "udp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-combo-empty",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-combo-zeros",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-combo-length",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-full",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-empty",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-leading-zero",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-dscp",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-normalize",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "ttl": "1,3-5",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"1,3-5\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-expr-flags",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"2-3,6-7,10-11,14-15,34-35,38-39,42-43,46-47,66-67,70-71,74-75,78-79,98-99,102-103,106-107,110-111,130-131,134-135,138-139,142-143,162-163,166-167,170-171,174-175,194-195,198-199,202-203,206-207,226-227,230-231,234-235,238-239\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-expr-contradiction",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-icmp-protocol",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-expr-icmpv6",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "icmp_type": "128",
+        "id": "ctlcut1-0",
+        "src_ip": "2001:db8::1",
+        "protocol": "icmpv6",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "2001:db8::1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "icmpv6"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"128\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cap-count-4",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "ttl": "1",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"1\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "ttl": "2",
+        "id": "ctlcut1-1",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"2\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 3,
+        "ttl": "3",
+        "id": "ctlcut1-2",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"3\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 4,
+        "ttl": "4",
+        "id": "ctlcut1-3",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"4\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cap-count-5",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cap-split-3",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "ttl": "1",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"1\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "ttl": "2",
+        "id": "ctlcut1-1",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"2\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 3,
+        "pkt_len": "100,120,140",
+        "id": "ctlcut1-2",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"100,120,140\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cap-split-4",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "ttl": "1",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"1\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "ttl": "2",
+        "id": "ctlcut1-1",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"2\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 3,
+        "pkt_len": "100,120,140,160",
+        "id": "ctlcut1-2",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"100,120,140,160\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cap-split-5",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cap-single-8",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "pkt_len": "100,120,140,160,180,200,220,240",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"100,120,140,160,180,200,220,240\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-cap-single-9",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-cap-two-ttl",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "ttl": "1",
+        "id": "ctlcut1-0",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"1\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "ttl": "2",
+        "id": "ctlcut1-1",
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "exact",
+        "group_key": {
+          "kind": "exact",
+          "src_ip": "10.20.0.1",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"2\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-ovl-nested",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-ovl-cross",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "10.20.0.0/24",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "id": "ctlcut1-1",
+        "dst_cidr": "10.20.0.0/25",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "dst_cidr": "10.20.0.0/25",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-ovl-same",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "10.20.0.0/24",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "id": "ctlcut1-1",
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "udp",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "10.20.0.0/24",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "udp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-ovl-family",
+    "verdict": "accept",
+    "members": [
+      {
+        "logical_id": 1,
+        "id": "ctlcut1-0",
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "10.20.0.0/24",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "tcp"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      },
+      {
+        "logical_id": 2,
+        "id": "ctlcut1-1",
+        "src_cidr": "2001:db8::/64",
+        "protocol": "all",
+        "action": "drop",
+        "kind": "cidr",
+        "group_key": {
+          "kind": "cidr",
+          "src_cidr": "2001:db8::/64",
+          "src_port": 0,
+          "dst_port": 0,
+          "protocol": "all"
+        },
+        "cond_key": "[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]"
+      }
+    ]
+  },
+  {
+    "name": "P-wl-mapped-src",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-wl-mapped-dst",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-wl-mixed",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-wl-empty",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-wl-gre-port",
+    "verdict": "reject"
+  },
+  {
+    "name": "P-wl-v4",
+    "verdict": "accept",
+    "whitelist": {
+      "id": "",
+      "src_ip": "10.20.0.1",
+      "dst_port": 80,
+      "protocol": "all"
+    }
+  },
+  {
+    "name": "P-wl-v6",
+    "verdict": "accept",
+    "whitelist": {
+      "id": "",
+      "src_ip": "2001:db8::1",
+      "dst_port": 80,
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-wl-wild-port",
+    "verdict": "accept",
+    "whitelist": {
+      "id": "",
+      "dst_port": 80,
+      "protocol": "all"
+    }
+  }
+]

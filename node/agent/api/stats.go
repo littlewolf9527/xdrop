@@ -10,16 +10,12 @@ import (
 )
 
 func (h *Handlers) GetStats(c *gin.Context) {
-	h.rulesMu.RLock()
-	rulesCount := len(h.rules) + len(h.cidrRules)
-	h.rulesMu.RUnlock()
+	agentState := h.getAgentState()
+	rulesCount := agentState.ExactRules + agentState.CIDRRules
+	wlCount := agentState.WhitelistEntries
 
-	h.wlMu.RLock()
-	wlCount := len(h.wlEntries)
-	h.wlMu.RUnlock()
-
-	var current [5]uint64
-	for i := 0; i < 5; i++ {
+	var current [6]uint64
+	for i := 0; i < len(current); i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, uint32(i))
 		// stats is a PERCPU_ARRAY of u64 — cilium/ebpf returns one
@@ -70,16 +66,38 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		}
 	}
 
-	sysStats := getSystemStats(h.sysStatsCache)
-	agentState := h.getAgentState()
+	var condRowMissing uint64
+	if h.condRowMissing != nil {
+		var perCPU []uint64
+		if err := h.condRowMissing.Lookup(uint32(0), &perCPU); err == nil {
+			for _, v := range perCPU {
+				condRowMissing += v
+			}
+		}
+	}
 
+	sysStats := getSystemStats(h.sysStatsCache)
+	var byteCounts [3]uint64
+	for i := range byteCounts {
+		var perCPU []uint64
+		if err := h.stats.Lookup(uint32(6+i), &perCPU); err == nil {
+			for _, v := range perCPU {
+				byteCounts[i] += v
+			}
+		}
+	}
 	c.JSON(http.StatusOK, Stats{
+		TotalBytes:         byteCounts[0],
+		DroppedBytes:       byteCounts[1],
+		PassedBytes:        byteCounts[2],
 		TotalPackets:       current[0],
 		DroppedPackets:     current[1],
 		PassedPackets:      current[2],
 		WhitelistedPackets: current[3],
 		RateLimitedPackets: current[4],
+		MappedV6Dropped:    current[5],
 		TailcallFail:       tailcallFail,
+		CondRowMissing:     condRowMissing,
 		RulesCount:         rulesCount,
 		WhitelistCount:     wlCount,
 		DroppedPPS:         droppedPPS,
@@ -88,5 +106,6 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		System:             &sysStats,
 		AgentState:         &agentState,
 		XDPInfo:            h.xdpInfo,
+		Capacity:           h.publishedCapacity.Load(),
 	})
 }

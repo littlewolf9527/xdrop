@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/B7Put/cidr=false": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":81,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  }
+}

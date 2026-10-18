@@ -43,7 +43,7 @@ func TestGetComboType_KnownCases(t *testing.T) {
 	var srcIP IPAddr
 	srcIP[0] = 10
 	var dstIP IPAddr
-	dstIP[0] = 192
+	dstIP[0] = 10
 
 	tests := []struct {
 		name string
@@ -51,6 +51,8 @@ func TestGetComboType_KnownCases(t *testing.T) {
 		want int
 	}{
 		{"exact 5-tuple", RuleKey{SrcIP: srcIP, DstIP: dstIP, SrcPort: 80, DstPort: 443, Protocol: 6}, ComboExact5Tuple},
+		{"canonical combo 1", RuleKey{DstIP: dstIP, SrcPort: 80, DstPort: 443, Protocol: 6}, ComboWildcardSrcIP},
+		{"canonical combo 2", RuleKey{DstIP: dstIP, DstPort: 443, Protocol: 6}, ComboWildcardSrcIPPort},
 		{"src_ip only", RuleKey{SrcIP: srcIP}, ComboSrcIPOnly},
 		{"dst_ip only", RuleKey{DstIP: dstIP}, ComboDstIPOnly},
 		{"protocol only", RuleKey{Protocol: 6}, ComboProtoOnly},

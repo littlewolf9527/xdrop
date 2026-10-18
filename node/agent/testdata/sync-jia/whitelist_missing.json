@@ -1,0 +1,4 @@
+{
+  "status": 404,
+  "body": "{\"code\":\"whitelist_not_found\",\"error\":\"Whitelist entry not found\"}"
+}

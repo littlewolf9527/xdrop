@@ -1,0 +1,6 @@
+{
+  "receipt_failed": {
+    "status": 200,
+    "body": "{\"code\":\"committed\",\"groups\":[{\"index\":0,\"result\":\"replaced\"}],\"receipt\":\"deferred\",\"withdrawal_pending\":false}"
+  }
+}

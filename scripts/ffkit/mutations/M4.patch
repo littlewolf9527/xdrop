@@ -1,0 +1,11 @@
+--- a/node/agent/main.go
++++ b/node/agent/main.go
+@@ -667,7 +667,7 @@
+ 	filterOn := pair.GetFilterOn()
+ 	switch filterOn {
+ 	case "inbound":
+-		filterIdx = uint32(inboundIdx)
++		filterIdx = uint32(outboundIdx)
+ 	case "outbound":
+ 		filterIdx = uint32(outboundIdx)
+ 	case "both":

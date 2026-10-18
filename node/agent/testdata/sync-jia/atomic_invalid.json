@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"added\":0,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: bad\"}],\"rules\":0,\"success\":true,\"withdrawal_pending\":false}"
+}

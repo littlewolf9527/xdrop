@@ -13,11 +13,19 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-func NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig, rlStates *ebpf.Map,
-	cidrBlacklist, cidrRlStates *ebpf.Map, cidrMgr *cidr.Manager,
+func NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig *ebpf.Map,
+	cidrBlacklist *ebpf.Map, cidrMgr *cidr.Manager,
 	blacklistB, cidrBlacklistB *ebpf.Map,
-	tailcallFailStats *ebpf.Map) *Handlers {
+	tailcallFailStats, idCounts *ebpf.Map,
+	condA, condB, cidrCondA, cidrCondB, idRLStates, condRowMissing *ebpf.Map) *Handlers {
+	receipt, err := newQuiescer()
+	if err != nil {
+		log.Fatalf("[NewHandlers] Failed to create quiescence receipt: %v", err)
+	}
 	h := &Handlers{
+		condA: condA, condB: condB, cidrCondA: cidrCondA, cidrCondB: cidrCondB,
+		idRLStates: idRLStates, quiescer: receipt,
+		idCounts:          idCounts,
 		blacklist:         blacklist,
 		blacklistB:        blacklistB,
 		whitelist:         whitelist,
@@ -26,24 +34,28 @@ func NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, acti
 		configA:           configA,
 		configB:           configB,
 		activeConfig:      activeConfig,
-		rlStates:          rlStates,
+		condRowMissing:    condRowMissing,
+		logicalOwners:     make(map[uint32]string),
+		pendingLogicalIDs: make(map[uint32]bool),
 		rules:             make(map[string]StoredRule),
-		ruleKeyIndex:      make(map[RuleKey]string),
+		ruleKeyIndex:      make(map[RuleKey]ruleIDSet),
 		wlEntries:         make(map[string]RuleKey),
 		wlKeyIndex:        make(map[RuleKey]string),
 		lastRuleDropCount: make(map[string]uint64),
 		lastRuleStatsTime: make(map[string]int64),
 		activeSlot:        0,
-		activeRuleSlot:    0,
+
 		activeWLSlot:      0, // Phase 8
 		cidrBlacklist:     cidrBlacklist,
 		cidrBlacklistB:    cidrBlacklistB,
-		cidrRlStates:      cidrRlStates,
 		cidrMgr:           cidrMgr,
 		cidrRules:         make(map[string]StoredCIDRRule),
-		cidrRuleKeyIndex:  make(map[CIDRRuleKey]string),
+		cidrRuleKeyIndex:  make(map[CIDRRuleKey]ruleIDSet),
 		tailcallFailStats: tailcallFailStats, // Phase 8
 	}
+
+	h.publishMu.Lock()
+	defer h.publishMu.Unlock()
 
 	// Initialize dynamic config items before startup-specific config writes.
 	if err := h.initDynamicConfig(configA); err != nil {
@@ -61,6 +73,10 @@ func NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, acti
 	if err := activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
 		log.Fatalf("[NewHandlers] Failed to init active_config selector: %v", err)
 	}
+
+	h.quiescenceConfirmed = false
+	h.publishedState.Store(&AgentState{})
+	h.publishedCapacity.Store(h.initialCapacity())
 
 	log.Printf("[NewHandlers] Double-buffer config initialized, active slot = 0")
 
@@ -80,30 +96,18 @@ func (h *Handlers) SetXDPInfo(info *XDPInfo) {
 // Safe to call multiple times.
 func (h *Handlers) Shutdown() {
 	stopSystemStatsSampler(h.sysStatsCache)
+	if q, ok := h.quiescer.(*kernelQuiescer); ok {
+		_ = q.Close()
+	}
 }
 
-// initDynamicConfig zeros every dynamic-scope config slot in a single
-// config_a / config_b array map. config_a / config_b are ARRAY maps —
-// all max_entries slots are pre-allocated zero by the kernel on create,
-// so Update(UpdateExist) always succeeds and reproduces the
-// pre-migration goebpf.Update semantics per proposal §5.2.
-//
-// AUD-PH3-001 fix: the list explicitly includes CONFIG_FAST_FORWARD_ENABLED
-// and CONFIG_FILTER_IFINDEX. Before Phase 3 map pinning these were left
-// out because the maps were recreated empty on every agent boot, so
-// main.go's configureFastForward() could simply populate them in FF
-// mode and leave them zero in traditional mode. With pinning, config
-// maps survive agent restart. Without zeroing here, a node that ran
-// in FF mode and then restarts into traditional mode would leave
-// FF_ENABLED=1 in the pinned config, and the BPF program would keep
-// branching into fast-forward code. Restoring the zero-on-every-boot
-// invariant fixes this; main.go's configureFastForward() runs AFTER
-// NewHandlers and overwrites with real values when FF is actually on.
+// initDynamicConfig zeros business config slots in both startup arrays.
+// FF slots are owned by main: FF restart preserves forwarding, while the
+// traditional branch clears them before publishing programs (AUD-PH3-001).
 func (h *Handlers) initDynamicConfig(m *ebpf.Map) error {
 	for _, idx := range []uint32{
 		ConfigBlacklistCount, ConfigWhitelistCount, ConfigRuleBitmap,
 		ConfigWLBitmap, // Phase 8: slot 3
-		ConfigFastForwardEnabled, ConfigFilterIfindex,
 		ConfigCIDRRuleCount, ConfigCIDRBitmap,
 		ConfigWLMapSelector, // Phase 8: slot 8
 		ConfigRuleMapSelector,
@@ -119,19 +123,27 @@ func (h *Handlers) initDynamicConfig(m *ebpf.Map) error {
 	return nil
 }
 
+// SyncProtocol is the node synchronization contract version.
+const SyncProtocol = 11
+
+// Version is supplied by the build; source-only builds identify themselves as dev.
+var Version = "dev"
+
 // Welcome handler
 func (h *Handlers) Welcome(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"name":     "XDrop Agent",
-		"version":  "2.6.1",
-		"status":   "running",
-		"features": []string{"ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match"},
+		"sync_protocol": SyncProtocol,
+		"name":          "XDrop Agent",
+		"version":       Version,
 	})
 }
 
 // Health check
 func (h *Handlers) Health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
-	})
+	rules, whitelist := h.rulesSynced.Load(), h.whitelistSynced.Load()
+	if rules && whitelist {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "degraded", "reason": "awaiting_full_sync", "rules_synced": rules, "whitelist_synced": whitelist})
 }

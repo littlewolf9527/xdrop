@@ -1,17 +1,7 @@
 //go:build linux && integration
 
-// AUD-PH3-001 regression test: initDynamicConfig must zero ALL
-// dynamic-scope config slots on startup, including
-// ConfigFastForwardEnabled and ConfigFilterIfindex. Before this fix,
-// they were left alone because pre-Phase-3 the config arrays were
-// recreated empty on every boot. With map pinning, a pinned config
-// map survives restart — if the previous life left FF_ENABLED=1 and
-// the next boot is traditional mode, the BPF program would still
-// branch into fast-forward code. This test locks in the fix by
-// pre-populating FF slots with non-zero values, running
-// initDynamicConfig, and asserting they come out zero.
-//
-// Integration-tagged because it creates a real ebpf.Map (needs CAP_BPF).
+// FF slots survive startup; traditional-mode clearing is tested in the root package.
+// Integration-tagged because this creates a real ebpf.Map.
 package api
 
 import (
@@ -61,12 +51,8 @@ func writeSlot(t *testing.T, m *ebpf.Map, idx uint32, v uint64) {
 	}
 }
 
-// TestInitDynamicConfig_ZerosFFSlots is the AUD-PH3-001 regression
-// anchor. Pre-populate a config_a-like array with FF_ENABLED=1 and
-// FILTER_IFINDEX=5 and RL_CPU_DIVISOR=99 (simulating the residue of a previous
-// agent life on a pinned config map), then run initDynamicConfig,
-// and assert those slots come out zero.
-func TestInitDynamicConfig_ZerosFFSlots(t *testing.T) {
+// Preserve FF while retaining business-slot initialization.
+func TestInitDynamicConfig_PreservesFFSlots(t *testing.T) {
 	m := newConfigArrayForTest(t)
 
 	writeSlot(t, m, ConfigFastForwardEnabled, 1)
@@ -82,12 +68,15 @@ func TestInitDynamicConfig_ZerosFFSlots(t *testing.T) {
 		t.Fatalf("initDynamicConfig: %v", err)
 	}
 
+	for slot, want := range map[uint32]uint64{ConfigFastForwardEnabled: 1, ConfigFilterIfindex: 5} {
+		if got := readSlot(t, m, slot); got != want {
+			t.Errorf("FF slot %d = %d want preserved %d", slot, got, want)
+		}
+	}
 	for _, slot := range []struct {
 		name string
 		idx  uint32
 	}{
-		{"ConfigFastForwardEnabled", ConfigFastForwardEnabled},
-		{"ConfigFilterIfindex", ConfigFilterIfindex},
 		{"ConfigBlacklistCount", ConfigBlacklistCount},
 		{"ConfigWhitelistCount", ConfigWhitelistCount},
 		{"ConfigRuleBitmap", ConfigRuleBitmap},

@@ -27,26 +27,36 @@ func TestParseProtocolKnownValues(t *testing.T) {
 		{"esp", ProtoESP},
 	}
 	for _, c := range cases {
-		if got := parseProtocol(c.in); got != c.want {
-			t.Errorf("parseProtocol(%q) = %d, want %d", c.in, got, c.want)
+		if got := parseProtocolLenient(c.in); got != c.want {
+			t.Errorf("parseProtocolLenient(%q) = %d, want %d", c.in, got, c.want)
 		}
 	}
 }
 
-// TestParseProtocolUnknownFallsBackToAll locks the deliberately permissive Node
-// parser: unknown strings → ProtoAll. Controller validateProtocol is the real
-// reject boundary (see rule_service_protocol_test.go).
-func TestParseProtocolUnknownFallsBackToAll(t *testing.T) {
+// TestParseProtocolLenientStillFallsBackToAll pins what the lenient helper does.
+//
+// 🔴 Rewritten 2026-09-14 (S0-6). The previous version carried this rationale:
+// "the deliberately permissive Node parser ... Controller validateProtocol is
+// the real reject boundary". That premise is dead. The Agent exposes its own
+// rule-write API, so the Controller is NOT the only way in — external audit
+// D-09 walked a typo'd protocol straight through it into a valid wildcard
+// combo. The owner decided on 2026-09-05 that the Agent rejects instead.
+//
+// The helper itself still maps unknown strings to ProtoAll, and that is fine
+// where it is still used ("is this TCP?" guards, where a non-TCP answer makes
+// the guard fire). What changed is that no key-building path calls it any more.
+// TestRuleToKeyRejectsUnknownProtocol below is the assertion that matters now.
+func TestParseProtocolLenientStillFallsBackToAll(t *testing.T) {
 	for _, s := range []string{"sctp", "ospf", "banana", ""} {
-		if got := parseProtocol(s); got != ProtoAll {
-			t.Errorf("parseProtocol(%q) = %d, want ProtoAll(0)", s, got)
+		if got := parseProtocolLenient(s); got != ProtoAll {
+			t.Errorf("parseProtocolLenient(%q) = %d, want ProtoAll(0)", s, got)
 		}
 	}
 }
 
 func TestProtocolToStringRoundtrip(t *testing.T) {
 	for _, name := range []string{"tcp", "udp", "icmp", "icmpv6", "igmp", "gre", "esp"} {
-		got := protocolToString(parseProtocol(name))
+		got := protocolToString(parseProtocolLenient(name))
 		if got != name {
 			t.Errorf("roundtrip %q: got %q", name, got)
 		}

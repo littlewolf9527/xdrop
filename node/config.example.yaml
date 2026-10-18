@@ -1,143 +1,51 @@
-# XDrop Node Agent - Example Configuration
-# Copy this file to config.yaml and adjust the values for your environment.
-#
-# XDrop supports two operating modes — pick one:
-#
-#   Traditional mode  — Single-interface XDP filter. Dropped packets are discarded;
-#                       clean traffic is passed to the kernel network stack via XDP_PASS.
-#                       Use this for protecting a server directly.
-#
-#   Fast Forward mode — Dual-interface transparent L2 bridge. Traffic is forwarded
-#                       between two NICs via XDP_REDIRECT, bypassing the kernel stack.
-#                       Use this when XDrop sits inline between a router and a server.
+# XDrop node example. Copy it, set the interface and replace the node key.
+# Traditional mode passes accepted packets to the kernel network stack.
+# Fast Forward uses one interface pair and redirects between its interfaces.
 
 server:
+  # HTTP port; all host addresses are bound by the agent.
   port: 8080
-  # Interface to attach XDP to (traditional mode only).
-  # Ignored when fast_forward.enabled is true.
-  interface: "eth0"   # e.g. eth0, ens3, enp3s0
+  # Shared /api/v1/rules/hits requests per second and burst: integer 1..1000.
+  hits_rate_limit: 20
+  # Used in traditional mode; ignored when fast_forward.enabled is true.
+  interface: "eth0"
 
 bpf:
-  # Phase 8 dual-ELF architecture: main (blacklist/CIDR/rate/anomaly) + gate (whitelist 31-combo).
-  # Both paths are required — gate missing = fail startup (whitelist silently disabled otherwise).
+  # Both ELF objects are required. These paths resolve from the working directory.
+  # scripts/manage-node.sh starts the agent from node/.
   main_path: bpf/xdrop_main.elf
   gate_path: bpf/xdrop_gate.elf
-  # Deprecated: single-ELF path (ignored when main_path + gate_path are set).
-  # path: bpf/xdrop.elf
-
-  # BPF pinning policy (v2.5+, Phases 3+4 of goebpf→cilium/ebpf migration).
-  # When enabled, xdrop pins its BPF objects under /sys/fs/bpf/xdrop/ so
-  # they survive across `systemctl restart xdrop-agent`:
-  #
-  #   - Phase 3 (maps, 16 files): blacklist, whitelist, cidr_blacklist,
-  #     4 LPM tries, config_a/_b, stats, devmap, etc. Preserves map IDs
-  #     for bpftool observers and external BPF tooling across restart.
-  #     Data-map CONTENTS are wiped on every restart and reconciled via
-  #     controller sync (Phase 3 gives map-INFRASTRUCTURE continuity,
-  #     not rule-data continuity).
-  #   - Phase 4 (XDP link, 1 file per interface): link_<ifname>, e.g.
-  #     link_ens38. LoadPinnedLink + Link.Update atomically swaps the
-  #     XDP program pointer on restart — zero-gap kernel attachment.
-  #     Without this, restart would detach+reattach XDP (~1.5-3s gap).
-  #
-  #   auto     (default) try pinning (both map + link); silently fall
-  #                      back to non-pinned mode if /sys/fs/bpf is not
-  #                      bpffs, inaccessible, or otherwise unusable.
-  #                      Rules still load — the agent just loses
-  #                      restart continuity for this boot. Next restart
-  #                      re-tries pinning.
-  #   require            fail startup if pinning cannot be enabled.
-  #                      Strict mode for production where restart
-  #                      survival + zero-gap attachment is expected.
-  #   disable            skip pinning entirely. Matches pre-migration
-  #                      (v2.4.x) behaviour — maps recreate on every
-  #                      boot and XDP detaches/reattaches on restart.
-  #                      In disable mode, any stale link_<ifname> pin
-  #                      left by a prior auto run is actively unlinked
-  #                      so `ip link xdp off` works again.
-  #
-  # Prerequisite: /sys/fs/bpf must be mounted as bpffs. Most modern
-  # distros do this by default via systemd. If missing, mount it with
-  # `mount -t bpf bpf /sys/fs/bpf` or add the entry to /etc/fstab.
+  # auto tries pinning and may fall back; require fails if pinning is unavailable;
+  # disable skips pinning. Pins live under /sys/fs/bpf/xdrop/.
+  # Restart clears policy and logical state even if links/maps survive.
+  # Full controller rules and whitelist snapshots are needed for healthy status.
+  # SIGTERM closes user-space link descriptors; pinned attachments survive.
+  # scripts/manage-node.sh stop removes link pins after a managed process exits.
+  # restart retains pins. Neither operation promises uninterrupted filtering.
+  # FF settings remain while XDP is attached; removing pins after exit does not
+  # restore interface settings. Inspect PROMISC, offloads and link state manually.
   pinning: "auto"
+  # auto lets the kernel choose; native requires driver mode; generic requests SKB.
+  xdp_mode: "auto"
+  # rate_limit_divisor: 0 uses online CPUs (possible CPUs on read failure);
+  # an integer 1..4096 overrides it. X7: the receiving CPU set must be fixed
+  # and no larger than the divisor. A divisor that is too small amplifies
+  # the aggregate rule limit: e.g. one RX queue, fixed IRQ affinity, no RPS.
+  # X7：实际收包 CPU 集合必须固定且不多于除数；除数过小会放大总限速上限。
+  rate_limit_divisor: 0
 
-auth:
-  # API key that the controller must present when calling this node.
-  # Must match the api_key entry for this node in the controller's config.
-  node_api_key: "CHANGE_ME_NODE_KEY"
-
-  # Key this node uses when pushing sync reports to the controller.
-  # Must match the controller's external_api_key.
-  controller_sync_key: "CHANGE_ME_SYNC_KEY"
-
-  # Controller base URL. Leave empty to disable outbound sync (pull-only mode).
-  # Example: http://10.0.0.1:8000
-  controller_url: ""
-
-# ------------------------------------------------------------
-# Fast Forward mode (optional)
-# ------------------------------------------------------------
-# When enabled, XDrop acts as a transparent bump-in-the-wire device.
-# The agent automatically brings interfaces up, enables promiscuous mode,
-# and disables GRO/LRO/TSO offloads. Settings are restored on clean exit.
-#
-# Only one interface pair is supported per agent instance.
-# When fast_forward is enabled, server.interface above is ignored.
-
+# Optional FF configuration: uncomment this block before auth when enabling it.
 # fast_forward:
 #   enabled: true
 #   pairs:
-#     - inbound: "ens1f0"      # WAN-facing NIC (receives external traffic)
-#       outbound: "ens1f1"     # LAN-facing NIC (connects to internal network)
-#       filter_on: "inbound"   # Where to apply drop rules:
-#                              #   inbound  — filter on the WAN side only (recommended)
-#                              #   outbound — filter on the LAN side only
-#                              #   both     — filter in both directions
+#     - inbound: "ens1f0"
+#       outbound: "ens1f1"
+#       filter_on: "inbound"  # inbound (default), outbound, or both
+# The agent brings both interfaces UP, enables PROMISC and disables GRO/LRO/TSO.
+# Only one pair is supported; the interface names must differ.
 
-# ------------------------------------------------------------
-# Examples
-# ------------------------------------------------------------
-#
-# Example 1: Traditional mode — protect a single server
-#
-#   server:
-#     port: 8080
-#     interface: "eth0"
-#   bpf:
-#     main_path: bpf/xdrop_main.elf
-#     gate_path: bpf/xdrop_gate.elf
-#   auth:
-#     node_api_key: "your-node-key"
-#     controller_sync_key: "your-sync-key"
-#     controller_url: "http://10.0.0.1:8000"
-#
-# --
-#
-# Example 2: Fast Forward — transparent scrubbing device (one-directional filter)
-#
-#   server:
-#     port: 8080
-#   bpf:
-#     main_path: bpf/xdrop_main.elf
-#     gate_path: bpf/xdrop_gate.elf
-#   auth:
-#     node_api_key: "your-node-key"
-#     controller_sync_key: "your-sync-key"
-#     controller_url: "http://10.0.0.1:8000"
-#   fast_forward:
-#     enabled: true
-#     pairs:
-#       - inbound: "ens1f0"
-#         outbound: "ens1f1"
-#         filter_on: "inbound"
-#
-# --
-#
-# Example 3: Fast Forward — bidirectional filter
-#
-#   fast_forward:
-#     enabled: true
-#     pairs:
-#       - inbound: "ens1f0"
-#         outbound: "ens1f1"
-#         filter_on: "both"
+auth:
+  # Replace this placeholder before starting. Validate rejects CHANGE_ME values.
+  # Supply the same key when registering this node in the controller.
+  # Required: empty/whitespace or placeholder keys reject startup (config.Config.Validate).
+  node_api_key: "CHANGE_ME_NODE_KEY"

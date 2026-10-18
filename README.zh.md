@@ -5,7 +5,7 @@
 
   <p>基于 XDP/eBPF 的分布式防火墙，支持线速包过滤与集中管控。</p>
 
-  [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go)](https://go.dev)
+  [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev)
   [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)](https://vuejs.org)
   [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
   [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-orange?logo=anthropic)](https://claude.com/product/claude-code)
@@ -17,203 +17,59 @@
 
 ## 项目简介
 
-XDrop 是一套基于 Linux XDP（eXpress Data Path）的分布式高性能包过滤系统。BPF 程序直接挂载在网卡驱动层，完全绕过内核协议栈，在数据包进入系统的最早节点完成 DROP / PASS / rate-limit 动作。
+XDrop 将 Linux XDP 过滤节点、集中控制器和浏览器控制台组合起来。控制器在 SQLite 中保存期望规则并向已登记节点推送更新；节点负责 BPF 加载和报文处理。
 
-系统由两个组件构成：
+传统模式将放行流量交给主机协议栈；Fast Forward 模式在一对接口之间重定向流量。
 
-- **Node Agent** — 部署在每台过滤主机上，管理 BPF 数据平面，对外暴露 REST API
-- **Controller** — 集中管控平面，提供 Web UI，规则存储在 SQLite，并自动推送到所有已注册节点
+## 功能
 
-| Classic 主题 | Amber 主题 |
-|:---:|:---:|
-| ![Classic](.github/assets/dashboard_classic.png) | ![Amber](.github/assets/dashboard_amber.png) |
+- 支持 IPv4/IPv6 精确地址和前缀规则、传输层端口、协议与报文条件；动作为 `drop` 和 `rate_limit`。
+- 支持精确五元组白名单，规则与白名单分别原子发布。
+- 提供管理员/操作员浏览器会话、机器凭证、审计记录和流量历史。
+- 提供节点状态、逐规则下发结果和容量报告；API 写入先确认存储，节点下发随后完成。
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                            Controller（管控平面）                     │
-│                                                                      │
-│   ┌──────────────┐   ┌─────────────┐   ┌────────────┐   ┌────────┐  │
-│   │  Web UI      │   │  REST API   │   │  同步      │   │SQLite  │  │
-│   │  (Vue 3 +    │   │  (Gin)      │   │  调度器    │   │  数据库 │  │
-│   │  ECharts)    │   │             │   │            │   │        │  │
-│   └──────────────┘   └─────────────┘   └────────────┘   └────────┘  │
-└─────────────────────────────────┬────────────────────────────────────┘
-                                  │  HTTP（规则推送 / 健康检查）
-              ┌───────────────────┼───────────────────┐
-              ▼                   ▼                   ▼
-       ┌────────────┐      ┌────────────┐      ┌────────────┐
-       │  节点 1    │      │  节点 2    │      │  节点 N    │
-       │  Agent     │      │  Agent     │      │  Agent     │
-       │ ┌────────┐ │      │ ┌────────┐ │      │ ┌────────┐ │
-       │ │XDP/BPF │ │      │ │XDP/BPF │ │      │ │XDP/BPF │ │
-       │ └────────┘ │      │ └────────┘ │      │ └────────┘ │
-       └────────────┘      └────────────┘      └────────────┘
-        线速过滤 ↑           线速过滤 ↑           线速过滤 ↑
-```
+## 界面截图
 
----
+<p align="center">
+  <img src=".github/assets/console-overview-light.png" alt="XDrop 控制台总览页，浅色主题" width="49%">
+  <img src=".github/assets/console-overview-dark.png" alt="XDrop 控制台总览页，深色主题" width="49%">
+</p>
 
-## 核心特性
+控制台总览页（示例数据），浅色与深色主题。
 
-### BPF 数据平面
-- **线速过滤** — XDP 程序在 `sk_buff` 分配之前运行，普通服务器也能接近线速
-- **五元组匹配** — 源/目的 IP、源/目的端口、协议
-- **IPv4 / IPv6 双栈** — 统一规则格式；IPv4 内部以 IPv4-mapped IPv6 存储
-- **CIDR 规则** — 基于 LPM trie 的前缀匹配，支持源/目的方向独立配置，支持 /0–/128
-- **白名单** — 优先于黑名单命中，基于哈希表实现
-- **动作** — `drop`、`rate_limit`（令牌桶，可配置 PPS）、`pass`
-- **包长度过滤** — `pkt_len_min` / `pkt_len_max`（L3 总长度）
-- **TCP Flags 匹配** — `tcp_flags` 后匹配过滤（如 `SYN`、`SYN,ACK`、`RST`）；不匹配时继续通配 fallback
-- **Decoder 语义糖**（v2.6+）—— `decoder=tcp_ack|tcp_rst|tcp_fin` 在规则创建时自动展开成 `protocol=tcp` + 对应 TCP flag mask；上游检测器直接按攻击模式命名，不用自己拼 flag 位
-- **Anomaly 数据面**（v2.6.1+）—— `decoder=bad_fragment|invalid` 把 anomaly bit 绑到规则上；tail-call 到独立 `xdp_anomaly_verify` 程序检测 Ping-of-Death（offset*8+payload>65535）、tiny first-fragment（TCP <20B / UDP <8B）、IHL<5、total_length 不足、TCP `doff<5`；只有规则的 `match_anomaly` bit 与实际包的 anomaly 签名相交才 drop。anomaly 解析逻辑与 xSight v1.3 byte-for-byte 同源以保证跨 repo 契约。IPv6 `invalid` 支持；IPv6 `bad_fragment` 由 Controller 拒绝（v1.4 再做）
-- **位图优化** — 64 位位图记录 34 种字段组合中哪些有活跃规则；BPF 跳过无规则的组合，热路径保持 O(1)
-- **规则级统计** — 每条规则 per-CPU 累计 `match_count` / `drop_count`，由 agent 聚合
+## 仓库结构
 
-### AtomicSync（双缓冲原子发布）
-规则更新采用类 RCU 的双缓冲协议，彻底消除规则写入与位图更新之间的竞态：
-
-**黑名单**（v2.0+）：
-1. 将规则写入影子 BPF 哈希表（`blacklist_b` 或 `cidr_blist_b`）
-2. 在影子 config map 中构建新配置（位图、计数）
-3. 单次原子写翻转 `active_config` 选择器——BPF 侧原子切换
-
-**白名单**（v2.7.0+，Phase 8）：
-1. 将白名单条目写入影子 BPF map（`whitelist_b`）
-2. 在 config 中更新 `CONFIG_WL_BITMAP` 和 `CONFIG_WL_MAP_SELECTOR`
-3. 单次原子翻转——白名单零空窗切换
-
-BPF 数据路径永远不会看到不一致的位图/规则状态。
-
-### 部署模式
-| 模式 | 说明 |
-|------|------|
-| **Traditional（透传）** | 单网卡，XDP 挂载在单个接口上内联过滤 |
-| **Fast-Forward（快转）** | 双网卡网关——XDP 同时挂载在入向和出向接口，实现透明 L2 桥接过滤 |
-
-### 管控平面
-- 规则集中存储于 SQLite，支持完整 CRUD 及批量 API
-- 可配置同步间隔，支持强制同步（`POST /api/v1/nodes/:id/sync`）
-- 节点健康监控，自动更新 online/offline 状态
-- Web UI：实时流量仪表盘（ECharts）、节点概览、规则管理、白名单编辑器
-- Controller 和 Node 均支持可选 API Key 认证
-
----
-
-## 项目结构
-
-```
-xdrop/
-├── node/
-│   ├── bpf/          # C 语言 XDP 程序（xdrop_gate.c + xdrop_main.c / xdrop.h）
-│   └── agent/        # Go agent — BPF 加载器、API 服务、AtomicSync 引擎
-├── controller/
-│   ├── cmd/          # 二进制入口
-│   ├── internal/     # API、service、repository、scheduler、client
-│   └── web/          # Vue 3 + Element Plus + ECharts 前端
-└── scripts/          # 编译和服务管理脚本
-```
-
-- [Node Agent 文档 →](node/README.zh.md) — XDP 数据平面、BPF 映射表、AtomicSync、API
-- [Controller 文档 →](controller/README.zh.md) — 管控平面、Web UI、同步引擎
-
----
+| 路径 | 用途 |
+|---|---|
+| `controller/cmd/xdrop-controller/` | 控制器可执行文件入口 |
+| `controller/core/` | 存储、鉴权、API、编排及嵌入式前端 |
+| `console/` | Vue 控制台；输出到 `controller/core/webui/build/` |
+| `node/agent/` | Go 节点 agent |
+| `node/bpf/` | 主过滤与白名单入口 BPF 程序 |
+| `scripts/build-*.sh`, `scripts/manage-*.sh` | 编译与进程管理 |
 
 ## 环境要求
 
-| 组件 | 要求 |
-|------|------|
-| Node Agent | Linux 内核 **≥ 5.9**、clang ≥ 11、Go ≥ 1.24、root / CAP_NET_ADMIN |
-| Controller | Go ≥ 1.21、Node.js ≥ 18（仅编译前端需要）——可运行于任意系统 |
-
-> Node Agent **必须运行在 Linux 上**（XDP 是 Linux 内核特性）。Controller 可部署在任意系统。
-
-> **内核门槛说明（v2.5+）**：Node Agent 使用 `BPF_LINK_TYPE_XDP` 挂载 XDP 程序，
-> 该特性 2020-10 在 Linux 5.9 落地。在 5.8 及以下内核启动会返回明确的错误信息指向
-> 此要求。主流发行版已满足：Debian 11+（5.10）、RHEL/Rocky/Alma 9+（5.14）、
-> Ubuntu 20.04 HWE / 22.04+（5.15+）。老内核用户请继续使用 xdrop **v2.4.2**
-> （最后一版基于 netlink attach 的发布）直到完成升级。
-
-> **BPF pinning（v2.5+）**：Node Agent 默认把 BPF 对象 pin 到
-> `/sys/fs/bpf/xdrop/`，让状态跨 `systemctl restart xdrop-agent` 存活：
-> - **16 个 map 文件**（Phase 3）—— `blacklist`、`whitelist`、
->   `cidr_blacklist`、4 个 LPM trie、`config_a`/`config_b` 等。
->   map ID 保持稳定，便于 `bpftool map dump pinned
->   /sys/fs/bpf/xdrop/<name>` 跨重启观察，外部 BPF 工具也继续指向
->   同一份对象。
-> - **每个接口 1 个 XDP link 文件**（Phase 4）—— `link_<ifname>`
->   （如 `link_ens38`）。Agent 重启通过 `LoadPinnedLink + Link.Update`
->   原子替换 XDP 程序，而不是 detach/reattach —— 内核层面
->   **零空窗** 切换。没有 link pinning 的话，每次重启会有约
->   1.5–3 秒的无过滤窗口。
->
-> 前置条件：`/sys/fs/bpf` 必须挂载为 `bpf` 类型文件系统 —— 现代
-> 发行版通常由 systemd 自动挂载。若 pinning 失败（未挂载、EPERM 等），
-> 默认会静默降级到非 pinned 模式；需要严格行为的话在 `config.yaml` 里
-> 设 `bpf.pinning: require`，要完全关闭 pinning 设 `disable`。
-
-详细的环境准备步骤请参见**[准备工作](GETTING_STARTED.zh.md)**。
-
----
+- 节点：小端 x86-64 或 arm64，Linux 内核 ≥ 6.4，root 权限及适合的网卡；BPF 代码使用迭代器 kfunc。
+- 内核版本与 JIT 分别查：`uname -rm`；`sysctl net.core.bpf_jit_enable` 必须为非零（1 开启 JIT；2 还开启 JIT 调试输出）。
+- 发行版举例：Debian 13（6.12）、Ubuntu 24.04（6.8）、Ubuntu 22.04 HWE（6.5+）、RHEL / Rocky / Alma 10（6.12）。本版本不支持 6.4 以下的内核；更早的 v2 版本仍以标签形式保留，但不再维护。
+- 构建工具：满足模块声明的 Go（控制器 `go 1.21`；节点 `go 1.24.0`、工具链 `go1.24.4`）、用于控制器 SQLite 的 C 编译器、用于控制台的 Node.js/npm，以及节点 BPF 所需的 Linux BPF target clang、make 和 Python 3。
 
 ## 快速开始
 
-### 1. 编译
+在仓库根目录运行 `./scripts/build-controller.sh all` 构建控制器；在 Linux 节点运行 `./scripts/build-node.sh all`。
 
-```bash
-# 编译 controller（前端 + Go 二进制）
-./scripts/build-controller.sh
+按[部署指南](GETTING_STARTED.zh.md)设置路径、初始化主密钥、添加管理员、登记节点并验证第一条规则。初始化完成后使用 `scripts/manage-controller.sh` 和 `scripts/manage-node.sh` 启停。
 
-# 编译 node agent（BPF 程序 + Go 二进制）——需在 Linux 主机上执行
-./scripts/build-node.sh
-```
+## 文档索引
 
-### 2. 配置
-
-```bash
-# Controller
-cp controller/config.example.yaml controller/config.yaml
-# 编辑：设置 jwt_secret、external_api_key，并在 nodes: 段添加节点
-
-# Node agent
-cp node/config.example.yaml node/config.yaml
-# 编辑：设置网卡名称、node_api_key、sync_key
-```
-
-### 3. 启动
-
-```bash
-# 启动 controller（无需 root）
-./scripts/controller.sh start
-
-# 启动 node agent（需要 root — XDP 需要 CAP_NET_ADMIN）
-sudo ./scripts/node.sh start
-
-# 查看状态
-./scripts/controller.sh status
-sudo ./scripts/node.sh status
-```
-
-Web UI 默认访问地址：`http://<controller-host>:8000`
-
----
-
-## API 概览
-
-Controller 和 Node 均在 `/api/v1/` 下提供版本化 REST API。
-
-| 资源 | 端点 | 说明 |
-|------|------|------|
-| 规则列表 | `GET/POST /api/v1/rules` | 分页：`?page=&limit=` |
-| 单条规则 | `GET/PUT/DELETE /api/v1/rules/:id` | |
-| 批量规则 | `POST/DELETE /api/v1/rules/batch` | |
-| 白名单 | `GET/POST/DELETE /api/v1/whitelist` | |
-| 统计 | `GET /api/v1/stats` | PPS、丢包计数、XDP 信息 |
-| 节点管理 | `GET/POST /api/v1/nodes` | 仅 Controller |
-| 强制同步 | `POST /api/v1/nodes/:id/sync` | 仅 Controller |
-
-Node API 需要 `X-API-Key` 请求头。Controller API Key 为可选项（可配置关闭）。
-
----
+| 指南 | 内容 |
+|---|---|
+| [部署指南](GETTING_STARTED.zh.md) | 首次部署与规则验证 |
+| [控制器](controller/README.zh.md) | 配置、CLI 与运维 |
+| [控制器 API](controller/API.zh.md) | 全部控制器路由及鉴权 |
+| [节点](node/README.zh.md) | 构建、运行模式与排障 |
+| [节点 API](node/API.zh.md) | 全部节点路由及同步 |
 
 ## 许可证
 

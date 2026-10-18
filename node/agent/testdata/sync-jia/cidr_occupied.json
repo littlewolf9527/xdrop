@@ -1,0 +1,4 @@
+{
+  "status": 409,
+  "body": "{\"code\":\"key_occupied\",\"error\":\"rule key is occupied\",\"existing_id\":\"r\",\"withdrawal_pending\":false}"
+}

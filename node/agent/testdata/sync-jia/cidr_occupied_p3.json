@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/CIDRReplayCommentRateAndCounters": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.1.2.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  }
+}

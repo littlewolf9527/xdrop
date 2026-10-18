@@ -1,5 +1,12 @@
 //go:build linux && integration
 
+// ── Phase 0 (T4) 归类标记 ───────────────────────────────────────────────────
+// 本文件断言的是 **cilium/ebpf 的行为契约**（goebpf → cilium 迁移期的语义保持），
+// 不是 xdrop 自身的逻辑。⇒ **改 xdrop 生产代码不会让它变红**（internal_docs/facts.md F-054）。
+//
+// 留着它有价值：它守的是"我们对第三方库语义的理解是否正确"。
+// 但**不要把它计入 xdrop 的测试覆盖**——迁移安全网要看 node/agent/abi/ 那份跨语言契约。
+
 // NEW-UT-04 (§8.1.2): when the chosen pin directory doesn't live on a
 // bpf-typed filesystem, the `auto` policy must fall back to a non-pinned
 // load with a WARN log instead of crashing the agent; the `require`

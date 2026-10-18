@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"deleted\":0,\"failed\":0,\"results\":[{\"id\":\"r\",\"code\":\"rule_not_found\"},{\"id\":\"r2\",\"code\":\"rule_not_found\"}],\"success\":true,\"withdrawal_pending\":false}"
+}

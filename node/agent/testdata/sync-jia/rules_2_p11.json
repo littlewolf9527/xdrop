@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/SnapshotsAndWhitelist": {
+    "status": 200,
+    "body": "{\"count\":2,\"pagination\":{\"limit\":1000,\"page\":1,\"pages\":1,\"total\":2},\"rules\":[{\"logical_id\":17,\"id\":\"r\",\"src_ip\":\"10.0.0.1\",\"protocol\":\"tcp\",\"action\":\"rate_limit\",\"rate_limit\":100,\"stats\":{\"match_count\":0,\"drop_count\":0,\"match_bytes\":0,\"drop_bytes\":0,\"drop_pps\":0}},{\"logical_id\":18,\"id\":\"r2\",\"src_ip\":\"10.0.0.2\",\"protocol\":\"all\",\"action\":\"drop\",\"stats\":{\"match_count\":0,\"drop_count\":0,\"match_bytes\":0,\"drop_bytes\":0,\"drop_pps\":0}}]}"
+  }
+}

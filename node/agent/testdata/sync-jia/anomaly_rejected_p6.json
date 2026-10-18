@@ -1,0 +1,34 @@
+{
+  "cidr=false/ipv6/commit": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"bad_fragment not supported for IPv6 target\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"bad_fragment not supported for IPv6 target\"}],\"withdrawal_pending\":false}"
+  },
+  "cidr=false/ipv6/full": {
+    "status": 409,
+    "body": "{\"added\":0,\"code\":\"condition_group_invalid\",\"conflicts\":[{\"id\":\"j8\",\"reason\":\"bad_fragment not supported for IPv6 target\"}],\"error\":\"condition group invalid; batch not published\",\"failed\":1,\"key\":{\"kind\":\"exact\",\"src_ip\":\"2001:db8::1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "cidr=false/unbounded/commit": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\"}],\"withdrawal_pending\":false}"
+  },
+  "cidr=false/unbounded/full": {
+    "status": 409,
+    "body": "{\"added\":0,\"code\":\"condition_group_invalid\",\"conflicts\":[{\"id\":\"j8\",\"reason\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\"}],\"error\":\"condition group invalid; batch not published\",\"failed\":1,\"key\":{\"kind\":\"exact\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "cidr=true/ipv6/commit": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"bad_fragment not supported for IPv6 target\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"bad_fragment not supported for IPv6 target\"}],\"withdrawal_pending\":false}"
+  },
+  "cidr=true/ipv6/full": {
+    "status": 409,
+    "body": "{\"added\":0,\"code\":\"condition_group_invalid\",\"conflicts\":[{\"id\":\"j8\",\"reason\":\"bad_fragment not supported for IPv6 target\"}],\"error\":\"condition group invalid; batch not published\",\"failed\":1,\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"2001:db8::/64\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "cidr=true/unbounded/commit": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\"}],\"withdrawal_pending\":false}"
+  },
+  "cidr=true/unbounded/full": {
+    "status": 409,
+    "body": "{\"added\":0,\"code\":\"condition_group_invalid\",\"conflicts\":[{\"id\":\"j8\",\"reason\":\"anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)\"}],\"error\":\"condition group invalid; batch not published\",\"failed\":1,\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"0.0.0.0/0\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  }
+}

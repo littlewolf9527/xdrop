@@ -1,0 +1,12 @@
+--- a/node/agent/api/sync.go
++++ b/node/agent/api/sync.go
+@@ -451,6 +451,9 @@
+ 		}
+ 	}
+ 
++	if err := shadowConf.Update(uint32(ConfigFilterIfindex), uint64(0), ebpf.UpdateExist); err != nil {
++		return abort(err)
++	}
+ 	// 3b. Overwrite dynamic rule fields in shadow config
+ 	var bitmap uint64
+ 	for i := 0; i < 64; i++ {

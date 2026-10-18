@@ -11,41 +11,23 @@ type AgentState struct {
 	RuleMapSelector  int `json:"rule_map_selector"`
 }
 
-// getAgentState returns a snapshot of the agent's in-memory state.
-//
-// Lock ordering (must not reverse):
-//
-//	publishMu → rulesMu, publishMu → wlMu
-//
-// activeSlot and activeRuleSlot are owned by publishMu (mutated inside
-// publishConfigUpdate and DoAtomicSync, both of which hold publishMu).
-// Reading them under rulesMu would violate the lock contract and create
-// a data race. We read slot values under publishMu first, then release
-// it before taking rulesMu (which is lower in the order).
+// getAgentState loads one immutable publication, including for zero-value fixtures.
 func (h *Handlers) getAgentState() AgentState {
-	// 1. Read slot selectors under publishMu (their owning lock).
-	//    Must not hold rulesMu or wlMu at this point — publishMu is higher.
-	h.publishMu.Lock()
-	activeSlot := h.activeSlot
-	ruleMapSel := h.activeRuleSlot
-	h.publishMu.Unlock()
-
-	// 2. Read rule counts under rulesMu.
-	h.rulesMu.RLock()
-	exactRules := len(h.rules)
-	cidrRules := len(h.cidrRules)
-	h.rulesMu.RUnlock()
-
-	// 3. Read whitelist count under wlMu (independently).
-	h.wlMu.RLock()
-	wlEntries := len(h.wlEntries)
-	h.wlMu.RUnlock()
-
-	return AgentState{
-		ExactRules:       exactRules,
-		CIDRRules:        cidrRules,
-		WhitelistEntries: wlEntries,
-		ActiveSlot:       activeSlot,
-		RuleMapSelector:  ruleMapSel,
+	if state := h.publishedState.Load(); state != nil {
+		return *state
 	}
+	return AgentState{}
+}
+
+// Writers hold publishMu; preserve fields owned by the other publication path.
+func (h *Handlers) publishRuleState(exact, prefixes int) {
+	state := h.getAgentState()
+	state.ActiveSlot, state.RuleMapSelector = h.activeSlot, int(h.activeRuleSlot.Load())
+	state.ExactRules, state.CIDRRules = exact, prefixes
+	h.publishedState.Store(&state)
+}
+func (h *Handlers) publishWhitelistState(count int) {
+	state := h.getAgentState()
+	state.ActiveSlot, state.WhitelistEntries = h.activeSlot, count
+	h.publishedState.Store(&state)
 }

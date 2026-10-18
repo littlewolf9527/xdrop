@@ -1,0 +1,10 @@
+{
+  "cidr=false": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":0,\"rejected\":[],\"rules\":1,\"success\":true}"
+  },
+  "cidr=true": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":1,\"failed\":0,\"rejected\":[],\"rules\":0,\"success\":true}"
+  }
+}

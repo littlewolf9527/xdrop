@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"added\":0,\"failed\":2,\"results\":[{\"id\":\"other\",\"code\":\"key_occupied\",\"existing_id\":\"r\"},{\"id\":\"bad\",\"code\":\"validation_rejected\"}],\"success\":true,\"withdrawal_pending\":false}"
+}

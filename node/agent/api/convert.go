@@ -3,12 +3,68 @@ package api
 
 import (
 	"fmt"
-	"log/slog"
 	"net"
+	"strings"
 )
+
+// checkAddressFamily reads literal addresses before normalization erases their spelling.
+// Invalid syntax remains the responsibility of the existing entry-point parser.
+func checkAddressFamily(src, dst string, prefix bool) error {
+	var ips [2]net.IP
+	var networks [2]*net.IPNet
+	for i, raw := range []string{src, dst} {
+		if raw == "" || (!prefix && (raw == "0.0.0.0" || raw == "::")) {
+			continue
+		}
+		ip := net.ParseIP(raw)
+		if prefix {
+			var err error
+			ip, networks[i], err = net.ParseCIDR(raw)
+			if err != nil {
+				return nil
+			}
+		}
+		if ip == nil {
+			return nil
+		}
+		ips[i] = ip
+	}
+	for i, raw := range []string{src, dst} {
+		ip, network := ips[i], networks[i]
+		if ip == nil {
+			continue
+		}
+		address, field, kind := raw, []string{"src_ip", "dst_ip"}[i], "address"
+		if prefix {
+			address = raw[:strings.LastIndexByte(raw, '/')]
+			field, kind = []string{"src_cidr", "dst_cidr"}[i], "prefix"
+		}
+		if strings.Contains(address, ":") && ip.To4() != nil {
+			suggestion := "; write the IPv4 address " + ip.String()
+			if prefix {
+				suggestion = ""
+				if ones, _ := network.Mask.Size(); ones >= 96 {
+					suggestion = "; write the IPv4 prefix " + network.String()
+				}
+			}
+			return fmt.Errorf("invalid %s: IPv4-mapped IPv6 %s %s%s", field, kind, raw, suggestion)
+		}
+	}
+	if ips[0] != nil && ips[1] != nil && (ips[0].To4() != nil) != (ips[1].To4() != nil) {
+		srcFamily, dstFamily := "IPv4", "IPv6"
+		if ips[0].To4() == nil {
+			srcFamily, dstFamily = dstFamily, srcFamily
+		}
+		return fmt.Errorf("address family mismatch: src is %s, dst is %s", srcFamily, dstFamily)
+	}
+	return nil
+}
 
 func (h *Handlers) ruleToKey(r Rule) (RuleKey, error) {
 	key := RuleKey{}
+	if err := checkAddressFamily(r.SrcIP, r.DstIP, false); err != nil {
+		return key, err
+	}
 
 	if r.SrcIP != "" && r.SrcIP != "0.0.0.0" && r.SrcIP != "::" {
 		ip := net.ParseIP(r.SrcIP)
@@ -28,13 +84,27 @@ func (h *Handlers) ruleToKey(r Rule) (RuleKey, error) {
 
 	key.SrcPort = htons(r.SrcPort)
 	key.DstPort = htons(r.DstPort)
-	key.Protocol = parseProtocol(r.Protocol)
+
+	// S0-6 (2026-09-14, external audit D-09, owner decision 2026-09-05).
+	// This used to take the lenient parse, which maps anything it does not
+	// recognise to ProtoAll. A typo'd protocol therefore turned a rule aimed at
+	// ONE protocol into a rule matching ALL of them — a silently wider drop,
+	// with no error returned anywhere. The whitelist conversion in this same
+	// file already used the strict parser; the rule path did not.
+	proto, err := parseProtocolStrict(r.Protocol)
+	if err != nil {
+		return key, err
+	}
+	key.Protocol = proto
 
 	return key, nil
 }
 
 func (h *Handlers) whitelistToKey(w WhitelistEntry) (RuleKey, error) {
 	key := RuleKey{}
+	if err := checkAddressFamily(w.SrcIP, w.DstIP, false); err != nil {
+		return key, err
+	}
 
 	if w.SrcIP != "" && w.SrcIP != "0.0.0.0" && w.SrcIP != "::" {
 		ip := net.ParseIP(w.SrcIP)
@@ -69,6 +139,14 @@ func (h *Handlers) storedRuleToRule(id string, s StoredRule) Rule {
 		action = "drop"
 	}
 	return Rule{
+		LogicalID: s.LogicalID,
+		TTL:       s.TTL,
+		DSCP:      s.DSCP,
+		ICMPType:  s.ICMPType,
+		ICMPCode:  s.ICMPCode,
+		Fragment:  s.Fragment,
+		PktLen:    s.PktLen,
+
 		ID:           id,
 		SrcIP:        ipAddrToString(s.Key.SrcIP),
 		DstIP:        ipAddrToString(s.Key.DstIP),
@@ -90,6 +168,14 @@ func (h *Handlers) storedCIDRRuleToRule(id string, s StoredCIDRRule) Rule {
 		action = "drop"
 	}
 	return Rule{
+		LogicalID: s.LogicalID,
+		TTL:       s.TTL,
+		DSCP:      s.DSCP,
+		ICMPType:  s.ICMPType,
+		ICMPCode:  s.ICMPCode,
+		Fragment:  s.Fragment,
+		PktLen:    s.PktLen,
+
 		ID:           id,
 		SrcCIDR:      s.SrcCIDR,
 		DstCIDR:      s.DstCIDR,
@@ -117,18 +203,15 @@ func (h *Handlers) keyToWhitelist(id string, k RuleKey) WhitelistEntry {
 }
 
 // validateNodeAnomalyFields is a defence-in-depth anomaly semantic guard for
-// the Node direct HTTP API. The Controller enforces the same constraints; this
-// protects against direct access that bypasses the Controller.
-func validateNodeAnomalyFields(matchAnomaly uint8, action, srcIP, dstIP, srcCIDR, dstCIDR string) error {
+// the Node direct HTTP API. Both drop and rate_limit actions may use anomaly
+// conditions; bounded-target, bit-mask and IPv6 constraints remain mandatory.
+func validateNodeAnomalyFields(matchAnomaly uint8, action, srcIP, dstIP, srcCIDR, dstCIDR string, memos ...*atomicMemo) error {
 	if matchAnomaly == 0 {
 		return nil
 	}
-	const validBits = AnomalyBadFragment | AnomalyInvalid
+	const validBits = uint8(0x0F)
 	if matchAnomaly&^validBits != 0 {
 		return fmt.Errorf("invalid match_anomaly bits: 0x%x (valid: 0x%x)", matchAnomaly, validBits)
-	}
-	if action == "rate_limit" {
-		return fmt.Errorf("anomaly rules are drop-only (match_anomaly != 0 requires action=drop)")
 	}
 	// Must have a real key constraint (0.0.0.0/:: are treated as unset by ruleToKey)
 	hasBounded := false
@@ -142,7 +225,8 @@ func validateNodeAnomalyFields(matchAnomaly uint8, action, srcIP, dstIP, srcCIDR
 	}
 	for _, s := range []string{srcCIDR, dstCIDR} {
 		if s != "" {
-			_, n, err := net.ParseCIDR(s)
+			parsed := firstMemo(memos).parse(s)
+			n, err := parsed.network, parsed.err
 			if err == nil {
 				ones, _ := n.Mask.Size()
 				if ones > 0 {
@@ -154,76 +238,30 @@ func validateNodeAnomalyFields(matchAnomaly uint8, action, srcIP, dstIP, srcCIDR
 	if !hasBounded {
 		return fmt.Errorf("anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)")
 	}
-	if matchAnomaly&AnomalyBadFragment != 0 {
+	if matchAnomaly&(AnomalyBadFragment|0x08) != 0 {
 		for _, s := range []string{srcIP, dstIP} {
 			if s != "" {
 				ip := net.ParseIP(s)
 				if ip != nil && ip.To4() == nil && !ip.IsUnspecified() {
-					return fmt.Errorf("bad_fragment not supported for IPv6 target")
+					if matchAnomaly&AnomalyBadFragment != 0 {
+						return fmt.Errorf("bad_fragment not supported for IPv6 target")
+					}
+					return fmt.Errorf("match_anomaly 0x08 not supported for IPv6 target")
 				}
 			}
 		}
 		for _, s := range []string{srcCIDR, dstCIDR} {
 			if s != "" {
-				ip, _, err := net.ParseCIDR(s)
+				parsed := firstMemo(memos).parse(s)
+				ip, err := parsed.ip, parsed.err
 				if err == nil && ip.To4() == nil {
-					return fmt.Errorf("bad_fragment not supported for IPv6 target")
+					if matchAnomaly&AnomalyBadFragment != 0 {
+						return fmt.Errorf("bad_fragment not supported for IPv6 target")
+					}
+					return fmt.Errorf("match_anomaly 0x08 not supported for IPv6 target")
 				}
 			}
 		}
 	}
 	return nil
-}
-
-// ruleValueFromStored rebuilds a BPF RuleValue from a StoredRule.
-// Used exclusively in rollback paths — does NOT return error so rollback
-// callers stay on a single code path. On parse failure, falls back to
-// ActionDrop + zero flags and logs a warning.
-func ruleValueFromStored(s StoredRule) RuleValue {
-	action, err := parseAction(s.Action)
-	if err != nil {
-		slog.Warn("ruleValueFromStored: parseAction failed, falling back to drop",
-			"stored_action", s.Action, "error", err)
-		action = ActionDrop
-	}
-	fm, fv, err := parseTcpFlags(s.TcpFlags)
-	if err != nil {
-		slog.Warn("ruleValueFromStored: parseTcpFlags failed, dropping flags",
-			"stored_flags", s.TcpFlags, "error", err)
-		fm, fv = 0, 0
-	}
-	return RuleValue{
-		Action:        action,
-		TcpFlagsMask:  fm,
-		TcpFlagsValue: fv,
-		MatchAnomaly:  s.MatchAnomaly,
-		RateLimit:     s.RateLimit,
-		PktLenMin:     s.PktLenMin,
-		PktLenMax:     s.PktLenMax,
-	}
-}
-
-// ruleValueFromStoredCIDR is the CIDR-rule variant of ruleValueFromStored.
-func ruleValueFromStoredCIDR(s StoredCIDRRule) RuleValue {
-	action, err := parseAction(s.Action)
-	if err != nil {
-		slog.Warn("ruleValueFromStoredCIDR: parseAction failed, falling back to drop",
-			"stored_action", s.Action, "error", err)
-		action = ActionDrop
-	}
-	fm, fv, err := parseTcpFlags(s.TcpFlags)
-	if err != nil {
-		slog.Warn("ruleValueFromStoredCIDR: parseTcpFlags failed, dropping flags",
-			"stored_flags", s.TcpFlags, "error", err)
-		fm, fv = 0, 0
-	}
-	return RuleValue{
-		Action:        action,
-		TcpFlagsMask:  fm,
-		TcpFlagsValue: fv,
-		MatchAnomaly:  s.MatchAnomaly,
-		RateLimit:     s.RateLimit,
-		PktLenMin:     s.PktLenMin,
-		PktLenMax:     s.PktLenMax,
-	}
 }

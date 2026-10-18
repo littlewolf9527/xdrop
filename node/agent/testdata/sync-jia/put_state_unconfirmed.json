@@ -1,0 +1,4 @@
+{
+  "status": 500,
+  "body": "{\"code\":\"state_unconfirmed\",\"error\":\"config publish failed; rule rollback failed: update: operation not permitted\",\"withdrawal_pending\":false}"
+}

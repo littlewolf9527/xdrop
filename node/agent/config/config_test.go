@@ -1,41 +1,21 @@
 package config
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-// OPEN-P2-06 regression: placeholder secrets should be rejected.
-// AUD-FIX-002: controller_sync_key is only validated when controller_url is set.
+// Node authentication still rejects placeholder credentials.
 func TestValidate_RejectsPlaceholderKeys(t *testing.T) {
-	tests := []struct {
-		name    string
-		nodeKey string
-		syncKey string
-		ctrlURL string
-		wantErr bool
-	}{
-		{"real keys + url pass", "abc123def456", "xyz789uvw012", "http://c:8000", false},
-		{"real keys without url pass", "abc123def456", "xyz789uvw012", "", false},
-		{"CHANGE_ME node_api_key rejected", "CHANGE_ME_NODE_KEY", "real", "", true},
-		{"CHANGE_ME sync_key rejected when url set", "real", "CHANGE_ME_SYNC_KEY", "http://c:8000", true},
-		{"CHANGE_ME sync_key ALLOWED in pull-only (empty url)", "real", "CHANGE_ME_SYNC_KEY", "", false},
-		{"lowercase change-me node rejected", "change-me-node", "real", "", true},
-		{"mixed case changeme node rejected", "Changeme123", "real", "", true},
-		{"REPLACE_ME node rejected", "REPLACE_ME_KEY", "real", "", true},
-		{"empty keys pass (disabled auth)", "", "", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				Server: ServerConfig{Interface: "eth0"},
-				Auth: AuthConfig{
-					NodeAPIKey:        tt.nodeKey,
-					ControllerSyncKey: tt.syncKey,
-					ControllerURL:     tt.ctrlURL,
-				},
-			}
-			err := cfg.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() err=%v, wantErr=%v", err, tt.wantErr)
+	for key, rejected := range map[string]bool{"abc123def456": false, "CHANGE_ME_NODE_KEY": true, "change-me-node": true, "Changeme123": true, "REPLACE_ME_KEY": true, "": true, " \t\n": true} {
+		t.Run(key, func(t *testing.T) {
+			cfg := &Config{Server: ServerConfig{Interface: "eth0"}, Auth: AuthConfig{NodeAPIKey: key}}
+			if err := cfg.Validate(); (err != nil) != rejected {
+				t.Fatalf("Validate() err=%v wantErr=%v", err, rejected)
 			}
 		})
 	}
@@ -59,4 +39,33 @@ func TestLooksLikePlaceholder(t *testing.T) {
 			t.Errorf("looksLikePlaceholder(%q) = %v, want %v", input, got, want)
 		}
 	}
+}
+
+// A real child process must reach the sentinel after Load and Validate.
+func TestAPIFinalLegacyConfigWarning(t *testing.T) {
+	if path := os.Getenv("P7_CONFIG_CHILD"); path != "" {
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = cfg.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Println("P7_CONFIG_CONTINUED")
+		return
+	}
+	for _, keys := range []string{"controller_url: ignored-sentinel", "controller_sync_key: ignored-sentinel", "controller_url: ignored-sentinel\n  controller_sync_key: ignored-sentinel"} {
+		path := filepath.Join(t.TempDir(), "legacy.yaml")
+		if err := os.WriteFile(path, []byte("server:\n  interface: eth0\nauth:\n  node_api_key: test-node-key-0001\n  "+keys+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestAPIFinalLegacyConfigWarning$", "-test.v")
+		cmd.Env = append(os.Environ(), "P7_CONFIG_CHILD="+path)
+		out, err := cmd.CombinedOutput()
+		text := string(out)
+		if err != nil || strings.Count(text, "[WARN]") != 1 || !strings.Contains(text, "已废弃、忽略") || !strings.Contains(text, "P7_CONFIG_CONTINUED") || strings.Contains(text, "ignored-sentinel") {
+			t.Fatalf("legacy process: %v %s", err, out)
+		}
+	}
+	t.Log("CLOSEOUT_CONFIG_WARN cases=3 continued=3 warn_lines=3 values_leaked=0")
 }

@@ -14,7 +14,20 @@ func ntohs(n uint16) uint16 {
 	return htons(n)
 }
 
-func parseProtocol(s string) uint8 {
+// parseProtocolLenient maps an unrecognised protocol string to ProtoAll.
+//
+// ⛔ NEVER use this to build a rule key. "ProtoAll" in a key means "match every
+// protocol", so a typo silently turns a rule aimed at one protocol into one that
+// matches all of them — which is exactly the defect S0-6 fixed (external audit
+// D-09, owner decision 2026-09-05). Every key-building site uses
+// parseProtocolStrict and rejects the input instead.
+//
+// It was called parseProtocol until 2026-09-14. The neutral name is how the
+// defect happened: the safe variant advertised itself as "Strict" while the
+// dangerous one looked like the default choice. The remaining callers are all
+// "is this TCP?" guards, where mapping an unknown protocol to something that is
+// not ProtoTCP makes the guard fire — the conservative direction.
+func parseProtocolLenient(s string) uint8 {
 	p, _ := parseProtocolStrict(s)
 	return p
 }
@@ -174,7 +187,7 @@ func validateRule(srcIP, dstIP, protocol string, srcPort, dstPort, pktLenMin, pk
 	}
 
 	// B-10 (rev11 codex round 9 P2): Node-side portless+port guard. The BPF
-	// data plane (xdrop.c parse_l4) only fills key.src_port/dst_port for
+	// data plane (xdrop_main.c parse_l4) only fills key.src_port/dst_port for
 	// PROTO_TCP and PROTO_UDP — every other protocol leaves the key ports
 	// at 0. Storing a rule with src_port=500 + protocol=gre would create a
 	// permanent BPF lookup miss (rule key port=500 ≠ packet key port=0).
@@ -207,7 +220,7 @@ var portlessProtocolsNode = map[string]bool{
 // clients sending mixed/upper case (e.g. "GRE") still hit the guard.
 // Controller's validateProtocol enforces lowercase before sync, but Node
 // is meant to be a strong direct defense — this closes the gap where
-// `parseProtocol("GRE")` would fall through to ProtoAll and bypass B-10.
+// `parseProtocolLenient("GRE")` would fall through to ProtoAll and bypass B-10.
 func validatePortProtocolCompatNode(protocol string, srcPort, dstPort uint16) error {
 	if !portlessProtocolsNode[strings.ToLower(protocol)] {
 		return nil

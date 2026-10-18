@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/YiFailures/DuplicateKey": {
+    "status": 409,
+    "body": "{\"added\":0,\"code\":\"condition_group_invalid\",\"conflicts\":[{\"id\":\"r\",\"reason\":\"missing/duplicate logical_id 0\"},{\"id\":\"r2\",\"reason\":\"missing/duplicate logical_id 0\"}],\"error\":\"condition group invalid; batch not published\",\"failed\":1,\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"}}"
+  }
+}

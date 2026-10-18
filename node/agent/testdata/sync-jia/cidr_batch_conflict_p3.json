@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/CIDRBatch": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"all\"},\"withdrawal_pending\":false}"
+  }
+}

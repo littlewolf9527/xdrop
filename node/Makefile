@@ -9,8 +9,11 @@ bpf:
 	$(MAKE) -C bpf
 
 # Build Go agent
+# Same order as scripts/build-node.sh: XDROP_VERSION, then git describe only when the repository root is the checkout.
+ROOT := $(realpath $(CURDIR)/..)
+VERSION := $(or $(XDROP_VERSION),$(shell [ "$$(git -C $(ROOT) rev-parse --show-toplevel 2>/dev/null)" = "$(ROOT)" ] && git -C $(ROOT) describe --tags --always --dirty),unknown)
 agent:
-	cd agent && go build -o ../xdrop-agent .
+	cd agent && go build -ldflags "-X github.com/littlewolf9527/xdrop/node/agent/api.Version=$(VERSION)" -o ../xdrop-agent .
 
 # Clean all
 clean:

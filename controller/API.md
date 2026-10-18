@@ -1,812 +1,155 @@
-# XDrop Controller — API Reference
+# Controller API
 
-[中文文档](API.zh.md)
+## Authentication and transport
 
-Base URL: `http://<controller-host>:8000`
+All API paths use `/api/v1`. JSON is used except for the event stream and audit exports. Only health and login are public.
+
+Users send the `xdrop_session` cookie obtained from login. It is an opaque server session, not JWT; the cookie has HttpOnly, Secure, SameSite=Strict and Path=/api/v1. Default validity is 24 absolute hours, controlled by the current `session_hours` setting. Password changes revoke user sessions.
+
+Machines send `Authorization: Bearer <machine-key>`; `X-API-Key` is not a controller authentication method. Do not combine a session cookie and Authorization header: the request is rejected. UI means either admin or operator user session; admin means an administrator session only. Machines and operators cannot call admin routes.
+
+Ordinary JSON bodies are limited to 1 MiB; batch bodies to 8 MiB. Unknown fields, wrong types and trailing JSON produce `bad_request`. Responses with HTTP 204 have no body.
 
----
+## All routes
 
-## Authentication
-
-The controller supports two authentication mechanisms, both optional and configurable.
-
-### Web UI / JWT
-
-When `auth.enabled: true`, the Web UI login endpoint issues a JWT token stored in a cookie. Subsequent requests from the browser are authenticated automatically.
-
-For programmatic access with JWT:
-```
-Authorization: Bearer <token>
-```
-
-### External API Key
-
-A static API key for scripting and integrations:
-```
-X-API-Key: <external_api_key>
-```
-
-Configured via `auth.external_api_key` in `config.yaml`.
-
-### Unauthenticated Endpoints
-
-The following endpoints always bypass authentication:
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Health check |
-| `GET /api/info` | Version info |
-| `POST /api/auth/login` | Login |
-| `POST /api/auth/logout` | Logout |
-| `GET /api/auth/check` | Auth status |
-
----
-
-## Common Response Format
-
-Successful responses return `200 OK` with a JSON body. Errors return an appropriate HTTP status code and a JSON body:
-
-```json
-{ "error": "description of the error" }
-```
-
----
-
-## Info & Health
-
-### `GET /health`
-
-```json
-{ "status": "healthy" }
-```
-
-### `GET /api/info`
-
-```json
-{
-  "name": "XDrop Controller",
-  "version": "2.7.0",
-  "status": "running"
-}
-```
-
----
-
-## Authentication
-
-### `POST /api/auth/login`
-
-Log in and receive a session token.
-
-**Request body:**
-
-```json
-{
-  "password": "string"
-}
-```
-
-**Response `200`:**
-
-```json
-{ "success": true }
-```
-
-**Response `401`:** Invalid credentials.
-
----
-
-### `POST /api/auth/logout`
-
-Invalidate the current session.
-
-**Response `200`:** `{ "success": true }`
-
----
-
-### `GET /api/auth/check`
-
-Check whether the current request is authenticated.
-
-**Response `200`:**
-
-```json
-{
-  "authenticated": true,
-  "auth_enabled": true
-}
-```
-
----
-
-## Rules
-
-All rule endpoints require authentication.
-
-### Rule Object
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string (UUID) | Rule identifier |
-| `name` | string | Human-readable label |
-| `src_ip` | string | Source IPv4/IPv6 (exact match). Mutually exclusive with `src_cidr` |
-| `dst_ip` | string | Destination IPv4/IPv6 (exact match). Mutually exclusive with `dst_cidr` |
-| `src_cidr` | string | Source CIDR prefix, e.g. `10.0.0.0/8`. Mutually exclusive with `src_ip` |
-| `dst_cidr` | string | Destination CIDR prefix. Mutually exclusive with `dst_ip` |
-| `src_port` | integer | Source port. `0` = any |
-| `dst_port` | integer | Destination port. `0` = any |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` (any) |
-| `action` | string | **Required.** `drop` or `rate_limit` |
-| `rate_limit` | integer | PPS limit. Required (> 0) when `action` is `rate_limit` |
-| `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
-| `pkt_len_max` | integer | Maximum L3 packet length in bytes. `0` = disabled |
-| `tcp_flags` | string | TCP flags filter (e.g. `SYN`, `SYN,ACK`, `RST`). Requires `protocol=tcp` |
-| `source` | string | Origin label (e.g., `api`, `ui`) |
-| `comment` | string | Free-text note |
-| `enabled` | boolean | Whether the rule is active |
-| `expires_at` | string (RFC3339) | Expiry timestamp. `null` = never expires |
-| `created_at` | string (RFC3339) | Creation timestamp |
-| `updated_at` | string (RFC3339) | Last update timestamp |
-
-**Constraints:**
-- `src_ip` and `src_cidr` are mutually exclusive.
-- `dst_ip` and `dst_cidr` are mutually exclusive.
-- `rate_limit` must be > 0 when `action` is `rate_limit`.
-
----
-
-### `GET /api/v1/rules`
-
-List rules.
-
-**Query parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | — | Page number (≥ 1). If omitted, returns all rules |
-| `limit` | integer | `50` | Results per page. Range: 1–1000 |
-| `search` | string | — | Search across IP/CIDR fields |
-| `sort` | string | `created_at` | Sort field: `created_at` or `updated_at` |
-| `order` | string | `desc` | Sort order: `asc` or `desc` |
-| `enabled` | boolean | — | Filter by `true` or `false` |
-| `action` | string | — | Filter by `drop` or `rate_limit` |
-
-**Behavior:**
-- If **any pagination parameter** is provided: returns a paginated slice. v2.6.3+: per-rule `stats` is now included from the in-process stats cache (was previously omitted as the AUD-001 optimization).
-- If **no pagination parameters** are provided: returns all rules. v2.6.3+: by default reads from the same in-process stats cache (so the response can be up to `stats_cache.refresh_interval_seconds` stale). When `stats_cache.disabled=true`, falls back to the pre-v2.6.3 behavior (synchronous Node fan-out, no `stats_*` meta fields in the envelope).
-
-**Stats cache meta fields (v2.6.3+):** Every paginated response — and every full-list response when the cache is enabled — now carries six top-level `stats_*` fields describing the cluster-level aggregation state. See [Stats cache contract](#stats-cache-contract-v263) below.
-
-**Response `200` (paginated):**
-
-```json
-{
-  "rules": [ { ...Rule, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
-  "count": 42,
-  "pagination": { "page": 1, "limit": 50, "total": 42, "pages": 1 },
-  "stats_status": "ok",
-  "stats_freshness_ms": 1234,
-  "stats_node_failures": {},
-  "stats_offline_nodes": [],
-  "stats_unknown_nodes": [],
-  "stats_syncing_nodes": []
-}
-```
-
-**Response `200` (full list, no pagination params, cache enabled):**
-
-```json
-{
-  "rules": [ { ...Rule, "stats": { "match_count": 100, "drop_count": 5, "drop_pps": 0.2 } } ],
-  "count": 42,
-  "stats_status": "ok",
-  "stats_freshness_ms": 1234,
-  "stats_node_failures": {},
-  "stats_offline_nodes": [],
-  "stats_unknown_nodes": [],
-  "stats_syncing_nodes": []
-}
-```
-
-**Response `200` (full list, `stats_cache.disabled=true`):** Pre-v2.6.3 envelope. No `stats_*` meta fields, stats come from a synchronous fan-out at request time.
-
-```json
-{
-  "rules": [ { ...Rule, "stats": { ... } } ],
-  "count": 42
-}
-```
-
-**Response `400`:** Invalid parameter value.
-
----
-
-### `GET /api/v1/rules/top`
-
-Top rules by current drop rate.
-
-**Query parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | integer | `10` | Number of results. Max: 50 |
-
-**v2.6.3 behavior:** No more on-request fan-out. Reads from the pre-sorted top-N slice computed at refresh time, so request latency is bounded regardless of cluster size or rule count. Responses include the same six `stats_*` meta fields as `/api/v1/rules`.
-
-**Response `200`:**
-
-```json
-{
-  "rules": [ { ...Rule, "stats": { "drop_pps": 1200.5 } } ],
-  "stats_status": "ok",
-  "stats_freshness_ms": 567,
-  "stats_node_failures": {},
-  "stats_offline_nodes": [],
-  "stats_unknown_nodes": [],
-  "stats_syncing_nodes": []
-}
-```
-
-When the cache is in a "no usable snapshot" state (`initializing`, `waiting_for_health`, `no_nodes`, `failed_no_snapshot`, `disabled`), `rules` is an empty array and the front-end is expected to dispatch off `stats_status` to render the appropriate message.
-
----
-
-### `GET /api/v1/rules/:id`
-
-Get a single rule by ID.
-
-**Response `200`:** Rule object.
-
-**Response `404`:** Rule not found.
-
----
-
-### `POST /api/v1/rules`
-
-Create a rule. Triggers an immediate sync to all nodes.
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | **Yes** | `drop` or `rate_limit` |
-| `rate_limit` | integer | When action=`rate_limit` | PPS limit (> 0) |
-| `src_ip` | string | No | Source IP (exact) |
-| `dst_ip` | string | No | Destination IP (exact) |
-| `src_cidr` | string | No | Source CIDR prefix |
-| `dst_cidr` | string | No | Destination CIDR prefix |
-| `src_port` | integer | No | Source port (0 = any) |
-| `dst_port` | integer | No | Destination port (0 = any) |
-| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
-| `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
-| `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
-| `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
-| `decoder` | string | No | **v2.6+ syntactic sugar.** Expands to underlying `protocol` / `tcp_flags` / `match_anomaly` before storage. Allowed values: `tcp_ack`, `tcp_rst`, `tcp_fin` (Phase 2), `bad_fragment`, `invalid` (Phase 4 anomaly). Mutually exclusive with `protocol`, `tcp_flags`, and `match_anomaly` — setting any of them together → 400. Not returned on `GET /rules` (always replaced by expanded underlying fields). |
-| `match_anomaly` | integer | No | **v2.6+ anomaly bitmask** — `bit0=bad_fragment (0x01)`, `bit1=invalid (0x02)`. Typically set via `decoder` sugar; explicit input is rejected when `decoder` is also set. `0` = legacy behavior (don't check anomaly bits). |
-| `name` | string | No | Label |
-| `comment` | string | No | Notes |
-| `source` | string | No | Origin label |
-| `expires_in` | string | No | Relative expiry, e.g. `1h`, `30m`, `24h` |
-| `enabled` | boolean | No | default `true`; `false` stores the rule in DB without syncing to BPF |
-
-**v2.6+ decoder / anomaly semantics**:
-
-- **Anomaly action restriction**: anomaly rules (any non-zero `match_anomaly`, whether set directly or via `decoder=bad_fragment|invalid`) only support `action=drop`. Sending `action=rate_limit` with an anomaly decoder returns 400 with stable diagnosis substring `does not support action=rate_limit` / `anomaly rules are drop-only`.
-- **IPv6 scope guard**: `decoder=bad_fragment` is rejected with 400 when any target field (`src_ip`/`dst_ip`/`src_cidr`/`dst_cidr`) is IPv6 — v1.3 BPF does not detect IPv6 fragment anomalies. Stable diagnosis substring: `not supported for IPv6 target in v1.3` / `deferred to v1.4`. `decoder=invalid` is allowed on IPv6 (direct-TCP doff<5 check works).
-- **Anomaly rule merge**: POSTing two anomaly rules with the same 5-tuple + same `action=drop` but different `decoder` (e.g. first `bad_fragment`, then `invalid`) merges the `match_anomaly` bitmask onto the existing rule (`0x01 | 0x02 = 0x03`) and returns the same rule ID — no 409 conflict, no duplicate row. BatchCreate does NOT merge (falls back to legacy UNIQUE conflict semantics). `PUT` replaces `match_anomaly` atomically, does not merge.
-- **Anomaly + non-anomaly on same tuple**: creating an anomaly rule on a tuple that already has a non-anomaly rule → 409 conflict (operator must resolve the intent explicitly).
-- **Portless protocol + port (B-10)**: ICMP, ICMPv6, IGMP, GRE, ESP do not carry L4 ports. Specifying a non-zero `src_port` or `dst_port` together with one of these protocols returns `400` with diagnosis `protocol=<name> does not carry ports (src_port/dst_port must be 0)`. The BPF data plane only fills `key.src_port/dst_port` for TCP and UDP; storing a portless+port rule would create a permanent lookup miss (a "ghost" rule that never matches). `protocol=all` and empty protocol allow ports — `all` is a wildcard that may match TCP/UDP traffic. The same rule applies to `WhitelistService.Create`.
-
-**Response `201`:**
-
-```json
-{
-  "success": true,
-  "rule": { ...Rule },
-  "sync": { "failed": 0 }
-}
-```
-
-The `sync` field is **always present**. `success: true` only indicates the Controller DB mutation succeeded; check `sync.failed > 0` to determine whether the rule reached the data plane on all nodes.
-
-**Response `400`:** Validation error (e.g., `src_ip` and `src_cidr` both set; missing `rate_limit`).
-
----
-
-### `PUT /api/v1/rules/:id`
-
-Update an existing rule. Same request body as `POST`. Triggers sync.
-
-**Key fields are immutable**: `src_ip`, `dst_ip`, `src_cidr`, `dst_cidr`, `protocol`, `src_port`, `dst_port`. Sending a different non-empty/non-zero value returns `400` with diagnosis `<field> is a key field and cannot be modified`. Delete and recreate the rule instead. Sending the same value as currently stored is accepted as a no-op (this allows decoder sugar like `decoder=tcp_rst` on an existing tcp rule, which expands to `protocol=tcp` matching the stored value).
-
-**Zero-value PUT limitation**: `protocol`, `src_port`, `dst_port` use scalar (`string` / `int`) request schema, so the server cannot distinguish "field omitted" from "field explicitly set to empty/zero". A request like `PUT {"dst_port": 0}` against an `dst_port=80` rule is treated as **omit/no-op**, not as a clear-to-zero. To change a key field to a different value (including zero), delete and recreate the rule. Pointer-based tri-state schema for these fields is on the v2.7 backlog (see plan §6 R3-002). Same pattern applies to `rate_limit` and `match_anomaly`.
-
-**Explicit-clear for `pkt_len_min/max` (v2.6.4+)**: `pkt_len_min` and `pkt_len_max` use **pointer tri-state** schema — omitting the field keeps the existing value, sending `0` explicitly clears it, sending a positive value sets it. This aligns with `tcp_flags` and `comment`.
-
-**Explicit-clear limitation (remaining int fields)**: `rate_limit` and `match_anomaly` still use `int` schema; sending `0` is treated as "omit/keep existing" rather than "clear". The one exception is `action=drop` in the PUT body — this automatically zeroes `rate_limit`.
-
-`tcp_flags` and `comment` use pointer tri-state: omitting the field keeps the existing value, sending `""` clears it, sending a non-empty string sets it.
-
-**`enabled` field (v2.6.4+)**: pointer tri-state — omitting keeps existing value. Toggling triggers the appropriate data-plane transition: `false→true` adds the rule to BPF (`SyncAddRule`); `true→false` removes it from BPF (`SyncDeleteRule`); `false→false` or `true→true` behaves as before (no-op or update).
-
-**Decoder switching contract (v2.6.2+)**: `tcp_flags` and `match_anomaly` are mutually exclusive at the data plane. When using PUT to switch a rule's decoder type, the client must explicitly clear the conflicting field — the server does NOT auto-clear:
-
-- **tcp_flags rule → anomaly decoder** (e.g. `decoder=bad_fragment` / `invalid`): the request must also send `tcp_flags: ""` to explicitly clear the existing `tcp_flags`. Sending only `decoder=bad_fragment` (without `tcp_flags: ""`) returns `400` with diagnosis substring `cannot have both tcp_flags and match_anomaly`.
-- **anomaly rule → tcp_* decoder** (e.g. `decoder=tcp_rst`): `match_anomaly` cannot be explicit-cleared via PUT (its `int` schema has no tri-state). Switching is rejected; delete and recreate the rule instead.
-
-Rationale: v2.6.2 keeps PUT semantics strictly explicit — the server does not implicitly mutate fields the client didn't send. This is symmetric across both directions and consistent with `tcp_flags`'s pointer tri-state contract.
-
-**Response `200`:** Same as `POST`.
-
-**Response `400`:** Validation error.
-
-**Response `404`:** Rule not found.
-
----
-
-### `DELETE /api/v1/rules/:id`
-
-Delete a rule. Triggers sync.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "message": "Rule deleted",
-  "sync": { "failed": 0 }
-}
-```
-
----
-
-### `POST /api/v1/rules/batch`
-
-Create multiple rules in one request. Triggers a single sync after all rules are written.
-
-**Request body:**
-
-```json
-{
-  "rules": [ { ...RuleRequest }, ... ]
-}
-```
-
-Each element uses the same fields as `POST /api/v1/rules`.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "added": 8,
-  "failed": 2,
-  "rules": [ { ...Rule }, ... ],
-  "sync": { "failed": 0 }
-}
-```
-
-Partial success is possible: `failed` indicates how many rules were rejected.
-
----
-
-### `DELETE /api/v1/rules/batch`
-
-Delete multiple rules. Triggers a single sync.
-
-**Request body:**
-
-```json
-{ "ids": ["uuid1", "uuid2"] }
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "deleted": 2,
-  "failed": 0,
-  "sync": { "failed": 0 }
-}
-```
-
----
-
-## Whitelist
-
-Whitelist entries bypass all blacklist rules. A packet matching any whitelist entry is passed immediately.
-
-**Phase 8 (v2.7.0):** Whitelist now supports arbitrary five-tuple field subsets — any non-empty combination of `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol` is valid. The BPF datapath uses a 31-combo bitmap-gated lookup identical to the blacklist architecture.
-
-**Supported combo examples:**
-- `protocol=udp` — allow all UDP traffic
-- `dst_port=80, protocol=tcp` — allow all inbound TCP:80
-- `src_ip=192.0.2.1` — allow all traffic from this source IP
-- `src_ip=192.0.2.1, protocol=tcp` — allow all TCP from this source
-- `dst_ip=192.0.2.2, dst_port=443, protocol=tcp` — allow HTTPS to a specific destination
-
-### Whitelist Entry Object
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string (UUID) | Entry identifier |
-| `name` | string | Label |
-| `src_ip` | string | Source IPv4/IPv6 (empty = wildcard) |
-| `dst_ip` | string | Destination IPv4/IPv6 (empty = wildcard) |
-| `src_port` | integer | Source port (`0` = wildcard) |
-| `dst_port` | integer | Destination port (`0` = wildcard) |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` (any) |
-| `comment` | string | Notes |
-| `created_at` | string (RFC3339) | Creation timestamp |
-
-**Constraints:**
-- At least one field must be non-empty (all-zero/all-empty entry is rejected).
-- `protocol=all` alone (no IP, no port) is rejected — would whitelist all traffic.
-- Portless protocols (`icmp`, `icmpv6`, `igmp`, `gre`, `esp`) cannot carry port fields.
-- Duplicate five-tuple key is rejected with `409`.
-
----
-
-### `GET /api/v1/whitelist`
-
-List all whitelist entries.
-
-**Response `200`:**
-
-```json
-{
-  "entries": [ { ...WhitelistEntry } ],
-  "count": 3
-}
-```
-
----
-
-### `POST /api/v1/whitelist`
-
-Create a whitelist entry. Triggers incremental sync to all nodes.
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `src_ip` | string | No | Source IP |
-| `dst_ip` | string | No | Destination IP |
-| `src_port` | integer | No | Source port |
-| `dst_port` | integer | No | Destination port |
-| `protocol` | string | No | Protocol |
-| `name` | string | No | Label |
-| `comment` | string | No | Notes |
-
-At least one of the above fields must be non-empty.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "entry": { ...WhitelistEntry },
-  "sync": { "failed": 0 }
-}
-```
-
-**Response `400`:** Validation error (empty entry, protocol=all alone, portless protocol with ports).
-
-**Response `409`:** Duplicate five-tuple key already exists.
-
----
-
-### `DELETE /api/v1/whitelist/:id`
-
-Delete a whitelist entry. Triggers sync.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "message": "Whitelist entry deleted",
-  "sync": { "failed": 0 }
-}
-```
-
----
-
-### Node Sync Endpoint (internal)
-
-**`POST /api/v1/sync/whitelist`** — Atomic full whitelist snapshot sync (v2.7.0+). Used by Controller FullSync to replace the entire whitelist atomically with zero false-drop window while the agent is running. **Node version requirement**: Phase 8 Controller (v2.7.0+) requires Phase 8 Node (v2.7.0+). Old nodes (pre-v2.7.0) that do not implement this endpoint return an upgrade error — there is no silent fallback. The Controller surfaces this as a sync failure for the affected node.
-
----
-
----
-
-## Nodes
-
-### Node Object
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Node identifier (set by config or auto-generated) |
-| `name` | string | Node name |
-| `endpoint` | string | Node API URL, e.g. `http://192.168.1.10:8080` |
-| `status` | string | `online`, `offline`, `syncing`, or `unknown` |
-| `last_sync` | string (RFC3339) | Last successful sync timestamp |
-| `last_seen` | string (RFC3339) | Last successful health check |
-| `created_at` | string (RFC3339) | Registration timestamp |
-| `stats` | NodeStats | Latest stats from the node (see below) |
-
-### NodeStats Object
-
-```json
-{
-  "total_packets": 1000000,
-  "dropped_packets": 100000,
-  "passed_packets": 890000,
-  "whitelisted_packets": 10000,
-  "rate_limited_packets": 5000,
-  "rules_count": 42,
-  "whitelist_count": 3,
-  "dropped_pps": 120.5,
-  "passed_pps": 980.5,
-  "total_pps": 1100.5,
-  "system": {
-    "cpu_percent": 12.5,
-    "mem_total_mb": 8192,
-    "mem_used_mb": 1024,
-    "mem_percent": 12.5,
-    "uptime_seconds": 86400,
-    "load_avg_1": 0.8,
-    "load_avg_5": 0.9,
-    "load_avg_15": 1.0
-  },
-  "agent_state": {
-    "exact_rules": 40,
-    "cidr_rules": 2,
-    "whitelist_entries": 3,
-    "active_slot": 1,
-    "rule_map_selector": 0
-  },
-  "xdp_info": {
-    "mode": "traditional",
-    "interfaces": [
-      { "name": "eth0", "role": "filter" }
-    ]
-  }
-}
-```
-
----
-
-### `GET /api/v1/nodes`
-
-List all registered nodes with their latest stats.
-
-**Response `200`:**
-
-```json
-{
-  "nodes": [ { ...Node } ],
-  "count": 3
-}
-```
-
----
-
-### `GET /api/v1/nodes/:id`
-
-Get a single node.
-
-**Response `200`:** Node object.
-
-**Response `404`:** Node not found.
-
----
-
-### `POST /api/v1/nodes`
-
-Register a new node.
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | **Yes** | Node name |
-| `endpoint` | string | **Yes** | Node API URL |
-| `api_key` | string | No | API key for Controller→Node requests |
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "node": { ...Node }
-}
-```
-
-**Response `400`:** Missing or invalid fields.
-
-**Response `403`:** Node is read-only.
-
----
-
-### `PUT /api/v1/nodes/:id`
-
-Update a node's name or API key.
-
-**Request body:**
-
-```json
-{
-  "name": "new-name",
-  "api_key": "new-api-key"
-}
-```
-
-**Response `200`:** `{ "success": true, "node": { ...Node } }`
-
-**Response `403`:** Node is read-only.
-
----
-
-### `DELETE /api/v1/nodes/:id`
-
-Delete a node.
-
-**Response `200`:** `{ "success": true, "message": "Node deleted" }`
-
-**Response `403`:** Node is read-only.
-
----
-
-### `GET /api/v1/nodes/:id/stats`
-
-Fetch the latest stats snapshot for a specific node.
-
-**Response `200`:** NodeStats object.
-
----
-
-### `POST /api/v1/nodes/:id/sync`
-
-Force an immediate rule push to the specified node, bypassing the normal sync interval.
-
-**Response `200`:** `{ "success": true, "message": "Sync initiated" }`
-
----
-
-## Stats
-
-### `GET /api/v1/stats`
-
-Aggregated cluster-wide statistics.
-
-**Response `200`:**
-
-```json
-{
-  "rules_count": 42,
-  "whitelist_count": 3,
-  "nodes_count": 3,
-  "online_nodes": 2,
-  "total_dropped_pps": 500.5,
-  "total_passed_pps": 5000.5
-}
-```
-
-This endpoint does NOT use the v2.6.3 stats cache. The PPS rollup is computed via a separate, lightweight node-stats path.
-
----
-
-### `GET /api/v1/stats/cache_health` *(v2.6.3+)*
-
-Operator-facing diagnostic for the in-process aggregated rule-stats cache. Surfaces enough state to tell apart "Node fan-out is failing" vs "the refresh ticker has stalled" without reading logs.
-
-**Response `200`:**
-
-```json
-{
-  "status": "partial_stale",
-  "last_refresh_status": "partial",
-  "last_attempt_unix_ms": 1745988123456,
-  "last_snapshot_unix_ms": 1745988123100,
-  "last_full_success_unix_ms": 1745988123100,
-  "freshness_ms": 356,
-  "configured_nodes": 3,
-  "attempted_nodes": 2,
-  "succeeded_nodes": 2,
-  "failed_nodes": 0,
-  "skipped_offline_nodes": 1,
-  "skipped_unknown_nodes": 0,
-  "skipped_syncing_nodes": 0,
-  "offline_node_names": ["node-c"],
-  "unknown_node_names": [],
-  "syncing_node_names": [],
-  "node_errors": {},
-  "rule_count": 142,
-  "top_n_cache_size": 50,
-  "top_rules_cached": 12,
-  "last_refresh_duration_ms": 87,
-  "consecutive_all_fail": 0
-}
-```
-
-`status` and `last_refresh_status` may differ:
-- `status` is the **derived** state at read time (includes `stale` / `partial_stale` based on `now - last_snapshot_unix_ms`).
-- `last_refresh_status` is the **base outcome** of the most recent refresh (never `stale` / `partial_stale`).
-
-When `status=partial_stale` but `last_refresh_status=partial`, the refresh ticker is stuck — the last successful refresh produced a partial snapshot, but no newer round has landed since.
-
-**Response `503`:** Cache not configured (controller built without wiring the cache).
-
----
-
-## Stats cache contract (v2.6.3+)
-
-Every stats-aware endpoint (`/rules?page=...`, `/rules/top`, `/rules` listAll when cache is enabled) returns six top-level `stats_*` fields describing the cluster-level cache state.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `stats_status` | string | One of 10 states: see table below |
-| `stats_freshness_ms` | integer or `null` | Milliseconds since last displayable snapshot. `null` when the cache has no displayable data yet (initializing / disabled / etc.) |
-| `stats_node_failures` | object | `{node_name: error_string}` for **attempted Online** nodes that failed. May be empty even in partial / failed states |
-| `stats_offline_nodes` | array of strings | Nodes whose health status is `offline` and were not contacted this round |
-| `stats_unknown_nodes` | array of strings | Nodes still in `unknown` state (HealthChecker hasn't reached its first verdict) |
-| `stats_syncing_nodes` | array of strings | Nodes currently in `syncing` state |
-
-### Status values
-
-| `stats_status` | Per-rule `stats` field | Meaning |
-|----------------|------------------------|---------|
-| `initializing` | omitted | Cache hasn't completed its first refresh |
-| `waiting_for_health` | omitted | All nodes still `unknown`/`syncing`; HealthChecker hasn't promoted any yet |
-| `no_nodes` | omitted | `configured_nodes=0`. Cluster has no Node configured |
-| `ok` | always present (synth `0/0/0` for no-hits) | All configured nodes contributed successfully and the snapshot is fresh. The only state where `0/0/0` is safe to interpret as "definitely no hits" |
-| `partial` | only when the rule had hits on a succeeded node | One or more nodes were excluded (failed / offline / unknown / syncing). Numbers are a lower bound |
-| `stale` | last snapshot's stats | `ok` baseline that's now older than `stale_threshold_seconds` (refresh ticker likely stuck) |
-| `partial_stale` | last snapshot's stats | `partial` baseline that's now older than threshold (refresh ticker stuck) |
-| `failed` | last snapshot's stats | All nodes failed/skipped on the most recent refresh, but a previous snapshot is preserved |
-| `failed_no_snapshot` | omitted | All nodes failed/skipped and the cache has no fallback snapshot |
-| `disabled` | omitted | `stats_cache.disabled=true` |
-
-### Single-node vs multi-node behavior
-
-Some states are only reachable in multi-node clusters:
-- `partial` / `partial_stale` require the cluster to have ≥2 nodes — if one fails on a single-node cluster the result is `failed_no_snapshot` (or `failed` once a snapshot exists).
-- `failed` always means *every* node failed, so on a multi-node cluster it requires all nodes to fail simultaneously.
-
-### `listAll` semantics change
-
-In v2.6.2 and earlier, `GET /api/v1/rules` (no pagination params) performed a synchronous Node fan-out on every request — responses were always real-time. v2.6.3 changes the default to reading from the in-process cache, capped at `stats_cache.refresh_interval_seconds` lag.
-
-Diagnostic scripts that need real-time stats can:
-1. Hit the Node `/api/v1/rules` endpoint directly (Node API is unchanged).
-2. Set `stats_cache.disabled=true` in the controller config and restart — `listAll` falls back to the legacy fan-out behavior.
-
-There is no `?live_stats=true` query parameter; the two options above are the supported escape hatches.
-
-### Node-side load impact
-
-Enabling the cache (the default) adds a periodic background `GET /api/v1/rules` from Controller to every Online Node, regardless of whether anyone is using the UI. At default settings (5s interval, ≤1000 rules/node) this is ~12 calls/min/node. Larger deployments should consider:
-- Increasing `stats_cache.refresh_interval_seconds` (max 60).
-- Increasing `stats_cache.per_node_timeout_seconds` for slow links.
-- Setting `stats_cache.disabled=true` to opt out entirely.
-
----
-
-## Error Reference
-
-| HTTP Status | Meaning |
-|-------------|---------|
-| `400` | Bad request — invalid or missing fields |
-| `401` | Unauthorized — authentication required or invalid |
-| `403` | Forbidden — node is read-only |
-| `404` | Not found |
-| `409` | Conflict — duplicate entry |
-| `500` | Internal server error |
-
-All error responses include an `"error"` field:
-
-```json
-{ "error": "description" }
-```
+| Method | Path | Permission | Success | Request → response |
+|---|---|---|---|---|
+| GET | /api/v1/events | UI | 200 | No body → SSE; see Events |
+| GET | /api/v1/health | Public | 200 | No body → {status:ok} |
+| POST | /api/v1/rules | UI / machine | 201 / 200 | RulePatch + claim_ref? → Rule + existing,gen,epoch,nodes |
+| POST | /api/v1/rules/batch | UI / machine | 200 | {items,claim_ref?}; validate=1 optional → {epoch,results} |
+| GET | /api/v1/rules | UI / machine | 200 | limit,after,q,state,counts → {items,next_after,counts?} |
+| GET | /api/v1/rules/{id} | UI / machine | 200 | No body → Rule |
+| GET | /api/v1/rules/{id}/delivery | UI / machine | 200 | gen,epoch required → {rule_id,gen,target_gen,epoch,nodes} |
+| PATCH | /api/v1/rules/{id} | UI | 200 | RulePatch → Rule |
+| PUT | /api/v1/rules/{id}/enabled | UI | 200 | {enabled:boolean} → {enabled} |
+| DELETE | /api/v1/rules/{id} | UI / machine | 204 | Machine claim_ref query optional; UI force-deletes |
+| GET | /api/v1/whitelist | UI / machine | 200 | limit,after → {items,next_after} |
+| POST | /api/v1/whitelist | UI | 201 / 200 | WhitelistInput → Whitelist + existing |
+| DELETE | /api/v1/whitelist/{id} | UI | 204 | No body; idempotent |
+| GET | /api/v1/capacity | UI / machine | 200 | No body → dimensions,tightest,candidates,rules,overloaded_nodes |
+| GET | /api/v1/system | UI / machine | 200 | No body → {controller,nodes} |
+| GET | /api/v1/traffic/top | UI / machine | 200 | n=1..20 or all, default 5 → rankings |
+| GET | /api/v1/traffic/history | UI / machine | 200 | range required, node optional → {range,step_s,node,capped,points} |
+| GET | /api/v1/nodes | UI / machine | 200 | No body → {epoch,nodes} |
+| POST | /api/v1/nodes/{name}/sync | UI | 202 | No body → {status:accepted} |
+| POST | /api/v1/nodes/{name}/reconcile | UI | 202 | No body → {status:accepted} |
+| POST | /api/v1/nodes | Admin | 201 | {name,base_url,api_key} → {name,base_url} |
+| PATCH | /api/v1/nodes/{name} | Admin | 200 | {base_url?,api_key?} → {name,base_url} |
+| DELETE | /api/v1/nodes/{name} | Admin | 204 | No body; removes management, leaves remote policy |
+| POST | /api/v1/nodes/{name}/test | Admin | 200 | Stored node → {reachable,compatible,key_accepted,message} |
+| POST | /api/v1/nodes/test | Admin | 200 | {base_url,api_key} → same test result |
+| GET | /api/v1/audit | UI | 200 | from,to,limit,cursor,action → {items,next_cursor} |
+| GET | /api/v1/audit/export | Admin | 200 | from,to,format required; action optional → CSV/JSON |
+| PUT | /api/v1/auth/me/password | UI | 204 | {current_password,password}; clears cookie |
+| POST | /api/v1/auth/login | Public | 200 | {username,password} → {username,expires_at} + Set-Cookie |
+| POST | /api/v1/auth/logout | UI | 204 | No body; invalidates session and clears cookie |
+| GET | /api/v1/auth/me | UI / machine | 200 | No body → {kind,name,role} |
+| GET | /api/v1/users | UI | 200 | No body → user array |
+| POST | /api/v1/users | Admin | 201 | {username,password,role}; no body |
+| DELETE | /api/v1/users/{name} | Admin | 204 | No body |
+| PUT | /api/v1/users/{name}/password | Admin | 204 | {password} |
+| GET | /api/v1/credentials | Admin | 200 | No body → credential metadata array |
+| POST | /api/v1/credentials | Admin | 201 | {name} → {id,name,key,created_at,retired} |
+| DELETE | /api/v1/credentials/{id} | Admin | 204 | No body; revoke |
+| GET | /api/v1/settings | UI | 200 | No body → settings object |
+| PUT | /api/v1/settings | Admin | 200 | Partial settings object → complete settings |
+| PUT | /api/v1/users/{name}/role | Admin | 204 | {role:admin or operator} |
+| GET | /api/v1/auth/me/prefs | UI | 200 | No body → JSON object |
+| PUT | /api/v1/auth/me/prefs | UI | 204 | JSON object replaces preferences, at most 8 KiB |
+| GET | /api/v1/templates | UI | 200 | No body → template array |
+| POST | /api/v1/templates | Admin | 201 | {name,body} → template |
+| PUT | /api/v1/templates/{id} | Admin | 200 | {name,body} → template |
+| DELETE | /api/v1/templates/{id} | Admin | 204 | No body |
+
+## Rules, claims and delivery
+
+RulePatch fields are `src_ip,dst_ip,src_cidr,dst_cidr,src_port,dst_port,protocol,ttl,dscp,icmp_type,icmp_code,fragment,pkt_len,tcp_flags,match_anomaly,action,rate_limit,enabled,comment,expires_in`. Ports, rate_limit and match_anomaly are integers; enabled is boolean; the other fields are strings. Defaults are action=drop, protocol=all and enabled=true. A rate_limit action requires a positive rate. Exact addresses and prefixes cannot be combined; mapped IPv6 spellings and mixed address families are rejected.
+
+A Rule contains the canonical match fields plus `id,logical_id,kind,group_key,cond_key,enabled,comment,created_at,updated_at,expires_at,created_by,updated_by`. An omitted expiry is permanent; an explicit expiry is a positive Go duration such as `10m`. PATCH omissions/null preserve values, while empty expires_in clears expiry.
+
+Create returns 201 for a new row, 200 with existing=true for identical identity/action/rate. Renewal extends expiry but does not enable a disabled rule or overwrite its comment. A conflicting action/rate returns rule_conflict. Writes acknowledge committed storage before delivery.
+
+Machines own claims by credential name and claim_ref; machine DELETE releases only that claim, with final release deleting the rule. UI DELETE removes the rule and all claims. Batch takes 1..500 items with independent transactions; inspect each result. `validate=1` simulates admission without persistence; simulated new IDs are empty and gen is omitted.
+
+Delivery requires gen and the process epoch returned by create. States are `pending,confirmed,disabled,offline,incompatible,overloaded,rejected`. A process restart changes epoch and returns gen_epoch_mismatch for an old value; obtain current node/creation state before retrying. Confirmation concerns the configured rule generation, not measured matching packets.
+
+## Conditions, pagination and whitelist
+
+Conditions `ttl,dscp,icmp_type,icmp_code,pkt_len` use comma-separated unsigned decimal values or inclusive ranges, optionally prefixed by `!`. Domains are respectively 0..255, 0..63, 0..255, 0..255, 0..65535. Fragment expressions use nofrag, first, middle, last, frag and nonfirst with an IPv4 anchor. ICMP fields require ICMP/ICMPv6. Condition groups admit at most four physical candidates; expansion can consume more than one candidate.
+
+match_anomaly is an any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment at offset one. Only these four bits are accepted; bits 1 and 8 reject IPv6, and a bounded target is required.
+
+Rules and whitelist pages return `{items,next_after}`. limit defaults to 100, range 1..1000. Rules use a nonnegative logical_id cursor and ascending logical_id order; whitelist uses a string ID cursor. Exhaustion returns null. Rules also accept q (ID, IP or prefix), state=drop/rate_limit/disabled, and counts=1. Counts ignore state/pagination but honor q.
+
+Whitelist input is `src_ip,dst_ip,src_port,dst_port,protocol,comment`; the result adds id, created_at, created_by and existing. New creation is 201; existing is 200; deletion is idempotent 204. It matches exact five-tuples, not CIDR/condition expressions.
+
+## Nodes and operational data
+
+Node creation requires a unique nonempty name without `/`, an http/https base_url with host and no user information/query/fragment, and api_key of 1..4096 bytes. PATCH requires URL and/or key; names do not change. Keys are write-only. Updating replaces the live client and schedules full synchronization; deleting stops its workers without clearing remote policy. Unsaved and stored tests return reachability, protocol compatibility, key acceptance and a scrubbed message; redirects are not followed.
+
+Node list entries expose `name,base_url,key_unreadable,online,incompatible,rules,whitelist,health,health_at,stats,stats_at,rates,overload`. Each side reports `state,reason,since,confirmed_gen,confirmable,rejected`. Use `/capacity` for admission dimensions/limits and `/system` for controller metrics, node counters and reconciliation results.
+
+Manual sync/reconcile replies only acknowledge scheduling. Automatic reconciliation uses eligibility checks and reports persistent drift; successful HTTP does not mean every node has accepted every rule.
+
+## Users, credentials, settings and templates
+
+User/credential names use 1..64 ASCII letters, digits, dot, underscore or hyphen; passwords are 10..72 bytes. Roles are admin/operator. Removing or demoting the last administrator is rejected. User responses contain username, role, created_at, created_by and password_changed_at.
+
+A newly issued machine key appears only once. Reissuing the same credential name creates a new key and retires active earlier keys after at most 24 hours; the claim identity remains the name. Revocation does not delete claims. Lists contain metadata rather than key plaintext.
+
+| Setting | Default | Accepted values |
+|---|---|---|
+| session_hours | 24 | 1..720 |
+| audit_retention_days | 180 | 1..3650 |
+| reconcile_interval_minutes | 15 | 1..1440 |
+| history_retention_days | 30 | 1..90 |
+| default_language | en-US | en-US, zh-CN, ja-JP |
+
+PUT settings updates only present fields. Preferences replace one JSON object, at most 8 KiB. Templates store name/body verbatim: name is 1..64 characters, body at most 64 KiB, at most 100 templates. Template responses contain id,name,body,created_at,created_by,updated_at,updated_by.
+
+## Traffic, events and audit
+
+Top returns `rules,targets,targets_total,updated_at,incomplete,total_dropped_pps,total_dropped_bytes_ps`; each ranking uses packet/byte rates and shares. A first or reset counter sample has no rate yet; incomplete reports missing/truncated coverage. Browser reads use the controller cache.
+
+History requires range=15m/1h/6h/24h/7d/30d and optionally node=name. Steps are 5 seconds for 15m/1h, 60 for 6h/24h and 3600 for 7d/30d. Points contain t and dropped/passed packet/byte rates; persisted windows also have maxima. Missing buckets are omitted. Byte rates are bytes/second; multiply by eight for bits/second.
+
+Events use text/event-stream with rules, nodes and traffic classes. The stream starts with `retry: 3000`; connections receive full snapshots, not event replay. Heartbeats are `: ping` every 15 seconds. Session invalidation closes streams.
+
+Audit events contain id,at,actor,source,action,target,before,after. Listing accepts UTC from/to, limit 1..1000 (default 100), opaque cursor and action. Export requires from/to and format=csv or json, and optionally action. Export errors abort the connection; treat interrupted downloads as incomplete. Forwarded client addresses are trusted only from loopback peers. Business mutations and their audit rows commit together.
+
+## Errors
+
+Errors use `{"code":"invalid_rule","message":"...","field":"dst_port"}`. Optional context is field, rule_id, rule_ids or table; batch item errors use the same shape. Internal failures return only `internal error`. Login throttling includes Retry-After.
+
+| code | HTTP |
+|---|---|
+| admin_required | 403 |
+| last_admin | 409 |
+| invalid_credentials | 401 |
+| login_throttled | 429 |
+| invalid_field | 400 |
+| user_exists | 409 |
+| user_not_found | 404 |
+| last_user | 409 |
+| credential_not_found | 404 |
+| invalid_rule | 400 |
+| empty_value | 400 |
+| invalid_expires_in | 400 |
+| address_family_mismatch | 400 |
+| bad_request | 400 |
+| batch_too_large | 400 |
+| unauthenticated | 401 |
+| forbidden | 403 |
+| not_found | 404 |
+| node_not_found | 404 |
+| route_not_found | 404 |
+| method_not_allowed | 405 |
+| rule_conflict | 409 |
+| condition_capacity | 409 |
+| cidr_overlap | 409 |
+| table_full | 409 |
+| gen_epoch_mismatch | 409 |
+| internal | 500 |
+
+For node key rotation, the stored api_key must match the node setting `auth.node_api_key`. Restart the node after changing that setting, then PATCH the stored node with the same key; the controller API replaces the live client without restarting the controller.

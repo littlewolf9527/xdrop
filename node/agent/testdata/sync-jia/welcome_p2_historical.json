@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"features\":[\"ipv4\",\"ipv6\",\"rate_limit\",\"decoder_sugar\",\"anomaly_match\"],\"name\":\"XDrop Agent\",\"status\":\"running\",\"sync_protocol\":2,\"version\":\"2.6.1\"}"
+}

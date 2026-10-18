@@ -6,16 +6,18 @@
 package cidr
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
 )
 
 // TrieWriter is the narrow map interface the Manager needs for LPM trie
-// mutation. Extracted per proposal §5.3 / §5.7 so unit tests can inject a
-// two-method fake instead of having to satisfy the full `*ebpf.Map`
-// surface. `*ebpf.Map` satisfies this implicitly.
+// mutation and actual-content reconciliation. *ebpf.Map satisfies it.
 type TrieWriter interface {
+	KeySize() uint32
+	NextKey(interface{}, interface{}) error
+	Lookup(interface{}, interface{}) error
 	// Put creates or overwrites the trie entry (upsert semantics, matching
 	// the pre-migration goebpf Upsert call).
 	Put(key, value interface{}) error
@@ -77,6 +79,12 @@ func makeLPMv6Key(cidr string) (lpmV6Key, error) {
 
 // Manager manages CIDR → ID mappings and LPM Trie operations.
 // IDs start from 1, 0 is reserved as wildcard/unmatched.
+type prefixIdentity struct {
+	CIDR string
+	Src  bool
+	V6   bool
+}
+
 type Manager struct {
 	mu sync.RWMutex
 
@@ -91,16 +99,13 @@ type Manager struct {
 	dstV6Refs map[string]int
 
 	nextID uint32 // monotonically increasing, never reused
-
-	srcV4Trie TrieWriter
-	dstV4Trie TrieWriter
-	srcV6Trie TrieWriter
-	dstV6Trie TrieWriter
+	tries  [2][4]TrieWriter
+	known  [2]bool // only per-copy state; false requires actual-content reconciliation
 }
 
 // NewManager creates a new CIDR Manager with trie map references.
-// Production wiring passes four `*ebpf.Map` values; tests pass fakes.
-func NewManager(srcV4, dstV4, srcV6, dstV6 TrieWriter) *Manager {
+// Both copies start unknown, including after startup clearing or fresh maps.
+func NewManager(srcV4, dstV4, srcV6, dstV6, srcV4B, dstV4B, srcV6B, dstV6B TrieWriter) *Manager {
 	return &Manager{
 		srcV4CIDRs: make(map[string]uint32),
 		dstV4CIDRs: make(map[string]uint32),
@@ -111,116 +116,59 @@ func NewManager(srcV4, dstV4, srcV6, dstV6 TrieWriter) *Manager {
 		srcV6Refs:  make(map[string]int),
 		dstV6Refs:  make(map[string]int),
 		nextID:     1, // 0 is reserved
-		srcV4Trie:  srcV4,
-		dstV4Trie:  dstV4,
-		srcV6Trie:  srcV6,
-		dstV6Trie:  dstV6,
+		tries:      [2][4]TrieWriter{{srcV4, dstV4, srcV6, dstV6}, {srcV4B, dstV4B, srcV6B, dstV6B}},
 	}
 }
 
-// AllocSrcID allocates or returns existing src CIDR ID, writes trie entry.
-// cidr must be pre-normalized via NormalizeCIDR.
-func (m *Manager) AllocSrcID(cidr string) (uint32, error) {
+// ReserveSrcID borrows one reference without publishing a new prefix. Every
+// successful reservation must be committed or matched by UndoSrcReservation.
+func (m *Manager) ReserveSrcID(cidr string) (uint32, error) { return m.reserve(cidr, true) }
+func (m *Manager) ReserveDstID(cidr string) (uint32, error) { return m.reserve(cidr, false) }
+
+func (m *Manager) mapsFor(p prefixIdentity) (map[string]uint32, map[string]int, TrieWriter) {
+	if p.Src {
+		return m.getSrcMaps(p.V6)
+	}
+	return m.getDstMaps(p.V6)
+}
+func (m *Manager) reserve(cidr string, src bool) (uint32, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	isV6 := isIPv6CIDR(cidr)
-	cidrs, refs, trie := m.getSrcMaps(isV6)
-
-	if id, ok := cidrs[cidr]; ok {
+	p := prefixIdentity{cidr, src, isIPv6CIDR(cidr)}
+	if _, err := trieKey(cidr, p.V6); err != nil {
+		return 0, err
+	}
+	ids, refs, _ := m.mapsFor(p)
+	if id, ok := ids[cidr]; ok {
 		refs[cidr]++
 		return id, nil
 	}
-
+	if m.nextID == 0 {
+		return 0, fmt.Errorf("CIDR ID space exhausted")
+	}
 	id := m.nextID
 	m.nextID++
-
-	if err := m.writeTrie(trie, cidr, id, isV6); err != nil {
-		return 0, fmt.Errorf("failed to write src trie for %s: %w", cidr, err)
-	}
-
-	cidrs[cidr] = id
-	refs[cidr] = 1
+	ids[cidr], refs[cidr] = id, 1
 	return id, nil
 }
 
-// AllocDstID allocates or returns existing dst CIDR ID, writes trie entry.
-func (m *Manager) AllocDstID(cidr string) (uint32, error) {
+// Reference changes never write either trie. Only Align and Apply mutate maps.
+func (m *Manager) UndoSrcReservation(cidr string) error { return m.release(cidr, true) }
+func (m *Manager) UndoDstReservation(cidr string) error { return m.release(cidr, false) }
+func (m *Manager) ReleaseSrcID(cidr string) error       { return m.release(cidr, true) }
+func (m *Manager) ReleaseDstID(cidr string) error       { return m.release(cidr, false) }
+func (m *Manager) release(cidr string, src bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	isV6 := isIPv6CIDR(cidr)
-	cidrs, refs, trie := m.getDstMaps(isV6)
-
-	if id, ok := cidrs[cidr]; ok {
-		refs[cidr]++
-		return id, nil
+	ids, refs, _ := m.mapsFor(prefixIdentity{cidr, src, isIPv6CIDR(cidr)})
+	if refs[cidr] == 0 {
+		return fmt.Errorf("CIDR %s not found", cidr)
 	}
-
-	id := m.nextID
-	m.nextID++
-
-	if err := m.writeTrie(trie, cidr, id, isV6); err != nil {
-		return 0, fmt.Errorf("failed to write dst trie for %s: %w", cidr, err)
-	}
-
-	cidrs[cidr] = id
-	refs[cidr] = 1
-	return id, nil
-}
-
-// ReleaseSrcID decrements ref count; deletes trie entry when it reaches zero.
-// Mutation order: when this release would drop the refcount to zero, the trie
-// delete is attempted first. On trie failure no map state is changed, so the
-// caller can safely retry (refs[cidr] stays at its pre-call value).
-func (m *Manager) ReleaseSrcID(cidr string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	isV6 := isIPv6CIDR(cidr)
-	cidrs, refs, trie := m.getSrcMaps(isV6)
-
-	ref, ok := refs[cidr]
-	if !ok {
-		return fmt.Errorf("src CIDR %s not found", cidr)
-	}
-
-	if ref <= 1 {
-		if err := m.deleteTrie(trie, cidr, isV6); err != nil {
-			return fmt.Errorf("failed to delete src trie for %s: %w", cidr, err)
-		}
-		delete(cidrs, cidr)
+	refs[cidr]--
+	if refs[cidr] == 0 {
+		delete(ids, cidr)
 		delete(refs, cidr)
-		return nil
 	}
-	refs[cidr] = ref - 1
-	return nil
-}
-
-// ReleaseDstID decrements ref count; deletes trie entry when it reaches zero.
-// Same mutation-order guarantee as ReleaseSrcID: trie delete happens before
-// any local state change, so a failed release is safely retryable.
-func (m *Manager) ReleaseDstID(cidr string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	isV6 := isIPv6CIDR(cidr)
-	cidrs, refs, trie := m.getDstMaps(isV6)
-
-	ref, ok := refs[cidr]
-	if !ok {
-		return fmt.Errorf("dst CIDR %s not found", cidr)
-	}
-
-	if ref <= 1 {
-		if err := m.deleteTrie(trie, cidr, isV6); err != nil {
-			return fmt.Errorf("failed to delete dst trie for %s: %w", cidr, err)
-		}
-		delete(cidrs, cidr)
-		delete(refs, cidr)
-		return nil
-	}
-	refs[cidr] = ref - 1
 	return nil
 }
 
@@ -276,37 +224,6 @@ func (m *Manager) GetDstID(cidr string) (uint32, bool) {
 	return id, ok
 }
 
-// ClearAll removes all CIDR entries from tries and resets state.
-// Used during FullSync to cleanly rebuild.
-func (m *Manager) ClearAll() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Delete all trie entries (best-effort)
-	for cidr := range m.srcV4CIDRs {
-		m.deleteTrie(m.srcV4Trie, cidr, false)
-	}
-	for cidr := range m.dstV4CIDRs {
-		m.deleteTrie(m.dstV4Trie, cidr, false)
-	}
-	for cidr := range m.srcV6CIDRs {
-		m.deleteTrie(m.srcV6Trie, cidr, true)
-	}
-	for cidr := range m.dstV6CIDRs {
-		m.deleteTrie(m.dstV6Trie, cidr, true)
-	}
-
-	// Reset maps (don't reset nextID to preserve monotonic guarantee)
-	m.srcV4CIDRs = make(map[string]uint32)
-	m.dstV4CIDRs = make(map[string]uint32)
-	m.srcV6CIDRs = make(map[string]uint32)
-	m.dstV6CIDRs = make(map[string]uint32)
-	m.srcV4Refs = make(map[string]int)
-	m.dstV4Refs = make(map[string]int)
-	m.srcV6Refs = make(map[string]int)
-	m.dstV6Refs = make(map[string]int)
-}
-
 // ============ Static helpers ============
 
 // NormalizeCIDR returns the network address form of a CIDR.
@@ -322,15 +239,27 @@ func NormalizeCIDR(cidr string) (string, error) {
 // CheckOverlap checks for strict containment between newCIDR and existing CIDRs.
 // Returns the conflicting CIDR string if overlap found, empty string otherwise.
 // Same CIDR is NOT a conflict (handled by duplicate key check).
-func CheckOverlap(newCIDR string, existingCIDRs []string) (string, error) {
-	_, newNet, err := net.ParseCIDR(newCIDR)
-	if err != nil {
+func CheckOverlap(newCIDR string, existingCIDRs []string, parsed ...map[string]*net.IPNet) (string, error) {
+	parse := func(s string) *net.IPNet {
+		if len(parsed) > 0 {
+			if n, ok := parsed[0][s]; ok {
+				return n
+			}
+		}
+		_, n, _ := net.ParseCIDR(s)
+		if len(parsed) > 0 {
+			parsed[0][s] = n
+		}
+		return n
+	}
+	newNet := parse(newCIDR)
+	if newNet == nil {
 		return "", fmt.Errorf("invalid CIDR: %s", newCIDR)
 	}
 
 	for _, existing := range existingCIDRs {
-		_, existNet, err := net.ParseCIDR(existing)
-		if err != nil {
+		existNet := parse(existing)
+		if existNet == nil {
 			continue
 		}
 
@@ -351,52 +280,37 @@ func CheckOverlap(newCIDR string, existingCIDRs []string) (string, error) {
 
 func (m *Manager) getSrcMaps(isV6 bool) (map[string]uint32, map[string]int, TrieWriter) {
 	if isV6 {
-		return m.srcV6CIDRs, m.srcV6Refs, m.srcV6Trie
+		return m.srcV6CIDRs, m.srcV6Refs, m.tries[0][2]
 	}
-	return m.srcV4CIDRs, m.srcV4Refs, m.srcV4Trie
+	return m.srcV4CIDRs, m.srcV4Refs, m.tries[0][0]
 }
 
 func (m *Manager) getDstMaps(isV6 bool) (map[string]uint32, map[string]int, TrieWriter) {
 	if isV6 {
-		return m.dstV6CIDRs, m.dstV6Refs, m.dstV6Trie
+		return m.dstV6CIDRs, m.dstV6Refs, m.tries[0][3]
 	}
-	return m.dstV4CIDRs, m.dstV4Refs, m.dstV4Trie
+	return m.dstV4CIDRs, m.dstV4Refs, m.tries[0][1]
 }
 
-// writeTrie writes a CIDR → ID mapping to the LPM trie. Uses the hand-rolled
-// struct keys (see §5.4). cilium/ebpf's marshaller serialises the struct
-// into the kernel's bpf_lpm_trie_key layout (u32 LE prefix + IP bytes) —
-// byte-identical to goebpf's former encoding (verified in
-// cidr/testdata/lpm_keys_goebpf.json fixture).
-func (m *Manager) writeTrie(trie TrieWriter, cidr string, id uint32, isV6 bool) error {
-	if isV6 {
-		k, err := makeLPMv6Key(cidr)
+func trieKey(prefix string, v6 bool) ([]byte, error) {
+	if v6 {
+		key, err := makeLPMv6Key(prefix)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return trie.Put(k, id)
+		b := make([]byte, 20)
+		binary.LittleEndian.PutUint32(b, key.PrefixLen)
+		copy(b[4:], key.Data[:])
+		return b, nil
 	}
-	k, err := makeLPMv4Key(cidr)
+	key, err := makeLPMv4Key(prefix)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return trie.Put(k, id)
-}
-
-// deleteTrie removes a CIDR entry from the LPM trie.
-func (m *Manager) deleteTrie(trie TrieWriter, cidr string, isV6 bool) error {
-	if isV6 {
-		k, err := makeLPMv6Key(cidr)
-		if err != nil {
-			return err
-		}
-		return trie.Delete(k)
-	}
-	k, err := makeLPMv4Key(cidr)
-	if err != nil {
-		return err
-	}
-	return trie.Delete(k)
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint32(b, key.PrefixLen)
+	copy(b[4:], key.Data[:])
+	return b, nil
 }
 
 // isIPv6CIDR checks if a CIDR string is IPv6.

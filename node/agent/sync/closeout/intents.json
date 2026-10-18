@@ -1,0 +1,4217 @@
+{
+  "scenarios/I1_increment/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 7,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I2_deferred/defer": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_ip": "10.20.100.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I2_deferred/recover": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_ip": "10.20.100.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I2_deferred/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 3,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_cidr_BATCH_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_cidr_BATCH_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_cidr_POST_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_cidr_POST_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_cidr_PUT_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_cidr_PUT_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_exact_BATCH_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_exact_BATCH_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_exact_POST_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_exact_POST_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/I3_exact_PUT_0/seed": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios/I3_exact_PUT_3/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/atomic_restart/full_A": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/atomic_restart/full_B": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/atomic_restart/pull": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": true,
+    "Whole": true,
+    "Exemptions": []
+  },
+  "scenarios/different_id_cidr/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/different_id_cidr/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/different_id_cidr/replacement": {
+    "Want": {
+      "replacement": {
+        "logical_id": 7,
+        "id": "replacement",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/different_id_exact/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/different_id_exact/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/different_id_exact/replacement": {
+    "Want": {
+      "replacement": {
+        "logical_id": 7,
+        "id": "replacement",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_anomaly/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_anomaly/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_anomaly/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_anomaly/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_anomaly/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_flags/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_flags/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_flags/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_flags/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_flags/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "ACK"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_length/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 100,
+        "pkt_len_max": 200
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_length/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 100,
+        "pkt_len_max": 200
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_length/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_length/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_cidr_length/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 300,
+        "pkt_len_max": 400
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_anomaly/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_anomaly/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_anomaly/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_anomaly/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_anomaly/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_flags/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_flags/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_flags/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_flags/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_flags/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "ACK"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_length/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 100,
+        "pkt_len_max": 200
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_length/batch_add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 100,
+        "pkt_len_max": 200
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_length/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_length/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/legacy_exact_length/put_changed": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 300,
+        "pkt_len_max": 400
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_cidr/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_cidr/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_cidr": "10.20.100.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_cidr/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_cidr/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_cidr/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_exact/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_exact/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_ip": "10.20.100.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_exact/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_exact/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/pure_exact/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/rate_cidr/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios/rate_exact/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/absent": {
+    "Want": {},
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/condition": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/create": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/delete": {
+    "Want": {},
+    "Absent": [
+      "a",
+      "renamed"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/empty": {
+    "Want": {},
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/identity_pure": {
+    "Want": {
+      "renamed": {
+        "logical_id": 17,
+        "id": "renamed",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/move": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_cidr/replay": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/absent": {
+    "Want": {},
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/condition": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/create": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/delete": {
+    "Want": {},
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/empty": {
+    "Want": {},
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/identity_pure": {
+    "Want": {
+      "renamed": {
+        "logical_id": 17,
+        "id": "renamed",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/move": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_contract_exact/replay": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_10/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 18,
+        "id": "u",
+        "src_ip": "10.30.113.18",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_10/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_9a/retire": {
+    "Want": {},
+    "Absent": [
+      "a"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_9a/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_9b/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_R0/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_R0/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_Rc/fault": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_Rc/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_Rc/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-2/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-2/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-3/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-3/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-4/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-4/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-5/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-5/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-6/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-6/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-7/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-7/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-9/fault": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-9/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_cidr_c-9/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_R0/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_R0/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_Rc/fault": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_Rc/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_Rc/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-3/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-3/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-4/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-4/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-5/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-5/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-6/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-6/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-7/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-7/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-9/fault": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-9/recover": {
+    "Want": {
+      "u": {
+        "logical_id": 99,
+        "id": "u",
+        "src_ip": "10.30.113.99",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_failure_exact_c-9/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_prefix_overlap/seed": {
+    "Want": {
+      "c": {
+        "logical_id": 21,
+        "id": "c",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_condition_capacity/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_content_different/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_duplicate_id/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_duplicate_key/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_duplicate_logical_id/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_empty_id/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_group_undeclared/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_key/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_key_mismatch/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_reject_zero_id/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_table_full/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_undeclared_preserved/change": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "ttl": "64",
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_commit_p5/I15_undeclared_preserved/seed": {
+    "Want": {
+      "a": {
+        "logical_id": 17,
+        "id": "a",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "u": {
+        "logical_id": 18,
+        "id": "u",
+        "src_ip": "10.30.113.18",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I11a_count_survives_key_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I11a_count_survives_key_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I12a_rate_survives_key_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I12a_rate_survives_key_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I17a_logical_capacity/seed": {
+    "Want": {
+      "old": {
+        "logical_id": 17,
+        "id": "old",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I19_normalizes_input/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "ttl": "64,128",
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_cidr_anomaly/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_cidr_flags/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_cidr_length/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 36,
+        "pkt_len_max": 100
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_exact_anomaly/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_exact_flags/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I7_legacy_exact_length/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 36,
+        "pkt_len_max": 100
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/I8_same_key_members/full": {
+    "Want": {
+      "first": {
+        "logical_id": 17,
+        "id": "first",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "second": {
+        "logical_id": 18,
+        "id": "second",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J1_more_specific_candidate/full": {
+    "Want": {
+      "loose": {
+        "logical_id": 17,
+        "id": "loose",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      },
+      "strict": {
+        "logical_id": 18,
+        "ttl": "64",
+        "id": "strict",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J2_exact_anomaly_over_cidr/full": {
+    "Want": {
+      "anomaly": {
+        "logical_id": 18,
+        "id": "anomaly",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      },
+      "cidr": {
+        "logical_id": 17,
+        "id": "cidr",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J3_anomaly04/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J3_anomaly08/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 8
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J3_six_attributes/full": {
+    "Want": {
+      "icmp": {
+        "logical_id": 18,
+        "icmp_type": "0",
+        "icmp_code": "0",
+        "id": "icmp",
+        "src_ip": "10.10.2.1",
+        "protocol": "icmp",
+        "action": "drop"
+      },
+      "tcp": {
+        "logical_id": 17,
+        "ttl": "64",
+        "dscp": "0",
+        "fragment": "nofrag",
+        "pkt_len": "40",
+        "id": "tcp",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/J4_RT_dispatch_model/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_cidr/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_cidr/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_cidr": "10.20.100.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_cidr/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_cidr/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_cidr/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_exact/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_exact/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_ip": "10.20.100.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_exact/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_exact/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p3/pure_exact/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I10_cidr_batch/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I10_cidr_full/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I10_cidr_replay_missing/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I10_cidr_startup/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": true,
+    "Whole": true,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I10_exact_batch/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I10_exact_full/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I10_exact_replay_missing/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I10_exact_startup/zero": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": true,
+    "Whole": true,
+    "Exemptions": [
+      "protocol 4 logical_id=0/new id or restart disabled: absent"
+    ]
+  },
+  "scenarios_p4/I11a_count_survives_key_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11a_count_survives_key_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_move/same": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_pure_condition/condition": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_pure_condition/pure": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_pure_condition/pure_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_swap/seed": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_cidr_swap/swap": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_move/same": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_pure_condition/condition": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_pure_condition/pure": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_pure_condition/pure_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_swap/seed": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_ip": "10.10.2.1",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I11b_exact_swap/swap": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12a_rate_survives_key_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12a_rate_survives_key_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_move/same": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_pure_condition/condition": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_pure_condition/pure": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_pure_condition/pure_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_rate_drop_rate/drop": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_rate_drop_rate/rate_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_rate_drop_rate/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_swap/seed": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_cidr_swap/swap": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_move/move": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_move/same": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_move/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_pure_condition/condition": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1,
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_pure_condition/pure": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_pure_condition/pure_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_rate_drop_rate/drop": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_rate_drop_rate/rate_again": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_rate_drop_rate/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_swap/seed": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_ip": "10.10.2.1",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I12b_exact_swap/swap": {
+    "Want": {
+      "b": {
+        "logical_id": 18,
+        "id": "b",
+        "src_ip": "10.10.2.1",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      },
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "dst_port": 443,
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I17a_logical_capacity/seed": {
+    "Want": {
+      "old": {
+        "logical_id": 17,
+        "id": "old",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I17b_cidr_batch/partial": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [
+      "new"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 partial batch: capacity 1 held by prior successful source member; new id absent"
+    ]
+  },
+  "scenarios_p4/I17b_cidr_batch/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I17b_cidr_single/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I17b_exact_batch/partial": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [
+      "new"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": [
+      "protocol 4 partial batch: capacity 1 held by prior successful source member; new id absent"
+    ]
+  },
+  "scenarios_p4/I17b_exact_batch/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I17b_exact_single/seed": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I19_normalizes_input/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "ttl": "64,128",
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "!ACK,SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_cidr_anomaly/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_cidr_flags/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_cidr_length/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 36,
+        "pkt_len_max": 100
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_exact_anomaly/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_exact_flags/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I7_legacy_exact_length/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "pkt_len_min": 36,
+        "pkt_len_max": 100
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/I8_same_key_members/full": {
+    "Want": {
+      "first": {
+        "logical_id": 17,
+        "id": "first",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "second": {
+        "logical_id": 18,
+        "id": "second",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J1_more_specific_candidate/full": {
+    "Want": {
+      "loose": {
+        "logical_id": 17,
+        "id": "loose",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      },
+      "strict": {
+        "logical_id": 18,
+        "ttl": "64",
+        "id": "strict",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J2_exact_anomaly_over_cidr/full": {
+    "Want": {
+      "anomaly": {
+        "logical_id": 18,
+        "id": "anomaly",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      },
+      "cidr": {
+        "logical_id": 17,
+        "id": "cidr",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J3_anomaly04/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J3_anomaly08/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 8
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J3_six_attributes/full": {
+    "Want": {
+      "icmp": {
+        "logical_id": 18,
+        "icmp_type": "0",
+        "icmp_code": "0",
+        "id": "icmp",
+        "src_ip": "10.10.2.1",
+        "protocol": "icmp",
+        "action": "drop"
+      },
+      "tcp": {
+        "logical_id": 17,
+        "ttl": "64",
+        "dscp": "0",
+        "fragment": "nofrag",
+        "pkt_len": "40",
+        "id": "tcp",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J4_RT_dispatch_model/full": {
+    "Want": {
+      "r": {
+        "logical_id": 17,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "match_anomaly": 2
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_destination_enabler/before": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "src_cidr": "10.10.2.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_destination_enabler/enabled": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "src_cidr": "10.10.2.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "enabler": {
+        "logical_id": 19,
+        "id": "enabler",
+        "src_cidr": "10.10.2.0/24",
+        "dst_cidr": "10.30.113.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_destination_enabler/withdraw": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "src_cidr": "10.10.2.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "src_cidr": "10.10.2.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_source_enabler/before": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "dst_cidr": "10.20.100.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "dst_cidr": "10.20.100.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_source_enabler/enabled": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "dst_cidr": "10.20.100.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "enabler": {
+        "logical_id": 19,
+        "id": "enabler",
+        "src_cidr": "10.30.113.0/24",
+        "dst_cidr": "10.20.100.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "dst_cidr": "10.20.100.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/J9_source_enabler/withdraw": {
+    "Want": {
+      "alias": {
+        "logical_id": 17,
+        "id": "alias",
+        "dst_cidr": "10.20.100.0/24",
+        "src_port": 1234,
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "exact-miss": {
+        "logical_id": 20,
+        "id": "exact-miss",
+        "src_ip": "10.30.113.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "winner": {
+        "logical_id": 18,
+        "id": "winner",
+        "dst_cidr": "10.20.100.0/24",
+        "dst_port": 80,
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_cidr/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_cidr/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_cidr": "10.20.100.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_cidr/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_cidr/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_cidr/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_exact/add": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_exact/batch_add": {
+    "Want": {
+      "b": {
+        "logical_id": 7,
+        "id": "b",
+        "src_ip": "10.20.100.1",
+        "protocol": "tcp",
+        "action": "drop"
+      },
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop"
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_exact/batch_delete": {
+    "Want": {},
+    "Absent": [
+      "b",
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_exact/delete": {
+    "Want": {},
+    "Absent": [
+      "r"
+    ],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p4/pure_exact/update": {
+    "Want": {
+      "r": {
+        "logical_id": 3,
+        "id": "r",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 1
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_accept_rate_cidr_commit/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 7,
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_accept_rate_cidr_full/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 7,
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_accept_rate_exact_commit/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 7,
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_accept_rate_exact_full/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "rate_limit",
+        "rate_limit": 7,
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_and_cidr_commit/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_and_cidr_full/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_cidr": "10.10.2.0/24",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_and_exact_commit/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  },
+  "scenarios_p6/J8_and_exact_full/install": {
+    "Want": {
+      "j8": {
+        "logical_id": 5617,
+        "id": "j8",
+        "src_ip": "10.10.2.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "tcp_flags": "SYN",
+        "match_anomaly": 4
+      }
+    },
+    "Absent": [],
+    "WhitelistEmpty": false,
+    "Whole": false,
+    "Exemptions": []
+  }
+}

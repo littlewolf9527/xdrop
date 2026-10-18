@@ -47,6 +47,7 @@ enum bpf_map_type {
   BPF_MAP_TYPE_QUEUE,
   BPF_MAP_TYPE_STACK,
   BPF_MAP_TYPE_SK_STORAGE,
+  BPF_MAP_TYPE_DEVMAP_HASH,
 };
 
 /* BPF_FUNC_skb_store_bytes flags. */
@@ -461,6 +462,8 @@ static int (*bpf_probe_read)(void *dst, __u64 size, const void *unsafe_ptr) = (v
 
 static __u64 (*bpf_ktime_get_ns)(void) = (void *) // NOLINT
     BPF_FUNC_ktime_get_ns;
+static __u64 (*bpf_ktime_get_coarse_ns)(void) = (void *) // NOLINT
+    160;
 
 static __u32 (*bpf_get_prandom_u32)(void) = (void *) // NOLINT
     BPF_FUNC_get_prandom_u32;

@@ -1,0 +1,3590 @@
+[
+  {
+    "Name": "pure_exact",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "update",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          false
+        ],
+        "HitsP4": [
+          false
+        ]
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1"
+            },
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "198.51.100.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r",
+            "b"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          false,
+          false
+        ],
+        "HitsP4": [
+          false,
+          false
+        ]
+      }
+    ],
+    "Authority": "I11b / I12b structural migration"
+  },
+  {
+    "Name": "pure_cidr",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "update",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          false
+        ],
+        "HitsP4": [
+          false
+        ]
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "198.51.100.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r",
+            "b"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success",
+        "HitsP3": [
+          false,
+          false
+        ],
+        "HitsP4": [
+          false,
+          false
+        ]
+      }
+    ],
+    "Authority": "I11b / I12b structural migration"
+  },
+  {
+    "Name": "I7_legacy_exact_flags",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "ack"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "src_ip": "192.0.2.1",
+          "protocol": "tcp",
+          "action": "drop",
+          "tcp_flags": "SYN"
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "syn",
+          "ack"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I7_legacy_exact_length",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "pkt_len_min": 36,
+              "pkt_len_max": 100
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "length400"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "src_ip": "192.0.2.1",
+          "protocol": "tcp",
+          "action": "drop",
+          "pkt_len_min": 36,
+          "pkt_len_max": 100
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "syn",
+          "length400"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I7_legacy_exact_anomaly",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 2
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "src_ip": "192.0.2.1",
+          "protocol": "tcp",
+          "action": "drop",
+          "match_anomaly": 2
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I7_legacy_cidr_flags",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "ack"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "tcp_flags": "SYN",
+          "src_cidr": "192.0.2.0/24"
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "syn",
+          "ack"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I7_legacy_cidr_length",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "pkt_len_min": 36,
+              "pkt_len_max": 100,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "length400"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "pkt_len_min": 36,
+          "pkt_len_max": 100,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "syn",
+          "length400"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I7_legacy_cidr_anomaly",
+    "Authority": "I7",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 2,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      },
+      {
+        "Name": "single",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "match_anomaly": 2,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_required",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J1_more_specific_candidate",
+    "Authority": "J1",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "loose",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN"
+            },
+            {
+              "id": "strict",
+              "logical_id": 18,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN",
+              "ttl": "64"
+            }
+          ]
+        },
+        "ExpectP2": "partial_rejection",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J2_exact_anomaly_over_cidr",
+    "Authority": "J2",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "cidr",
+              "logical_id": 17,
+              "src_cidr": "192.0.2.0/24",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "anomaly",
+              "logical_id": 18,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 2
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          true
+        ],
+        "HitsP4": [
+          true,
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J3_six_attributes",
+    "Authority": "J3",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "tcp",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "ttl": "64",
+              "dscp": "0",
+              "fragment": "nofrag",
+              "pkt_len": "40"
+            },
+            {
+              "id": "icmp",
+              "logical_id": 18,
+              "src_ip": "192.0.2.1",
+              "protocol": "icmp",
+              "action": "drop",
+              "icmp_type": "0",
+              "icmp_code": "0"
+            }
+          ]
+        },
+        "ExpectP2": "partial_rejection",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "icmp_zero",
+          "miss"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J3_anomaly04",
+    "Authority": "J3",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 4
+            }
+          ]
+        },
+        "ExpectP2": "partial_rejection",
+        "ExpectP3": "success",
+        "Packets": [
+          "length_mismatch",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J3_anomaly08",
+    "Authority": "J3",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 8
+            }
+          ]
+        },
+        "ExpectP2": "partial_rejection",
+        "ExpectP3": "success",
+        "Packets": [
+          "offset_one",
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J4_RT_dispatch_model",
+    "Authority": "J4",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "match_anomaly": 2
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "invalid_tcp",
+          "syn"
+        ],
+        "Fault": "rt_no_tail",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J5_zero_member",
+    "Authority": "J5",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "zero_logical_id",
+        "HitsP3": [
+          false,
+          false
+        ],
+        "HitsP4": [
+          false,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I6_five_candidates",
+    "Authority": "I6",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "member-1",
+              "logical_id": 1,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "member-2",
+              "logical_id": 2,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "member-3",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "member-4",
+              "logical_id": 4,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "member-5",
+              "logical_id": 5,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            }
+          ]
+        },
+        "ExpectP2": "duplicate_key",
+        "ExpectP3": "condition_group_invalid",
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          false,
+          false
+        ],
+        "HitsP4": [
+          false,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I8_same_key_members",
+    "Authority": "I8",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "first",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            },
+            {
+              "id": "second",
+              "logical_id": 18,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            }
+          ]
+        },
+        "ExpectP2": "duplicate_key",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I9_protocol",
+    "Authority": "I9",
+    "Steps": [
+      {
+        "Name": "welcome",
+        "Method": "GET",
+        "Path": "/",
+        "Body": null,
+        "ExpectP2": "welcome",
+        "ExpectP3": "welcome",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      }
+    ]
+  },
+  {
+    "Name": "I11a_count_survives_key_move",
+    "Authority": "I11a",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12a_rate_survives_key_move",
+    "Authority": "I12a",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "tcp_flags": "SYN",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "tcp_flags": "SYN",
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I13_startup_refuses_clear_failure",
+    "Authority": "I13",
+    "Steps": [
+      {
+        "Name": "startup",
+        "Method": "STARTUP_CLEAR_FAILURE",
+        "Packets": [],
+        "HitsP3": [],
+        "HitsP4": []
+      }
+    ]
+  },
+  {
+    "Name": "I14_publish_lookup_failure",
+    "Authority": "I14",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "src_ip": "192.0.2.1",
+          "protocol": "tcp",
+          "action": "drop"
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "publish_failure",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "active_config_lookup",
+        "HitsP3": [
+          false
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I17a_logical_capacity",
+    "Authority": "I17a",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "old",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "success",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      },
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "next",
+              "logical_id": 18,
+              "src_ip": "192.0.2.2",
+              "protocol": "tcp",
+              "action": "drop",
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP2": "success",
+        "ExpectP3": "table_full",
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "capacity_one",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I19_normalizes_input",
+    "Authority": "I19",
+    "Steps": [
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "src_ip": "192.0.2.1",
+              "protocol": "tcp",
+              "action": "drop",
+              "ttl": "128, 64",
+              "tcp_flags": "SYN,!ACK"
+            }
+          ]
+        },
+        "ExpectP2": "partial_rejection",
+        "ExpectP3": "success",
+        "Packets": [
+          "syn",
+          "ack"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true,
+          false
+        ],
+        "HitsP4": [
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_exact_move",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "same",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_exact_swap",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 443
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "swap",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 443
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_exact_pure_condition",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "pure",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "pure_again",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_exact_move",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "same",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_exact_swap",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 443,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "swap",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 443,
+              "rate_limit": 1
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_exact_pure_condition",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "pure",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "pure_again",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_exact_rate_drop_rate",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "drop",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "192.0.2.1",
+          "dst_port": 80
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "rate_again",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "src_ip": "192.0.2.1",
+          "dst_port": 80,
+          "rate_limit": 1
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_post",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "192.0.2.1"
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_put_missing",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "192.0.2.1"
+        },
+        "ExpectP3": "missing",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          false
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_batch",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_full",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_startup",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "RESTART",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn"
+        ],
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_exact_replay_missing",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "192.0.2.1",
+          "dst_port": 80
+        },
+        "ExpectP3": "content_different",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I17b_exact_single",
+    "Authority": "I17b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      },
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "new",
+          "logical_id": 18,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "198.51.100.1"
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "table_full",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "capacity_one",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I17b_exact_batch",
+    "Authority": "I17b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      },
+      {
+        "Name": "partial",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            },
+            {
+              "id": "new",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "198.51.100.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "capacity_one",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_cidr_move",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "same",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_cidr_swap",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 443
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "swap",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 443
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I11b_cidr_pure_condition",
+    "Authority": "I11b",
+    "Steps": [
+      {
+        "Name": "pure",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "pure_again",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_cidr_move",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "same",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_cidr_swap",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 443,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "swap",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 443,
+              "rate_limit": 1
+            },
+            {
+              "id": "b",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_cidr_pure_condition",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "pure",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1,
+              "tcp_flags": "SYN"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "pure_again",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I12b_cidr_rate_drop_rate",
+    "Authority": "I12b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "rate_limit",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80,
+              "rate_limit": 1
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "rate"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "drop",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_cidr": "192.0.2.0/24",
+          "dst_port": 80
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "rate_again",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "src_cidr": "192.0.2.0/24",
+          "dst_port": 80,
+          "rate_limit": 1
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_post",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_cidr": "192.0.2.0/24"
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_put_missing",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_cidr": "192.0.2.0/24"
+        },
+        "ExpectP3": "missing",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          false
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_batch",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_full",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_startup",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "zero",
+        "Method": "RESTART",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 0,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn"
+        ],
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          false
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I10_cidr_replay_missing",
+    "Authority": "I10",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "dst_port": 80
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "logical_id": 0,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_cidr": "192.0.2.0/24",
+          "dst_port": 80
+        },
+        "ExpectP3": "content_different",
+        "ExpectP4": "invalid",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I17b_cidr_single",
+    "Authority": "I17b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      },
+      {
+        "Name": "full",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "new",
+          "logical_id": 18,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_cidr": "198.51.100.0/24"
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "table_full",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "capacity_one",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I17b_cidr_batch",
+    "Authority": "I17b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [],
+        "Fault": "",
+        "HitsP3": [],
+        "HitsP4": []
+      },
+      {
+        "Name": "partial",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "new",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "198.51.100.0/24"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "partial_rejection",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "capacity_one",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J9_source_enabler",
+    "Authority": "J9",
+    "Steps": [
+      {
+        "Name": "before",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_cidr": "198.51.100.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "dst_cidr": "198.51.100.0/24"
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "enabled",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_cidr": "198.51.100.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "dst_cidr": "198.51.100.0/24"
+            },
+            {
+              "id": "enabler",
+              "logical_id": 19,
+              "src_cidr": "203.0.113.0/24",
+              "dst_cidr": "198.51.100.0/24",
+              "protocol": "tcp",
+              "action": "drop",
+              "src_port": 1234
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "withdraw",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_cidr": "198.51.100.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "dst_cidr": "198.51.100.0/24"
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "J9_destination_enabler",
+    "Authority": "J9",
+    "Steps": [
+      {
+        "Name": "before",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "enabled",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "enabler",
+              "logical_id": 19,
+              "src_cidr": "192.0.2.0/24",
+              "dst_cidr": "203.0.113.0/24",
+              "protocol": "tcp",
+              "action": "drop",
+              "src_port": 1234
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      },
+      {
+        "Name": "withdraw",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "alias",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_cidr": "192.0.2.0/24",
+              "src_port": 1234
+            },
+            {
+              "id": "winner",
+              "logical_id": 18,
+              "protocol": "tcp",
+              "action": "drop",
+              "dst_port": 80,
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "exact-miss",
+              "logical_id": 20,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "203.0.113.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "HitsP3": [
+          true
+        ],
+        "HitsP4": [
+          true
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,4 @@
+{
+  "status": 500,
+  "body": "{\"code\":\"internal_error\",\"error\":\"config publish failed\",\"results\":[{\"id\":\"r\",\"code\":\"internal_error\"},{\"id\":\"r\",\"code\":\"internal_error\"}],\"withdrawal_pending\":false}"
+}

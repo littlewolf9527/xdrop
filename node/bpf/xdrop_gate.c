@@ -25,7 +25,7 @@ BPF_MAP_DEF(stats) = {
     .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u64),
-    .max_entries = 5,
+    .max_entries = 9,
 };
 BPF_MAP_ADD(stats);
 
@@ -54,7 +54,7 @@ BPF_MAP_DEF(active_config) = {
 BPF_MAP_ADD(active_config);
 
 BPF_MAP_DEF(devmap) = {
-    .map_type = BPF_MAP_TYPE_DEVMAP,
+    .map_type = BPF_MAP_TYPE_DEVMAP_HASH,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u32),
     .max_entries = 16,
@@ -95,6 +95,12 @@ static INLINE void stats_inc(__u32 idx) {
   __u64 *counter = bpf_map_lookup_elem(&stats, &idx);
   if (counter) { (*counter)++; }
 }
+static INLINE void stats_add(__u32 idx, __u64 bytes) {
+  __u64 *counter = bpf_map_lookup_elem(&stats, &idx);
+  if (counter)
+    *counter += bytes;
+}
+
 
 static INLINE void tailcall_fail_inc(void) {
   __u32 key = 0;
@@ -166,8 +172,10 @@ static INLINE void ipv6_copy(struct ip_addr *dst, const __u8 *src) {
   for (int i = 0; i < 16; i++) { dst->addr[i] = src[i]; }
 }
 
-// IPv6 extension header walker (shared with xdrop_main.c)
-static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr, void **l4_data) {
+// IPv6 extension header walker (shared with xdrop_main.c).
+// nonfirst also marks an unreadable extension header: L4 is unavailable.
+static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr, void **l4_data, bool *nonfirst) {
+  *nonfirst = false;
   #pragma unroll
   for (int i = 0; i < IPV6_EXT_MAX_DEPTH; i++) {
     if (nexthdr == PROTO_TCP || nexthdr == PROTO_UDP || nexthdr == PROTO_ICMPV6) {
@@ -176,21 +184,30 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr, 
     }
     switch (nexthdr) {
     case 0: case 43: case 60: {
-      if (data + 2 > data_end) { return 0; }
+      if (data + 2 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
       __u8 *hdr = data; __u8 next = hdr[0]; __u8 len = hdr[1];
       data += (len + 1) * 8;
-      if (data > data_end) { return 0; }
+      if (data > data_end) { *l4_data = hdr; *nonfirst = true; return nexthdr; }
       nexthdr = next; break;
     }
     case 44: {
-      if (data + 8 > data_end) { return 0; }
-      __u8 *hdr = data; nexthdr = hdr[0]; data += 8; break;
+      if (data + 8 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
+      __u8 *hdr = data;
+      __u16 field = bpf_ntohs(*(__u16 *)(hdr + 2));
+      nexthdr = hdr[0];
+      data += 8;
+      if (field & 0xfff8) {
+        *nonfirst = true;
+        *l4_data = data;
+        return nexthdr;
+      }
+      break;
     }
     case 51: {
-      if (data + 2 > data_end) { return 0; }
+      if (data + 2 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
       __u8 *hdr = data; __u8 next = hdr[0]; __u8 len = hdr[1];
       data += (len + 2) * 4;
-      if (data > data_end) { return 0; }
+      if (data > data_end) { *l4_data = hdr; *nonfirst = true; return nexthdr; }
       nexthdr = next; break;
     }
     default: *l4_data = data; return nexthdr;
@@ -224,6 +241,7 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
 
   // 1. Unique total packet counter
   stats_inc(STATS_TOTAL_PACKETS);
+  stats_add(STATS_TOTAL_BYTES, ctx->data_end - ctx->data);
 
   // 2. Parse Ethernet header
   struct ethhdr *eth = data;
@@ -252,15 +270,40 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
 
   if (fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
   }
   if (!fast_forward && eth_proto != ETH_P_IP_BE && eth_proto != ETH_P_IPV6_BE) {
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return XDP_PASS;
   }
   if (fast_forward && !should_filter(ingress_ifindex)) {
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return bpf_redirect_map(&devmap, ingress_ifindex, 0);
+  }
+
+  // Reject mapped addresses before either whitelist lookup or the fast tail call.
+  if (eth_proto == ETH_P_IPV6_BE) {
+    struct ip6hdr *mapped_ip6 = l3_data;
+    if ((void *)(mapped_ip6 + 1) <= data_end) {
+      __u8 src_rest =
+          (mapped_ip6->saddr[10] ^ 0xff) | (mapped_ip6->saddr[11] ^ 0xff);
+      __u8 dst_rest =
+          (mapped_ip6->daddr[10] ^ 0xff) | (mapped_ip6->daddr[11] ^ 0xff);
+#pragma unroll
+      for (int i = 0; i < 10; i++) {
+        src_rest |= mapped_ip6->saddr[i];
+        dst_rest |= mapped_ip6->daddr[i];
+      }
+      if (src_rest == 0 || dst_rest == 0) {
+        stats_inc(STATS_MAPPED_V6_DROPPED);
+        stats_inc(STATS_DROPPED_PACKETS);
+        stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
+        return XDP_DROP;
+      }
+    }
   }
 
   // 4. Read config slot for WL bitmap + selector
@@ -275,6 +318,7 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
     tailcall_fail_inc();
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     if (fast_forward) { return bpf_redirect_map(&devmap, ingress_ifindex, 0); }
     return XDP_PASS;
   }
@@ -282,6 +326,7 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
   // 6. wl_bitmap != 0: parse L3/L4 and build rule_key
   struct rule_key key = {0};
   void *l4_data = NULL;
+  bool nonfirst = false;
 
   if (eth_proto == ETH_P_IP_BE) {
     struct iphdr *ip = l3_data;
@@ -289,6 +334,7 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     ipv4_to_mapped(&key.src_ip, ip->saddr);
     ipv4_to_mapped(&key.dst_ip, ip->daddr);
     key.protocol = ip->protocol;
+    nonfirst = (bpf_ntohs(ip->frag_off) & 0x1fff) != 0;
     l4_data = l3_data + (ip->ihl * 4);
     if (l4_data > data_end) { return XDP_ABORTED; }
   } else if (eth_proto == ETH_P_IPV6_BE) {
@@ -297,11 +343,12 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     ipv6_copy(&key.src_ip, ip6->saddr);
     ipv6_copy(&key.dst_ip, ip6->daddr);
     void *ext_data = l3_data + sizeof(*ip6);
-    key.protocol = parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data);
+    key.protocol = parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data, &nonfirst);
     if (l4_data == NULL || l4_data > data_end) {
       bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
       tailcall_fail_inc();
       stats_inc(STATS_PASSED_PACKETS);
+      stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
       if (fast_forward) { return bpf_redirect_map(&devmap, ingress_ifindex, 0); }
       return XDP_PASS;
     }
@@ -309,20 +356,23 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
     tailcall_fail_inc();
     stats_inc(STATS_PASSED_PACKETS);
+    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
     return XDP_PASS;
   }
 
   // Parse L4 ports
-  if (key.protocol == PROTO_TCP) {
-    struct tcphdr *tcp = l4_data;
-    if ((void *)(tcp + 1) > data_end) { return XDP_ABORTED; }
-    key.src_port = tcp->source;
-    key.dst_port = tcp->dest;
-  } else if (key.protocol == PROTO_UDP) {
-    struct udphdr *udp = l4_data;
-    if ((void *)(udp + 1) > data_end) { return XDP_ABORTED; }
-    key.src_port = udp->source;
-    key.dst_port = udp->dest;
+  if (!nonfirst) {
+    if (key.protocol == PROTO_TCP) {
+      struct tcphdr *tcp = l4_data;
+      if ((void *)(tcp + 1) > data_end) { return XDP_ABORTED; }
+      key.src_port = tcp->source;
+      key.dst_port = tcp->dest;
+    } else if (key.protocol == PROTO_UDP) {
+      struct udphdr *udp = l4_data;
+      if ((void *)(udp + 1) > data_end) { return XDP_ABORTED; }
+      key.src_port = udp->source;
+      key.dst_port = udp->dest;
+    }
   }
 
   // 7-8. 31-combo bitmap-gated whitelist lookup
@@ -369,12 +419,14 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
   // Fallthrough: runtime fail-open
   tailcall_fail_inc();
   stats_inc(STATS_PASSED_PACKETS);
+  stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
   if (fast_forward) { return bpf_redirect_map(&devmap, ingress_ifindex, 0); }
   return XDP_PASS;
 
 wl_hit:
   stats_inc(STATS_WHITELISTED);
   stats_inc(STATS_PASSED_PACKETS);
+  stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
   if (fast_forward) { return bpf_redirect_map(&devmap, ingress_ifindex, 0); }
   return XDP_PASS;
 }

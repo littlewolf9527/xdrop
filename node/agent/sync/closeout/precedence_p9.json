@@ -1,0 +1,6102 @@
+[
+  {
+    "name": "atomic/duplicate-id/plain",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "added": 0,
+        "failed": 1,
+        "code": "duplicate_id",
+        "error": "duplicate ID \"r\" at index 0 and index 1; batch not published",
+        "conflicts": [
+          {
+            "id": "r",
+            "index": 0
+          },
+          {
+            "id": "r",
+            "index": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "atomic/duplicate-id/mapped-src",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "added": 0,
+        "failed": 1,
+        "code": "duplicate_id",
+        "error": "duplicate ID \"r\" at index 0 and index 1; batch not published",
+        "conflicts": [
+          {
+            "id": "r",
+            "index": 0
+          },
+          {
+            "id": "r",
+            "index": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "atomic/duplicate-id/mapped-dst",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "added": 0,
+        "failed": 1,
+        "code": "duplicate_id",
+        "error": "duplicate ID \"r\" at index 0 and index 1; batch not published",
+        "conflicts": [
+          {
+            "id": "r",
+            "index": 0
+          },
+          {
+            "id": "r",
+            "index": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "atomic/duplicate-id/mixed",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 902,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          },
+          {
+            "id": "r",
+            "logical_id": 901,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp",
+            "action": "drop"
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "added": 0,
+        "failed": 1,
+        "code": "duplicate_id",
+        "error": "duplicate ID \"r\" at index 0 and index 1; batch not published",
+        "conflicts": [
+          {
+            "id": "r",
+            "index": 0
+          },
+          {
+            "id": "r",
+            "index": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/empty-id/plain",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule id must be nonempty",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule id must be nonempty"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/empty-id/mapped-src",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule id must be nonempty",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule id must be nonempty"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/empty-id/mapped-dst",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule id must be nonempty",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule id must be nonempty"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/empty-id/mixed",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule id must be nonempty",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule id must be nonempty"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/zero-logical/plain",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "logical_id must be nonzero",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "logical_id must be nonzero"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/zero-logical/mapped-src",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/zero-logical/mapped-dst",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/zero-logical/mixed",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/key-mismatch/plain",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule key differs from declared group key",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule key differs from declared group key"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/key-mismatch/mapped-src",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/key-mismatch/mapped-dst",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/key-mismatch/mixed",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-id/plain",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_id",
+        "error": "rule ID occurs more than once in request",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_id",
+            "error": "rule ID occurs more than once in request",
+            "rule_id": "r"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-id/mapped-src",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-id/mapped-dst",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-id/mixed",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-logical/plain",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_logical_id",
+        "error": "logical ID is held by rule \"first\"",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_logical_id",
+            "error": "logical ID is held by rule \"first\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-logical/mapped-src",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-logical/mapped-dst",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/duplicate-logical/mixed",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/rate-zero/plain",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/rate-zero/mapped-src",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/rate-zero/mapped-dst",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/rate-zero/mixed",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "whitelist/empty-id/plain",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "whitelist entry with empty ID rejected"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/empty-id/mapped-src",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "whitelist entry with empty ID rejected"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/empty-id/mapped-dst",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "whitelist entry with empty ID rejected"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/empty-id/mixed",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "whitelist entry with empty ID rejected"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-id/plain",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist ID in sync batch: r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-id/mapped-src",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist ID in sync batch: r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-id/mapped-dst",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist ID in sync batch: r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-id/mixed",
+    "position": "before",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist ID in sync batch: r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-key/plain",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist key in sync batch for ID r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-key/mapped-src",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry r: invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-key/mapped-dst",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry r: invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/duplicate-key/mixed",
+    "position": "after",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "control": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry r: address family mismatch: src is IPv4, dst is IPv6"
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "logical_id must be nonzero",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "logical_id must be nonzero"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "logical_id must be nonzero",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "logical_id must be nonzero"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "logical_id must be nonzero",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "logical_id must be nonzero"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-zero-logical/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 0,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule key differs from declared group key",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule key differs from declared group key"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule key differs from declared group key",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule key differs from declared group key"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rule key differs from declared group key",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rule key differs from declared group key"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-key-mismatch/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.99",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_id",
+        "error": "rule ID occurs more than once in request",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_id",
+            "error": "rule ID occurs more than once in request",
+            "rule_id": "r"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_id",
+        "error": "rule ID occurs more than once in request",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_id",
+            "error": "rule ID occurs more than once in request",
+            "rule_id": "r"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_id",
+        "error": "rule ID occurs more than once in request",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_id",
+            "error": "rule ID occurs more than once in request",
+            "rule_id": "r"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-id/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 902,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_logical_id",
+        "error": "logical ID is held by rule \"first\"",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_logical_id",
+            "error": "logical ID is held by rule \"first\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_logical_id",
+        "error": "logical ID is held by rule \"first\"",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_logical_id",
+            "error": "logical ID is held by rule \"first\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      409,
+      {
+        "code": "duplicate_logical_id",
+        "error": "logical ID is held by rule \"first\"",
+        "groups": [
+          {
+            "index": 0,
+            "code": "duplicate_logical_id",
+            "error": "logical ID is held by rule \"first\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-duplicate-logical/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "first",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::ffff:198.51.100.2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              },
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "rate_limit must be > 0 for rate_limit action",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "rate_limit must be > 0 for rate_limit action"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/cross-rate-zero/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_ip": "192.0.2.1",
+              "dst_ip": "198.51.100.2",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp"
+            },
+            "rules": [
+              {
+                "id": "af",
+                "logical_id": 903,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "2001:db8::2",
+                "protocol": "tcp",
+                "action": "drop"
+              },
+              {
+                "id": "r",
+                "logical_id": 901,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "198.51.100.2",
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 0,
+                "match_anomaly": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mapped-src/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "af",
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist key in sync batch for ID r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mapped-src/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "af",
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry af: invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mapped-dst/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "af",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist key in sync batch for ID r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mapped-dst/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "af",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::ffff:198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry af: invalid dst_ip: IPv4-mapped IPv6 address ::ffff:198.51.100.2; write the IPv4 address 198.51.100.2"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mixed/metadata-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "af",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "duplicate whitelist key in sync batch for ID r"
+      }
+    ]
+  },
+  {
+    "name": "whitelist/cross-duplicate-key/mixed/family-first",
+    "position": "cross",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/whitelist",
+      "Body": {
+        "entries": [
+          {
+            "id": "af",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "2001:db8::2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "first",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          },
+          {
+            "id": "r",
+            "src_ip": "192.0.2.1",
+            "dst_ip": "198.51.100.2",
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    "go": [
+      400,
+      {
+        "error": "invalid whitelist entry af: address family mismatch: src is IPv4, dst is IPv6"
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-1/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-1/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 1,
+        "cidr_rules": 0,
+        "failed": 0,
+        "rejected": [],
+        "rules": 1,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-1/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-1/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-8/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-8/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 1,
+        "cidr_rules": 0,
+        "failed": 0,
+        "rejected": [],
+        "rules": 1,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-8/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "src_ip": "::ffff:192.0.2.1",
+            "dst_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/src/anomaly-8/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "src_ip": "192.0.2.1",
+            "dst_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-1/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "dst_ip": "::ffff:192.0.2.1",
+            "src_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-1/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "dst_ip": "192.0.2.1",
+            "src_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 1,
+        "cidr_rules": 0,
+        "failed": 0,
+        "rejected": [],
+        "rules": 1,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-1/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "dst_ip": "::ffff:192.0.2.1",
+            "src_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-1/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 1,
+            "dst_ip": "192.0.2.1",
+            "src_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "address family mismatch: src is IPv6, dst is IPv4"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-8/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "dst_ip": "::ffff:192.0.2.1",
+            "src_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-8/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "dst_ip": "192.0.2.1",
+            "src_ip": "::"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 1,
+        "cidr_rules": 0,
+        "failed": 0,
+        "rejected": [],
+        "rules": 1,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-8/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "dst_ip": "::ffff:192.0.2.1",
+            "src_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "atomic/dst/anomaly-8/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/sync/atomic",
+      "Body": {
+        "rules": [
+          {
+            "id": "r",
+            "logical_id": 901,
+            "protocol": "tcp",
+            "action": "rate_limit",
+            "rate_limit": 10,
+            "match_anomaly": 8,
+            "dst_ip": "192.0.2.1",
+            "src_ip": "0:0:0:0:0:0:0:0"
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "added": 0,
+        "cidr_rules": 0,
+        "failed": 1,
+        "rejected": [
+          {
+            "id": "r",
+            "reason": "address family mismatch: src is IPv6, dst is IPv4"
+          }
+        ],
+        "rules": 0,
+        "success": true
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-1/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-1/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "code": "committed",
+        "groups": [
+          {
+            "index": 0,
+            "result": "created"
+          }
+        ],
+        "receipt": "confirmed"
+      }
+    ],
+    "model_baseline": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "bad_fragment not supported for IPv6 target",
+        "groups": [
+          {
+            "code": "validation_rejected",
+            "error": "bad_fragment not supported for IPv6 target",
+            "index": 0
+          }
+        ]
+      }
+    ],
+    "boundary": "existing since 5d1b164; model and Go intentionally differ"
+  },
+  {
+    "name": "commit/src/anomaly-1/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-1/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-8/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-8/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "code": "committed",
+        "groups": [
+          {
+            "index": 0,
+            "result": "created"
+          }
+        ],
+        "receipt": "confirmed"
+      }
+    ],
+    "model_baseline": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "match_anomaly 0x08 not supported for IPv6 target",
+        "groups": [
+          {
+            "code": "validation_rejected",
+            "error": "match_anomaly 0x08 not supported for IPv6 target",
+            "index": 0
+          }
+        ]
+      }
+    ],
+    "boundary": "existing since 5d1b164; model and Go intentionally differ"
+  },
+  {
+    "name": "commit/src/anomaly-8/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "src_ip": "::ffff:192.0.2.1",
+                "dst_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/src/anomaly-8/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "src_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "src_ip": "192.0.2.1",
+                "dst_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv4, dst is IPv6",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv4, dst is IPv6"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-1/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "dst_ip": "::ffff:192.0.2.1",
+                "src_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-1/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "dst_ip": "192.0.2.1",
+                "src_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "code": "committed",
+        "groups": [
+          {
+            "index": 0,
+            "result": "created"
+          }
+        ],
+        "receipt": "confirmed"
+      }
+    ],
+    "model_baseline": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "bad_fragment not supported for IPv6 target",
+        "groups": [
+          {
+            "code": "validation_rejected",
+            "error": "bad_fragment not supported for IPv6 target",
+            "index": 0
+          }
+        ]
+      }
+    ],
+    "boundary": "existing since 5d1b164; model and Go intentionally differ"
+  },
+  {
+    "name": "commit/dst/anomaly-1/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "dst_ip": "::ffff:192.0.2.1",
+                "src_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-1/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 1,
+                "dst_ip": "192.0.2.1",
+                "src_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv6, dst is IPv4",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv6, dst is IPv4"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-8/short/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "dst_ip": "::ffff:192.0.2.1",
+                "src_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-8/short/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "dst_ip": "192.0.2.1",
+                "src_ip": "::"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      200,
+      {
+        "code": "committed",
+        "groups": [
+          {
+            "index": 0,
+            "result": "created"
+          }
+        ],
+        "receipt": "confirmed"
+      }
+    ],
+    "model_baseline": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "match_anomaly 0x08 not supported for IPv6 target",
+        "groups": [
+          {
+            "code": "validation_rejected",
+            "error": "match_anomaly 0x08 not supported for IPv6 target",
+            "index": 0
+          }
+        ]
+      }
+    ],
+    "boundary": "existing since 5d1b164; model and Go intentionally differ"
+  },
+  {
+    "name": "commit/dst/anomaly-8/full/mapped",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "dst_ip": "::ffff:192.0.2.1",
+                "src_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "commit/dst/anomaly-8/full/plain",
+    "request": {
+      "Method": "POST",
+      "Path": "/api/v1/rules/commit",
+      "Body": {
+        "groups": [
+          {
+            "key": {
+              "kind": "exact",
+              "src_port": 0,
+              "dst_port": 0,
+              "protocol": "tcp",
+              "dst_ip": "192.0.2.1"
+            },
+            "rules": [
+              {
+                "id": "r",
+                "logical_id": 901,
+                "protocol": "tcp",
+                "action": "rate_limit",
+                "rate_limit": 10,
+                "match_anomaly": 8,
+                "dst_ip": "192.0.2.1",
+                "src_ip": "0:0:0:0:0:0:0:0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "position": "unspecified",
+    "go": [
+      400,
+      {
+        "code": "validation_rejected",
+        "error": "address family mismatch: src is IPv6, dst is IPv4",
+        "groups": [
+          {
+            "index": 0,
+            "code": "validation_rejected",
+            "error": "address family mismatch: src is IPv6, dst is IPv4"
+          }
+        ]
+      }
+    ]
+  }
+]

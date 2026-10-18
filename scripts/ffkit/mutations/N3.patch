@@ -1,0 +1,22 @@
+--- a/node/bpf/xdrop_main.c
++++ b/node/bpf/xdrop_main.c
+@@ -314,7 +314,7 @@
+ // Device map for XDP redirect (fast forward mode)
+ // Key: ingress interface index, Value: egress interface index
+ BPF_MAP_DEF(devmap) = {
+-    .map_type = BPF_MAP_TYPE_DEVMAP_HASH,
++    .map_type = BPF_MAP_TYPE_DEVMAP,
+     .key_size = sizeof(__u32),
+     .value_size = sizeof(__u32),
+     .max_entries = 16,
+--- a/node/bpf/xdrop_gate.c
++++ b/node/bpf/xdrop_gate.c
+@@ -54,7 +54,7 @@
+ BPF_MAP_ADD(active_config);
+ 
+ BPF_MAP_DEF(devmap) = {
+-    .map_type = BPF_MAP_TYPE_DEVMAP_HASH,
++    .map_type = BPF_MAP_TYPE_DEVMAP,
+     .key_size = sizeof(__u32),
+     .value_size = sizeof(__u32),
+     .max_entries = 16,

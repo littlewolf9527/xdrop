@@ -2,7 +2,6 @@
 package api
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,16 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-// nodeHasPaginationParams checks if any pagination-related query param is present on Node.
-func nodeHasPaginationParams(c *gin.Context) bool {
-	for _, key := range []string{"page", "limit", "search"} {
-		if _, exists := c.GetQuery(key); exists {
-			return true
-		}
-	}
-	return false
-}
 
 // parseNodePaginationParams parses and validates Node pagination parameters.
 func parseNodePaginationParams(c *gin.Context) (int, int, error) {
@@ -45,7 +34,7 @@ func parseNodePaginationParams(c *gin.Context) (int, int, error) {
 	return page, limit, nil
 }
 
-// ListRules returns rules with statistics (supports pagination and full-list modes)
+// ListRules returns rules with statistics (always paginated)
 func (h *Handlers) ListRules(c *gin.Context) {
 	// Unsupported parameter present → reject with 400
 	for _, key := range []string{"sort", "order", "enabled", "action"} {
@@ -55,12 +44,6 @@ func (h *Handlers) ListRules(c *gin.Context) {
 			})
 			return
 		}
-	}
-
-	if !nodeHasPaginationParams(c) {
-		// No pagination params at all → full-list mode (backward-compatible)
-		h.listAllRules(c)
-		return
 	}
 
 	// Paginated mode
@@ -129,34 +112,33 @@ func (h *Handlers) ListRules(c *gin.Context) {
 	}
 	pageEntries := allEntries[start:end]
 
+	// One selector load for both tables; snapshot and selector can cross a flip.
+	tables := h.ruleTablesAt(int(h.activeRuleSlot.Load()))
 	// Step 5: Read BPF stats for current page only
 	type ruleWithStats struct {
-		rule       Rule
-		matchCount uint64
-		dropCount  uint64
+		rule Rule
+		LogicalRuleCounters
 	}
 	results := make([]ruleWithStats, 0, len(pageEntries))
 	for _, e := range pageEntries {
 		var rule Rule
-		var matchCount, dropCount uint64
+		var counts LogicalRuleCounters
 		if e.isExact {
 			rule = h.storedRuleToRule(e.id, e.exactStored)
 			keyBytes := ruleKeyToBytes(e.exactStored.Key)
 			var valueBytes [32]byte // struct rule_value
-			if err := h.activeBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
-				matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
-				dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
+			if err := tables[mirrorExact].Lookup(keyBytes, &valueBytes); err == nil {
+				counts = h.logicalCounterValues(e.exactStored.LogicalID)
 			}
 		} else {
 			rule = h.storedCIDRRuleToRule(e.id, e.cidrStored)
 			keyBytes := cidrRuleKeyToBytes(e.cidrStored.Key)
 			var valueBytes [32]byte // struct rule_value
-			if err := h.activeCidrBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
-				matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
-				dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
+			if err := tables[mirrorCIDR].Lookup(keyBytes, &valueBytes); err == nil {
+				counts = h.logicalCounterValues(e.cidrStored.LogicalID)
 			}
 		}
-		results = append(results, ruleWithStats{rule: rule, matchCount: matchCount, dropCount: dropCount})
+		results = append(results, ruleWithStats{rule: rule, LogicalRuleCounters: counts})
 	}
 
 	// Step 6: Calculate PPS (per-rule timestamp to avoid cross-page pollution)
@@ -168,17 +150,19 @@ func (h *Handlers) ListRules(c *gin.Context) {
 			elapsed := float64(now-lastTime) / 1e9
 			if elapsed > 0 {
 				if lastDrop, ok := h.lastRuleDropCount[r.rule.ID]; ok {
-					if r.dropCount >= lastDrop {
-						dropPPS = float64(r.dropCount-lastDrop) / elapsed
+					if r.Drop >= lastDrop {
+						dropPPS = float64(r.Drop-lastDrop) / elapsed
 					}
 				}
 			}
 		}
-		h.lastRuleDropCount[r.rule.ID] = r.dropCount
+		h.lastRuleDropCount[r.rule.ID] = r.Drop
 		h.lastRuleStatsTime[r.rule.ID] = now
 		r.rule.Stats = &RuleStats{
-			MatchCount: r.matchCount,
-			DropCount:  r.dropCount,
+			MatchCount: r.Match,
+			DropCount:  r.Drop,
+			MatchBytes: r.MatchBytes,
+			DropBytes:  r.DropBytes,
 			DropPPS:    dropPPS,
 		}
 		rules = append(rules, r.rule)
@@ -202,94 +186,18 @@ func (h *Handlers) ListRules(c *gin.Context) {
 	})
 }
 
-// listAllRules returns all rules without pagination (legacy full-list mode)
-func (h *Handlers) listAllRules(c *gin.Context) {
-	now := time.Now().UnixNano()
-
-	// Step 1: Quick snapshot of rules (memory only, no BPF access)
-	h.rulesMu.RLock()
-	snapshot := make(map[string]StoredRule, len(h.rules))
-	for id, stored := range h.rules {
-		snapshot[id] = stored
+// The list endpoint retains its zero-on-lookup-error contract for either source.
+func (h *Handlers) logicalCounterValues(id uint32) LogicalRuleCounters {
+	if h.idCounts == nil {
+		return LogicalRuleCounters{}
 	}
-	// Also snapshot CIDR rules (must be under same rulesMu lock)
-	cidrSnapshot := make(map[string]StoredCIDRRule, len(h.cidrRules))
-	for id, stored := range h.cidrRules {
-		cidrSnapshot[id] = stored
+	counts, err := ReadLogicalRuleCounters(h.idCounts, id)
+	if err != nil {
+		return LogicalRuleCounters{}
 	}
-	h.rulesMu.RUnlock() // Release lock immediately
+	return counts
+}
 
-	// Step 2: Read BPF stats without holding rulesMu lock
-	type ruleWithStats struct {
-		rule       Rule
-		matchCount uint64
-		dropCount  uint64
-	}
-	results := make([]ruleWithStats, 0, len(snapshot)+len(cidrSnapshot))
-
-	for id, stored := range snapshot {
-		rule := h.storedRuleToRule(id, stored)
-		var matchCount, dropCount uint64
-
-		keyBytes := ruleKeyToBytes(stored.Key)
-		var valueBytes [32]byte // struct rule_value
-		if err := h.activeBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
-			matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
-			dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
-		}
-
-		results = append(results, ruleWithStats{rule: rule, matchCount: matchCount, dropCount: dropCount})
-	}
-
-	// Read CIDR rule stats
-	for id, stored := range cidrSnapshot {
-		rule := h.storedCIDRRuleToRule(id, stored)
-		var matchCount, dropCount uint64
-
-		keyBytes := cidrRuleKeyToBytes(stored.Key)
-		var valueBytes [32]byte // struct rule_value
-		if err := h.activeCidrBlacklist().Lookup(keyBytes, &valueBytes); err == nil {
-			matchCount = binary.LittleEndian.Uint64(valueBytes[8:16])
-			dropCount = binary.LittleEndian.Uint64(valueBytes[16:24])
-		}
-
-		results = append(results, ruleWithStats{rule: rule, matchCount: matchCount, dropCount: dropCount})
-	}
-
-	// Step 3: Calculate incremental PPS using per-rule cached values
-	h.rulePPSMu.Lock()
-	rules := make([]Rule, 0, len(results))
-
-	for _, r := range results {
-		var dropPPS float64
-
-		if lastTime, ok := h.lastRuleStatsTime[r.rule.ID]; ok && lastTime > 0 {
-			elapsed := float64(now-lastTime) / 1e9 // Convert to seconds
-			if elapsed > 0 {
-				if lastDrop, ok := h.lastRuleDropCount[r.rule.ID]; ok {
-					if r.dropCount >= lastDrop {
-						dropPPS = float64(r.dropCount-lastDrop) / elapsed
-					}
-				}
-			}
-		}
-
-		// Update cache
-		h.lastRuleDropCount[r.rule.ID] = r.dropCount
-		h.lastRuleStatsTime[r.rule.ID] = now
-
-		r.rule.Stats = &RuleStats{
-			MatchCount: r.matchCount,
-			DropCount:  r.dropCount,
-			DropPPS:    dropPPS,
-		}
-		rules = append(rules, r.rule)
-	}
-
-	h.rulePPSMu.Unlock()
-
-	c.JSON(http.StatusOK, gin.H{
-		"rules": rules,
-		"count": len(rules),
-	})
+func (h *Handlers) logicalCounters(id uint32) (uint64, uint64) {
+	return h.logicalCounterValues(id).packets()
 }

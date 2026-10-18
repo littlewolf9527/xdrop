@@ -1,0 +1,6 @@
+{
+  "shadow_config": {
+    "status": 500,
+    "body": "{\"code\":\"commit_failed\",\"error\":\"injected c-5\",\"groups\":[]}"
+  }
+}

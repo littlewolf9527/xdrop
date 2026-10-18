@@ -9,185 +9,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-// publishConfigUpdate performs a double-buffer config publish.
-// Caller must already hold publishMu.
-// Flow: copy active→shadow → modify shadow → switch selector.
-//
-// countDelta: blacklist count increment
-// wlCountDelta: whitelist count increment (most calls pass 0)
-// cidrCountDelta: CIDR blacklist count increment (most calls pass 0)
-//
-// v2.6.1 Phase 4 B5: anomaly rule count is NOT passed as a delta. Instead,
-// this function recomputes it from the authoritative in-memory rule store
-// (h.rules + h.cidrRules) on every publish. This avoids counter drift
-// bugs and keeps the delta contract minimal. The BPF config slot
-// CONFIG_ANOMALY_RULE_COUNT is what xdp_firewall's tail_call dispatch
-// gate reads.
-//
-// Returns error on failure; caller must rollback memory state and not proceed with BPF map writes.
-func (h *Handlers) publishConfigUpdate(countDelta, wlCountDelta, cidrCountDelta int64) error {
-	shadow := h.shadowMap()
-	active := h.activeMap()
-
-	// Step 1: Copy active → shadow (all entries)
-	for i := uint32(0); i < ConfigMapEntries; i++ {
-		key := make([]byte, 4)
-		binary.LittleEndian.PutUint32(key, i)
-		var value [8]byte // config_{a,b} are u64 arrays
-		if err := active.Lookup(key, &value); err == nil {
-			if err := shadow.Update(key, value[:], ebpf.UpdateExist); err != nil {
-				return fmt.Errorf("failed to copy config index %d to shadow: %w", i, err)
-			}
-		}
-	}
-
-	// Step 2: Update dynamic items in shadow
-
-	// 2a. Blacklist bitmap: rebuild from comboRefCount (not delta)
-	var bitmap uint64
-	for i := 0; i < 64; i++ {
-		if h.comboRefCount[i] > 0 {
-			bitmap |= 1 << uint(i)
-		}
-	}
-	bitmapKey := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bitmapKey, ConfigRuleBitmap)
-	bitmapValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(bitmapValue, bitmap)
-	if err := shadow.Update(bitmapKey, bitmapValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to update shadow bitmap: %w", err)
-	}
-
-	// 2a2. Phase 8: Whitelist bitmap: rebuild from wlComboRefCount
-	var wlBitmap uint64
-	for i := 0; i < 64; i++ {
-		if h.wlComboRefCount[i] > 0 {
-			wlBitmap |= 1 << uint(i)
-		}
-	}
-	wlBitmapKey := make([]byte, 4)
-	binary.LittleEndian.PutUint32(wlBitmapKey, ConfigWLBitmap)
-	wlBitmapValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(wlBitmapValue, wlBitmap)
-	if err := shadow.Update(wlBitmapKey, wlBitmapValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to update shadow WL bitmap: %w", err)
-	}
-
-	// 2a3. Phase 8: Whitelist map selector (independent from blacklist selector)
-	wlSelKey := make([]byte, 4)
-	binary.LittleEndian.PutUint32(wlSelKey, ConfigWLMapSelector)
-	wlSelValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(wlSelValue, uint64(h.activeWLSlot))
-	if err := shadow.Update(wlSelKey, wlSelValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to update shadow WL map selector: %w", err)
-	}
-
-	// 2b. Blacklist count
-	if countDelta != 0 {
-		countKey := make([]byte, 4)
-		binary.LittleEndian.PutUint32(countKey, ConfigBlacklistCount)
-		var currentCount uint64
-		var v [8]byte
-		if err := shadow.Lookup(countKey, &v); err == nil {
-			currentCount = binary.LittleEndian.Uint64(v[:])
-		}
-		newCount := int64(currentCount) + countDelta
-		if newCount < 0 {
-			newCount = 0
-		}
-		countValue := make([]byte, 8)
-		binary.LittleEndian.PutUint64(countValue, uint64(newCount))
-		if err := shadow.Update(countKey, countValue, ebpf.UpdateExist); err != nil {
-			return fmt.Errorf("failed to update shadow blacklist count: %w", err)
-		}
-	}
-
-	// 2c. Whitelist count
-	if wlCountDelta != 0 {
-		wlKey := make([]byte, 4)
-		binary.LittleEndian.PutUint32(wlKey, ConfigWhitelistCount)
-		var currentWlCount uint64
-		var v [8]byte
-		if err := shadow.Lookup(wlKey, &v); err == nil {
-			currentWlCount = binary.LittleEndian.Uint64(v[:])
-		}
-		newWlCount := int64(currentWlCount) + wlCountDelta
-		if newWlCount < 0 {
-			newWlCount = 0
-		}
-		wlValue := make([]byte, 8)
-		binary.LittleEndian.PutUint64(wlValue, uint64(newWlCount))
-		if err := shadow.Update(wlKey, wlValue, ebpf.UpdateExist); err != nil {
-			return fmt.Errorf("failed to update shadow whitelist count: %w", err)
-		}
-	}
-
-	// 2d. CIDR bitmap: rebuild from cidrComboRefCount
-	var cidrBitmap uint64
-	for i := 0; i < 64; i++ {
-		if h.cidrComboRefCount[i] > 0 {
-			cidrBitmap |= 1 << uint(i)
-		}
-	}
-	cidrBitmapKey := make([]byte, 4)
-	binary.LittleEndian.PutUint32(cidrBitmapKey, ConfigCIDRBitmap)
-	cidrBitmapValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(cidrBitmapValue, cidrBitmap)
-	if err := shadow.Update(cidrBitmapKey, cidrBitmapValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to update shadow CIDR bitmap: %w", err)
-	}
-
-	// 2e. CIDR blacklist count
-	if cidrCountDelta != 0 {
-		cidrCountKey := make([]byte, 4)
-		binary.LittleEndian.PutUint32(cidrCountKey, ConfigCIDRRuleCount)
-		var currentCIDRCount uint64
-		var v [8]byte
-		if err := shadow.Lookup(cidrCountKey, &v); err == nil {
-			currentCIDRCount = binary.LittleEndian.Uint64(v[:])
-		}
-		newCIDRCount := int64(currentCIDRCount) + cidrCountDelta
-		if newCIDRCount < 0 {
-			newCIDRCount = 0
-		}
-		cidrCountValue := make([]byte, 8)
-		binary.LittleEndian.PutUint64(cidrCountValue, uint64(newCIDRCount))
-		if err := shadow.Update(cidrCountKey, cidrCountValue, ebpf.UpdateExist); err != nil {
-			return fmt.Errorf("failed to update shadow CIDR count: %w", err)
-		}
-	}
-
-	// 2f. v2.6.1 Phase 4 B5: anomaly rule count (absolute, not delta).
-	// Count rules with MatchAnomaly != 0 across both exact blacklist
-	// (h.rules) and CIDR blacklist (h.cidrRules). The BPF main program
-	// reads this on every lookup miss to decide whether to tail_call
-	// into xdp_anomaly_verify. When 0, the tail_call dispatch is
-	// skipped — hot path stays zero-cost (§7.8.4).
-	anomalyCount := h.countAnomalyRulesLocked()
-	anomalyKey := make([]byte, 4)
-	binary.LittleEndian.PutUint32(anomalyKey, ConfigAnomalyRuleCount)
-	anomalyValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(anomalyValue, uint64(anomalyCount))
-	if err := shadow.Update(anomalyKey, anomalyValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to update shadow anomaly count: %w", err)
-	}
-
-	// Step 3: Atomically switch active selector
-	newSlot := 1 - h.activeSlot
-	selKey := make([]byte, 4) // key = 0
-	selValue := make([]byte, 8)
-	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
-	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
-		return fmt.Errorf("failed to switch active config: %w", err)
-	}
-	h.activeSlot = newSlot
-
-	log.Printf("[publishConfigUpdate] Switched to slot %d, bitmap=0x%016x, wlBitmap=0x%016x, cidrBitmap=0x%016x, wlSlot=%d, blCount delta=%d, wlCount delta=%d, cidrCount delta=%d",
-		newSlot, bitmap, wlBitmap, cidrBitmap, h.activeWLSlot, countDelta, wlCountDelta, cidrCountDelta)
-
-	return nil
-}
-
 func (h *Handlers) activeMap() *ebpf.Map {
 	if h.activeSlot == 0 {
 		return h.configA
@@ -200,67 +21,6 @@ func (h *Handlers) shadowMap() *ebpf.Map {
 		return h.configB
 	}
 	return h.configA
-}
-
-// countAnomalyRulesLocked returns the total number of rules (exact + CIDR)
-// where MatchAnomaly != 0. Caller must hold h.rulesMu (at least for read),
-// and in practice also publishMu since this is called from
-// publishConfigUpdate. The counter is recomputed on every publish — absolute
-// value, not delta — so concurrent counter drift bugs are structurally
-// impossible. Cost is O(N) but N is the rule count which is small relative
-// to per-packet cost; acceptable for the mutation path.
-//
-// v2.6.1 Phase 4 B5. Reads StoredRule.MatchAnomaly + StoredCIDRRule.MatchAnomaly
-// which are populated at rule insertion time (rules_mutation.go / sync.go /
-// cidr_rules.go — all 5 construction sites carry req.MatchAnomaly through to
-// the stored struct).
-//
-// SAFETY: The returned count is stored as a uint64 in the config map.
-// If the count exceeds uint64 max, there's a bigger problem than this.
-func (h *Handlers) countAnomalyRulesLocked() uint64 {
-	// Note: we don't need to re-acquire rulesMu because publishConfigUpdate's
-	// callers already serialize via publishMu and mutate h.rules atomically
-	// with publish. If this invariant is ever violated (caller forgets to
-	// hold the lock chain), counter might read a torn value — but same
-	// risk already applies to countEntries / bitmap reads in publish.
-	var count uint64
-	for _, r := range h.rules {
-		if r.MatchAnomaly != 0 {
-			count++
-		}
-	}
-	for _, r := range h.cidrRules {
-		if r.MatchAnomaly != 0 {
-			count++
-		}
-	}
-	return count
-}
-
-// countAnomalyRulesIn returns the number of anomaly rules in the given maps.
-// Used by DoAtomicSync to compute the absolute anomaly count for the new
-// ruleset before flip — must NOT use h.rules/h.cidrRules (old state).
-func countAnomalyRulesIn(rules map[string]StoredRule, cidrRules map[string]StoredCIDRRule) uint64 {
-	var n uint64
-	for _, r := range rules {
-		if r.MatchAnomaly != 0 {
-			n++
-		}
-	}
-	for _, r := range cidrRules {
-		if r.MatchAnomaly != 0 {
-			n++
-		}
-	}
-	return n
-}
-
-// activeWhitelist returns the currently active whitelist BPF map (Phase 8 dual-buffer)
-func (h *Handlers) activeWhitelist() *ebpf.Map {
-	if h.activeWLSlot == 0 {
-		return h.whitelist
-	}
-	return h.whitelistB
 }
 
 // shadowWhitelist returns the shadow whitelist BPF map (Phase 8 dual-buffer)
@@ -280,18 +40,18 @@ func (h *Handlers) shadowWhitelist() *ebpf.Map {
 //
 // Caller must hold publishMu and have already set h.activeWLSlot to the new value.
 func (h *Handlers) publishConfigUpdateForWLSync(wlAbsoluteCount uint64, newWLComboRefCount [64]int) error {
-	shadow := h.shadowMap()
-	active := h.activeMap()
+	shadow, active, selector := h.configPublishTables()
 
 	// Step 1: Copy active → shadow (all entries, preserves BL/CIDR/anomaly/FF slots)
 	for i := uint32(0); i < ConfigMapEntries; i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, i)
 		var value [8]byte
-		if err := active.Lookup(key, &value); err == nil {
-			if err := shadow.Update(key, value[:], ebpf.UpdateExist); err != nil {
-				return fmt.Errorf("failed to copy config index %d to shadow: %w", i, err)
-			}
+		if err := active.Lookup(key, &value); err != nil {
+			return fmt.Errorf("failed to read active config index %d: %w", i, err)
+		}
+		if err := shadow.Update(key, value[:], ebpf.UpdateExist); err != nil {
+			return fmt.Errorf("failed to copy config index %d to shadow: %w", i, err)
 		}
 	}
 
@@ -335,10 +95,13 @@ func (h *Handlers) publishConfigUpdateForWLSync(wlAbsoluteCount uint64, newWLCom
 	selKey := make([]byte, 4)
 	selValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
-	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
+	if err := selector.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
 		return fmt.Errorf("failed to switch active config: %w", err)
 	}
+	h.quiescenceConfirmed = false
 	h.activeSlot = newSlot
+	h.publishWhitelistState(int(wlAbsoluteCount))
+	h.publishWhitelistCapacity(int(wlAbsoluteCount))
 
 	log.Printf("[publishConfigUpdateForWLSync] Switched to slot %d, wlBitmap=0x%016x, wlSlot=%d, wlCount=%d",
 		newSlot, wlBitmap, h.activeWLSlot, wlAbsoluteCount)
@@ -346,33 +109,17 @@ func (h *Handlers) publishConfigUpdateForWLSync(wlAbsoluteCount uint64, newWLCom
 	return nil
 }
 
-// activeBlacklist returns the currently active blacklist BPF map (Phase 4.2 dual rule map)
-func (h *Handlers) activeBlacklist() *ebpf.Map {
-	if h.activeRuleSlot == 0 {
-		return h.blacklist
-	}
-	return h.blacklistB
-}
-
 // shadowBlacklist returns the shadow blacklist BPF map (Phase 4.2 dual rule map)
 func (h *Handlers) shadowBlacklist() *ebpf.Map {
-	if h.activeRuleSlot == 0 {
+	if int(h.activeRuleSlot.Load()) == 0 {
 		return h.blacklistB
 	}
 	return h.blacklist
 }
 
-// activeCidrBlacklist returns the currently active CIDR blacklist BPF map
-func (h *Handlers) activeCidrBlacklist() *ebpf.Map {
-	if h.activeRuleSlot == 0 {
-		return h.cidrBlacklist
-	}
-	return h.cidrBlacklistB
-}
-
 // shadowCidrBlacklist returns the shadow CIDR blacklist BPF map
 func (h *Handlers) shadowCidrBlacklist() *ebpf.Map {
-	if h.activeRuleSlot == 0 {
+	if int(h.activeRuleSlot.Load()) == 0 {
 		return h.cidrBlacklistB
 	}
 	return h.cidrBlacklist

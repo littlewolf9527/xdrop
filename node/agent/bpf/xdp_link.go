@@ -102,6 +102,8 @@ type ResolvedXDPLink struct {
 	EffectiveMode Mode
 	// DowngradeReason is non-empty when EffectiveMode != requested Mode.
 	DowngradeReason string
+	// AttachMode is the verified kernel snapshot taken at startup.
+	AttachMode string
 }
 
 // ForceDetach tears down the XDP attachment unconditionally — if the
@@ -112,22 +114,22 @@ type ResolvedXDPLink struct {
 // than briefly losing the filter. The graceful-shutdown path uses a
 // plain Link.Close() instead so the pin survives into the next boot.
 //
-// Returns the first error encountered, but still best-effort calls
+// Returns all errors encountered, but still best-effort calls
 // every tear-down step so a failure in one doesn't prevent the rest.
 func (r *ResolvedXDPLink) ForceDetach() error {
 	if r == nil || r.Link == nil {
 		return nil
 	}
-	var firstErr error
+	var errs []error
 	if r.PinPath != "" {
 		if err := r.Link.Unpin(); err != nil {
-			firstErr = fmt.Errorf("unpin %s: %w", r.PinPath, err)
+			errs = append(errs, fmt.Errorf("unpin %s: %w", r.PinPath, err))
 		}
 	}
-	if err := r.Link.Close(); err != nil && firstErr == nil {
-		firstErr = fmt.Errorf("close link: %w", err)
+	if err := r.Link.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("close link: %w", err))
 	}
-	return firstErr
+	return errors.Join(errs...)
 }
 
 // ErrLinkPinningUnsupported is returned by ResolveXDPLink when
@@ -140,11 +142,15 @@ var ErrLinkPinningUnsupported = errors.New("XDP link pinning unsupported")
 // as an interface so tests can drive the decision tree without actually
 // touching BPF / netlink / bpffs.
 type linkOps interface {
+	ProbeBPFFS(string) error
+	MkdirAll(string, os.FileMode) error
+	ReadXDP(string) (XDPAttachment, error)
+	ProgramID(*ebpf.Program) (uint32, error)
 	// LoadPinned reopens a pinned link by path. Must surface
 	// os.ErrNotExist when the pin file isn't there.
 	LoadPinned(path string) (XDPLink, error)
-	// AttachXDP calls link.AttachXDP on ifname with Flags=0.
-	AttachXDP(prog *ebpf.Program, ifname string) (XDPLink, error)
+	// AttachXDP applies the requested XDP mode independently of pinning.
+	AttachXDP(prog *ebpf.Program, ifname string, xdpMode XDPMode) (XDPLink, error)
 	// PreDetach best-effort clears any non-link XDP program left on the
 	// interface by a crashed previous-version agent. Errors are ignored
 	// by ResolveXDPLink — nothing attached is the common case.
@@ -169,7 +175,7 @@ func (realLinkOps) LoadPinned(path string) (XDPLink, error) {
 	return l, nil
 }
 
-func (realLinkOps) AttachXDP(prog *ebpf.Program, ifname string) (XDPLink, error) {
+func (realLinkOps) AttachXDP(prog *ebpf.Program, ifname string, xdpMode XDPMode) (XDPLink, error) {
 	iface, err := net.InterfaceByName(ifname)
 	if err != nil {
 		return nil, fmt.Errorf("lookup interface %s: %w", ifname, err)
@@ -177,13 +183,39 @@ func (realLinkOps) AttachXDP(prog *ebpf.Program, ifname string) (XDPLink, error)
 	l, err := link.AttachXDP(link.XDPOptions{
 		Program:   prog,
 		Interface: iface.Index,
-		// Flags: 0 — kernel best-effort (native where driver supports,
-		// generic otherwise). Matches pre-migration XdpAttachModeNone.
+		Flags:     xdpAttachFlags(xdpMode),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return l, nil
+}
+
+// auto retains the kernel's driver/generic selection; explicit modes never fall back.
+func xdpAttachFlags(mode XDPMode) link.XDPAttachFlags {
+	switch mode {
+	case XDPNative:
+		return link.XDPDriverMode
+	case XDPGeneric:
+		return link.XDPGenericMode
+	default:
+		return 0
+	}
+}
+
+func (realLinkOps) ProbeBPFFS(root string) error                 { return probeBPFFS(root) }
+func (realLinkOps) MkdirAll(path string, mode os.FileMode) error { return os.MkdirAll(path, mode) }
+func (realLinkOps) ReadXDP(ifname string) (XDPAttachment, error) { return readXDPAttachment(ifname) }
+func (realLinkOps) ProgramID(prog *ebpf.Program) (uint32, error) {
+	info, err := prog.Info()
+	if err != nil {
+		return 0, err
+	}
+	id, ok := info.ID()
+	if !ok {
+		return 0, fmt.Errorf("program info has no ID")
+	}
+	return uint32(id), nil
 }
 
 func (realLinkOps) PreDetach(ifname string) {
@@ -251,15 +283,22 @@ func IsXDPLinkUnsupported(err error) bool {
 //     - mode=auto: log a WARN, return the unpinned link. Next restart
 //     goes through the full fresh-attach path with the usual Phase-2
 //     gap; no worse than if Phase 4 weren't enabled at all.
-func ResolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, pinRoot string) (*ResolvedXDPLink, error) {
-	return resolveXDPLink(prog, ifname, mode, pinRoot, realLinkOps{})
+func ResolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, xdpMode XDPMode, pinRoot string) (*ResolvedXDPLink, error) {
+	return resolveXDPLink(prog, ifname, mode, xdpMode, pinRoot, realLinkOps{})
 }
 
 // resolveXDPLink is the pure decision-tree, parameterized over linkOps
 // so tests can drive every branch without touching the kernel.
-func resolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, pinRoot string, ops linkOps) (*ResolvedXDPLink, error) {
+func resolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, xdpMode XDPMode, pinRoot string, ops linkOps) (*ResolvedXDPLink, error) {
 	if mode == "" {
 		mode = ModeAuto
+	}
+
+	if xdpMode == "" {
+		xdpMode = XDPAuto
+	}
+	if xdpMode != XDPAuto && xdpMode != XDPNative && xdpMode != XDPGeneric {
+		return nil, xdpError("xdp_mode_invalid", fmt.Errorf("bpf.xdp_mode: invalid value %q", xdpMode))
 	}
 
 	// Disable path: always fresh. Actively sweep any stale link pin so
@@ -278,54 +317,54 @@ func resolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, pinRoot string
 			}
 		}
 		ops.PreDetach(ifname)
-		l, err := ops.AttachXDP(prog, ifname)
+		l, err := ops.AttachXDP(prog, ifname, xdpMode)
 		if err != nil {
-			return nil, fmt.Errorf("AttachXDP(%s): %w", ifname, wrapIfUnsupported(err))
+			return nil, xdpError("xdp_attach_failed", fmt.Errorf("AttachXDP(%s): %w", ifname, wrapIfUnsupported(err)))
 		}
-		return &ResolvedXDPLink{
+		return finishXDP(prog, ifname, xdpMode, &ResolvedXDPLink{
 			Link:            l,
 			EffectiveMode:   ModeDisable,
 			DowngradeReason: "config bpf.pinning=disable",
-		}, nil
+		}, ops)
 	}
 
 	// Probe bpffs first. Without bpffs, pin/LoadPinned is a non-starter
 	// — under auto we downgrade cleanly to Phase-2-equivalent fresh
 	// attach; under require we fail loudly so operators notice.
-	if err := probeBPFFS(pinRoot); err != nil {
+	if err := ops.ProbeBPFFS(pinRoot); err != nil {
 		if mode == ModeRequire {
-			return nil, fmt.Errorf("bpf.pinning=require: %w: %w", ErrLinkPinningUnsupported, err)
+			return nil, xdpError("xdp_bpffs_failed", fmt.Errorf("bpf.pinning=require: %w: %w", ErrLinkPinningUnsupported, err))
 		}
 		log.Printf("[bpf] WARN: link pinning downgraded: bpffs probe failed: %v", err)
 		ops.PreDetach(ifname)
-		l, aerr := ops.AttachXDP(prog, ifname)
+		l, aerr := ops.AttachXDP(prog, ifname, xdpMode)
 		if aerr != nil {
-			return nil, fmt.Errorf("AttachXDP(%s) (pin-downgrade): %w", ifname, wrapIfUnsupported(aerr))
+			return nil, xdpError("xdp_attach_failed", fmt.Errorf("AttachXDP(%s) (pin-downgrade): %w", ifname, wrapIfUnsupported(aerr)))
 		}
-		return &ResolvedXDPLink{
+		return finishXDP(prog, ifname, xdpMode, &ResolvedXDPLink{
 			Link:            l,
 			EffectiveMode:   ModeDisable,
 			DowngradeReason: fmt.Sprintf("bpffs probe failed: %v", err),
-		}, nil
+		}, ops)
 	}
 
 	// Ensure the pin-root directory exists. MkdirAll is a no-op when it
 	// already does; bpffs doesn't support chmod so mode is advisory.
-	if err := os.MkdirAll(pinRoot, 0o700); err != nil {
+	if err := ops.MkdirAll(pinRoot, 0o700); err != nil {
 		if mode == ModeRequire {
-			return nil, fmt.Errorf("bpf.pinning=require: MkdirAll(%s): %w: %w", pinRoot, ErrLinkPinningUnsupported, err)
+			return nil, xdpError("xdp_mkdir_failed", fmt.Errorf("bpf.pinning=require: MkdirAll(%s): %w: %w", pinRoot, ErrLinkPinningUnsupported, err))
 		}
 		log.Printf("[bpf] WARN: link pinning downgraded: MkdirAll(%s): %v", pinRoot, err)
 		ops.PreDetach(ifname)
-		l, aerr := ops.AttachXDP(prog, ifname)
+		l, aerr := ops.AttachXDP(prog, ifname, xdpMode)
 		if aerr != nil {
-			return nil, fmt.Errorf("AttachXDP(%s) (pin-downgrade): %w", ifname, wrapIfUnsupported(aerr))
+			return nil, xdpError("xdp_attach_failed", fmt.Errorf("AttachXDP(%s) (pin-downgrade): %w", ifname, wrapIfUnsupported(aerr)))
 		}
-		return &ResolvedXDPLink{
+		return finishXDP(prog, ifname, xdpMode, &ResolvedXDPLink{
 			Link:            l,
 			EffectiveMode:   ModeDisable,
 			DowngradeReason: fmt.Sprintf("MkdirAll(%s): %v", pinRoot, err),
-		}, nil
+		}, ops)
 	}
 
 	pinPath := LinkPinPathFor(pinRoot, ifname)
@@ -338,12 +377,20 @@ func resolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, pinRoot string
 			// Got a live handle to the kernel-side link. Atomically
 			// swap the program pointer. This is the zero-gap path.
 			if uerr := l.Update(prog); uerr == nil {
-				return &ResolvedXDPLink{
-					Link:          l,
-					PinPath:       pinPath,
-					Reused:        true,
-					EffectiveMode: ModeAuto,
-				}, nil
+				res := &ResolvedXDPLink{Link: l, PinPath: pinPath, Reused: true, EffectiveMode: ModeAuto}
+				attached, err := readVerifiedXDP(prog, ifname, ops)
+				if err != nil {
+					return nil, errors.Join(err, res.ForceDetach())
+				}
+				if xdpMode == XDPAuto || attached == string(xdpMode) {
+					res.AttachMode = attached
+					warnXDPGeneric(ifname, xdpMode, attached)
+					return res, nil
+				}
+				log.Printf("[bpf] WARN: %s 模式变更，重挂，过滤中断: requested=%s attached=%s; 重挂失败后接口持续无程序直到下一次成功启动", ifname, xdpMode, attached)
+				if err := res.ForceDetach(); err != nil {
+					return nil, xdpError("xdp_cleanup_failed", err)
+				}
 			} else {
 				// Update failed. Close our handle and unlink the pin so
 				// the refcount drops to zero and we can AttachXDP fresh
@@ -366,34 +413,33 @@ func resolveXDPLink(prog *ebpf.Program, ifname string, mode Mode, pinRoot string
 
 	// Step 3: fresh attach. Pre-detach legacy non-link XDP first.
 	ops.PreDetach(ifname)
-	freshLink, attachErr := ops.AttachXDP(prog, ifname)
+	freshLink, attachErr := ops.AttachXDP(prog, ifname, xdpMode)
 	if attachErr != nil {
 		wrapped := wrapIfUnsupported(attachErr)
 		if mode == ModeRequire {
-			return nil, fmt.Errorf("bpf.pinning=require: AttachXDP(%s): %w", ifname, wrapped)
+			return nil, xdpError("xdp_attach_failed", fmt.Errorf("bpf.pinning=require: AttachXDP(%s): %w", ifname, wrapped))
 		}
-		return nil, fmt.Errorf("AttachXDP(%s): %w", ifname, wrapped)
+		return nil, xdpError("xdp_attach_failed", fmt.Errorf("AttachXDP(%s): %w", ifname, wrapped))
 	}
 
 	// Step 5: pin the fresh link.
 	if perr := freshLink.Pin(pinPath); perr != nil {
 		if mode == ModeRequire {
-			_ = freshLink.Close()
-			return nil, fmt.Errorf("bpf.pinning=require: Pin(%s): %w: %w", pinPath, ErrLinkPinningUnsupported, perr)
+			return nil, errors.Join(xdpError("xdp_pin_failed", fmt.Errorf("bpf.pinning=require: Pin(%s): %w: %w", pinPath, ErrLinkPinningUnsupported, perr)), freshLink.Close())
 		}
 		log.Printf("[bpf] WARN: Pin(%q) failed (%v); XDP attached unpinned — next restart will have Phase-2 gap", pinPath, perr)
-		return &ResolvedXDPLink{
+		return finishXDP(prog, ifname, xdpMode, &ResolvedXDPLink{
 			Link:            freshLink,
 			EffectiveMode:   ModeDisable,
 			DowngradeReason: fmt.Sprintf("Pin(%s): %v", pinPath, perr),
-		}, nil
+		}, ops)
 	}
 
-	return &ResolvedXDPLink{
+	return finishXDP(prog, ifname, xdpMode, &ResolvedXDPLink{
 		Link:          freshLink,
 		PinPath:       pinPath,
 		EffectiveMode: ModeAuto,
-	}, nil
+	}, ops)
 }
 
 // wrapIfUnsupported tags err with ErrLinkPinningUnsupported when the

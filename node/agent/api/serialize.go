@@ -35,16 +35,21 @@ func ruleKeyToBytes(k RuleKey) []byte {
 
 func ruleValueToBytes(v RuleValue) []byte {
 	b := make([]byte, 32)
+	if v.Pad2[0]&RuleHasConditions != 0 {
+		v.TcpFlagsMask, v.TcpFlagsValue, v.MatchAnomaly = 0, 0, 0
+		v.PktLenMin, v.PktLenMax = 0, 0
+		b[28] = RuleHasConditions
+	}
 	b[0] = v.Action
 	b[1] = v.TcpFlagsMask
 	b[2] = v.TcpFlagsValue
 	b[3] = v.MatchAnomaly // v2.6 Phase 4: previously pad
 	binary.LittleEndian.PutUint32(b[4:], v.RateLimit)
-	binary.LittleEndian.PutUint64(b[8:], v.MatchCount)
-	binary.LittleEndian.PutUint64(b[16:], v.DropCount)
+	binary.LittleEndian.PutUint32(b[8:], v.LogicalID)
+	// Reserved bytes [12:24] are zero, including caller-supplied padding.
 	binary.LittleEndian.PutUint16(b[24:], v.PktLenMin)
 	binary.LittleEndian.PutUint16(b[26:], v.PktLenMax)
-	// b[28:32] is pad2 (zeros, reserved for future anomaly widening)
+	// Reserved bytes [29:32] stay zero in both representations.
 	return b
 }
 

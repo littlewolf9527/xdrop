@@ -1,0 +1,26 @@
+{
+  "TestAFE7/delete-CIDR": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\"}]}"
+  },
+  "TestAFE7/delete-exact": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\"}]}"
+  },
+  "TestAFE7/mapped-CIDR": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/120; write the IPv4 prefix 192.0.2.0/24\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/120; write the IPv4 prefix 192.0.2.0/24\"}]}"
+  },
+  "TestAFE7/mapped-exact": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}]}"
+  },
+  "TestAFE7/mixed-CIDR": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\"}]}"
+  },
+  "TestAFE7/mixed-exact": {
+    "status": 400,
+    "body": "{\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\",\"groups\":[{\"index\":0,\"code\":\"validation_rejected\",\"error\":\"address family mismatch: src is IPv4, dst is IPv6\"}]}"
+  }
+}

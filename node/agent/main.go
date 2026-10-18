@@ -9,9 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
@@ -20,12 +18,12 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 	"github.com/littlewolf9527/xdrop/node/agent/config"
 	"github.com/littlewolf9527/xdrop/node/agent/ifmgr"
-	"github.com/littlewolf9527/xdrop/node/agent/sync"
+	"github.com/littlewolf9527/xdrop/node/agent/ratelimit"
 )
 
 // Config map indices now live in the api package alongside the other
-// dynamic config slots so initDynamicConfig can zero them on every
-// startup (AUD-PH3-001). main.go uses api.ConfigFastForwardEnabled /
+// dynamic config slots. FF slots are written before publishing new programs
+// and preserved by initDynamicConfig. main.go uses api.ConfigFastForwardEnabled /
 // api.ConfigFilterIfindex / api.ConfigRLCPUDivisor at its own write sites.
 
 func main() {
@@ -69,7 +67,7 @@ func main() {
 	}
 
 	// Phase 8 P1-3: clean stale verifier_prune_map pin BEFORE loading (over-allow risk)
-	if err := xdropbpf.CleanStalePins(xdropbpf.DefaultPinRoot, []string{"verifier_prune_map", "tailcall_fail_stats"}); err != nil {
+	if err := xdropbpf.CleanStalePins(xdropbpf.DefaultPinRoot, []string{"verifier_prune_map", "tailcall_fail_stats", "tail_stash", "rl_states", "cidr_rl_states"}); err != nil {
 		log.Fatalf("[Phase8] FATAL: %v — refusing to start", err)
 	}
 
@@ -78,10 +76,10 @@ func main() {
 	mainColl, mainPinResult, err := xdropbpf.Load(xdropbpf.Options{
 		SpecPath:         mainPath,
 		Mode:             xdropbpf.Mode(cfg.BPF.Pinning),
-		PinNoneOverrides: []string{"verifier_prune_map"}, // P1-3: NEVER pin
+		PinNoneOverrides: []string{"verifier_prune_map", "hot_ids"}, // fresh candidate table; NEVER pin
 	})
 	if err != nil {
-		log.Fatalf("Failed to load main BPF collection: %v", err)
+		logBPFLoadFailure("main", mainPath, err)
 	}
 	logPinResult("main", mainPinResult)
 
@@ -103,9 +101,11 @@ func main() {
 	activeConfig := requireMapFrom(mainColl, "main", "active_config")
 	devmapMain := mainColl.Maps["devmap"] // may be nil if not in main ELF; FF check below
 	progTailMap := requireMapFrom(mainColl, "main", "prog_tail_map")
-	rlStates := requireMapFrom(mainColl, "main", "rl_states")
+	condRowMissing := requireMapFrom(mainColl, "main", "cond_row_missing")
+	// B1 logical state is loaded now; control-plane consumers follow in knife four.
+	requireMapFrom(mainColl, "main", "id_counts")
+	requireMapFrom(mainColl, "main", "id_rl_states")
 	cidrBlacklist := requireMapFrom(mainColl, "main", "cidr_blacklist")
-	cidrRlStates := requireMapFrom(mainColl, "main", "cidr_rl_states")
 	srcV4Trie := requireMapFrom(mainColl, "main", "sv4_cidr_trie")
 	dstV4Trie := requireMapFrom(mainColl, "main", "dv4_cidr_trie")
 	srcV6Trie := requireMapFrom(mainColl, "main", "sv6_cidr_trie")
@@ -134,51 +134,61 @@ func main() {
 
 	gateColl, gatePinResult, err := xdropbpf.Load(xdropbpf.Options{
 		SpecPath:         gatePath,
-		Mode:             xdropbpf.Mode(cfg.BPF.Pinning),
+		Mode:             mainPinResult.EffectiveMode,
 		PinNoneOverrides: []string{"tailcall_fail_stats"}, // restart-clear semantics
 		MapReplacements:  gateMapReplacements,
 	})
 	if err != nil {
-		log.Fatalf("Failed to load gate BPF collection: %v", err)
+		logBPFLoadFailure("gate", gatePath, err)
 	}
 	logPinResult("gate", gatePinResult)
 
 	// Gate-only maps
 	whitelistB := requireMapFrom(gateColl, "gate", "whitelist_b")
 
-	// Clear data maps — dual-collection aware (rev11 P2-1)
+	// Pinned XDP may still run: business clear/recount, receipt, logical clear/recount.
+	// Failure leaves startup closed, before NewHandlers can reset selectors.
 	if mainPinResult.PinPath != "" {
-		// Main-owned business maps
-		if err := xdropbpf.ClearDataMaps(mainColl, []string{
-			"blacklist", "blacklist_b",
-			"whitelist", // main-owned shared map
-			"cidr_blacklist", "cidr_blist_b",
-			"rl_states", "cidr_rl_states",
-			"sv4_cidr_trie", "dv4_cidr_trie",
-			"sv6_cidr_trie", "dv6_cidr_trie",
-			// verifier_prune_map NOT in clear list (main-private, always empty)
-		}); err != nil {
-			log.Printf("WARN: main data-map clear reported error (continuing): %v", err)
-		}
-		// Gate-owned business maps
-		if err := xdropbpf.ClearDataMaps(gateColl, []string{
-			"whitelist_b", // gate-owned shadow map
-			// tailcall_fail_stats: PinNone, restart auto-clears PERCPU_ARRAY
-		}); err != nil {
-			log.Printf("WARN: gate data-map clear reported error (continuing): %v", err)
+		if err := api.PreparePinnedStartup(mainColl, gateColl); err != nil {
+			log.Fatalf("[startup] pinned state reset failed: %v", err)
 		}
 	}
 
-	cidrMgr := cidr.NewManager(srcV4Trie, dstV4Trie, srcV6Trie, dstV6Trie)
+	cidrMgr := cidr.NewManager(srcV4Trie, dstV4Trie, srcV6Trie, dstV6Trie,
+		requireMapFrom(mainColl, "main", "sv4_cidr_trie_b"), requireMapFrom(mainColl, "main", "dv4_cidr_trie_b"),
+		requireMapFrom(mainColl, "main", "sv6_cidr_trie_b"), requireMapFrom(mainColl, "main", "dv6_cidr_trie_b"))
 	log.Println("CIDR manager initialized")
 
-	// Fast forward devmap (only required when enabled)
-	var devmap *ebpf.Map
+	// FF state must be ready before any new program can receive traffic.
 	if fastForwardMode {
 		if devmapMain == nil {
 			log.Fatal("BPF map 'devmap' not found in main ELF but fast_forward is enabled")
 		}
-		devmap = devmapMain
+		pair := cfg.FastForward.Pairs[0]
+		// Get interface indices
+		inboundIdx, err := ifmgr.GetInterfaceIndex(pair.Inbound)
+		if err != nil {
+			log.Fatalf("Failed to find inbound interface: %v", err)
+		}
+		outboundIdx, err := ifmgr.GetInterfaceIndex(pair.Outbound)
+		if err != nil {
+			log.Fatalf("Failed to find outbound interface: %v", err)
+		}
+		log.Printf("Interface indices: %s=%d, %s=%d", pair.Inbound, inboundIdx, pair.Outbound, outboundIdx)
+
+		// Setup devmap: bidirectional mapping
+		if err := setupDevmap(devmapMain, inboundIdx, outboundIdx); err != nil {
+			log.Fatalf("Failed to setup devmap: %v", err)
+		}
+		log.Printf("Devmap configured: %d <-> %d", inboundIdx, outboundIdx)
+
+		// Configure fast forward settings in BPF config map
+		if err := configureFastForward(configA, configB, pair, inboundIdx, outboundIdx); err != nil {
+			log.Fatalf("Failed to configure fast forward: %v", err)
+		}
+
+	} else if err := clearFastForwardSlots(configA, configB); err != nil {
+		log.Fatalf("Failed to clear fast forward: %v", err)
 	}
 
 	// Phase 8: XDP entry point is xdp_whitelist_gate from gate ELF.
@@ -196,16 +206,6 @@ func main() {
 		log.Fatalf("xdp_firewall_main has unexpected type %v (want XDP) — D6 violation", firewallMain.Type())
 	}
 
-	// xdp_anomaly_verify from main ELF — tail-call target in slot 0.
-	anomalyProg, ok := mainColl.Programs["xdp_anomaly_verify"]
-	if !ok || anomalyProg == nil {
-		log.Fatal("XDP program 'xdp_anomaly_verify' not found in main ELF")
-	}
-	if anomalyProg.Type() != ebpf.XDP {
-		log.Fatalf("xdp_anomaly_verify has unexpected type %v (want XDP) — D6 violation", anomalyProg.Type())
-	}
-	tailStashMap := requireMapFrom(mainColl, "main", "tail_stash")
-	_ = tailStashMap // used only by BPF programs; hold ref to keep pinned
 	// D6 verification: PROG_ARRAY key/value must be exactly 4 bytes.
 	if info, err := progTailMap.Info(); err == nil {
 		if info.KeySize != 4 || info.ValueSize != 4 {
@@ -213,37 +213,12 @@ func main() {
 				info.KeySize, info.ValueSize)
 		}
 	}
-	// D1 RT-kernel boundary (proposal §7.8.5). On PREEMPT_RT kernels the
-	// single-entry per-CPU tail_stash is not safe against intra-CPU BPF
-	// program preemption. Detection via /sys/kernel/realtime (presence of
-	// the file + content "1") or /proc/version containing "PREEMPT_RT".
-	// On detection, we SKIP populating prog_tail_map[0] — the main
-	// program's bpf_tail_call then fallthroughs to XDP_PASS, which is the
-	// documented "anomaly disabled but agent continues normally" behavior.
-	if isRTKernel() {
-		log.Printf("[bpf] WARN: PREEMPT_RT kernel detected — anomaly data plane disabled " +
-			"(tail_call skipped, per-CPU single-slot stash unsafe under RT interleaving). " +
-			"Controller will still accept/store anomaly rules but BPF won't drop anomaly " +
-			"packets. See proposal §7.8.5 D1 RT boundary.")
-		// Do not populate prog_tail_map[0]. bpf_tail_call in main will fallthrough.
-	} else {
-		// Populate slot 0. D5 implementation checklist: after agent restart this
-		// same block re-runs — since cilium/ebpf re-creates programs on every
-		// NewCollection (or loads pinned program with a fresh FD), we always
-		// write the current FD into the map. This is what smoke test's
-		// TestPinning phase-2 lesson says: on reopen, always re-populate.
-		tailSlotAnomalyVerify := uint32(0) // matches xdrop.h TAIL_SLOT_ANOMALY_VERIFY
-		anomalyFD := uint32(anomalyProg.FD())
-		if err := progTailMap.Update(tailSlotAnomalyVerify, anomalyFD, ebpf.UpdateAny); err != nil {
-			log.Fatalf("populate prog_tail_map[0] with xdp_anomaly_verify FD: %v", err)
-		}
-		log.Printf("[bpf] prog_tail_map[%d] = xdp_anomaly_verify FD=%d (B5 anomaly dispatch wired)",
-			tailSlotAnomalyVerify, anomalyFD)
+	if err := xdropbpf.ClearRetiredTailSlot(progTailMap); err != nil {
+		log.Fatalf("[startup] %v", err)
 	}
 
 	// Phase 8: Register xdp_firewall_main in slot 1 — MUST succeed before attach.
-	// Unlike anomaly slot 0 (which is RT-skippable because it uses per-CPU tail_stash),
-	// slot 1 is the main firewall chain and must ALWAYS be registered regardless of RT kernel.
+	// Slot 1 is the main firewall chain on every kernel.
 	{
 		tailSlotFirewallMain := uint32(1)
 		firewallMainFD := uint32(firewallMain.FD())
@@ -276,13 +251,17 @@ func main() {
 	// Initialize API handlers before XDP attach so the signal handler can call
 	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not
 	// depend on XDP being attached. SetXDPInfo is called later, after attach.
-	handlers := api.NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig, rlStates,
-		cidrBlacklist, cidrRlStates, cidrMgr,
+	handlers := api.NewHandlers(blacklist, whitelist, whitelistB, stats, configA, configB, activeConfig,
+		cidrBlacklist, cidrMgr,
 		blacklistB, cidrBlacklistB,
-		tailcallFailStats)
-	if err := configureRateLimitDivisor(configA, configB); err != nil {
+		tailcallFailStats, mainColl.Maps["id_counts"],
+		mainColl.Maps["cond_a"], mainColl.Maps["cond_b"], mainColl.Maps["cidr_cond_a"], mainColl.Maps["cidr_cond_b"], mainColl.Maps["id_rl_states"], condRowMissing)
+	handlers.SetHits(mainColl.Maps["hot_ids"], cfg.Server.HitsRateLimit)
+	rateLimit, err := configureRateLimitDivisor(configA, configB, cfg.BPF.RateLimitDivisor)
+	if err != nil {
 		log.Fatalf("Failed to configure rate-limit divisor: %v", err)
 	}
+	handlers.SetRateLimitSnapshot(rateLimit)
 
 	// Setup graceful shutdown BEFORE XDP attach and ifmgr config, so Ctrl-C
 	// during startup still runs cleanup. The goroutine captures ifMgr,
@@ -332,8 +311,8 @@ func main() {
 
 		// Restore interfaces in fast forward mode (nil if signal fired pre-init)
 		if fastForwardMode && ifMgr != nil {
-			if err := ifMgr.RestoreAll(); err != nil {
-				log.Printf("[main] Warning: ifMgr.RestoreAll() reported errors: %v", err)
+			if err := restoreFFInterfaces(cfg.FastForward.Pairs[0], xdropbpf.ReadXDPAttachment, ifMgr.RestoreInterface); err != nil {
+				log.Printf("[main] Warning: interface restore reported errors: %v", err)
 			}
 		}
 
@@ -346,65 +325,37 @@ func main() {
 		ifMgr = ifmgr.NewInterfaceManager()
 		pair := cfg.FastForward.Pairs[0]
 
-		// Get interface indices
-		inboundIdx, err := ifmgr.GetInterfaceIndex(pair.Inbound)
-		if err != nil {
-			log.Fatalf("Failed to find inbound interface: %v", err)
-		}
-		outboundIdx, err := ifmgr.GetInterfaceIndex(pair.Outbound)
-		if err != nil {
-			log.Fatalf("Failed to find outbound interface: %v", err)
-		}
-		log.Printf("Interface indices: %s=%d, %s=%d", pair.Inbound, inboundIdx, pair.Outbound, outboundIdx)
-
 		// Configure interfaces (UP, promiscuous, disable offloads)
 		if err := ifMgr.ConfigureInterface(pair.Inbound); err != nil {
 			log.Fatalf("Failed to configure inbound interface: %v", err)
 		}
 		if err := ifMgr.ConfigureInterface(pair.Outbound); err != nil {
-			if rErr := ifMgr.RestoreAll(); rErr != nil {
+			if rErr := restoreFFInterfaces(cfg.FastForward.Pairs[0], xdropbpf.ReadXDPAttachment, ifMgr.RestoreInterface); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
 			log.Fatalf("Failed to configure outbound interface: %v", err)
-		}
-
-		// Setup devmap: bidirectional mapping
-		if err := setupDevmap(devmap, inboundIdx, outboundIdx); err != nil {
-			if rErr := ifMgr.RestoreAll(); rErr != nil {
-				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
-			}
-			log.Fatalf("Failed to setup devmap: %v", err)
-		}
-		log.Printf("Devmap configured: %d <-> %d", inboundIdx, outboundIdx)
-
-		// Configure fast forward settings in BPF config map
-		if err := configureFastForward(configA, configB, pair, inboundIdx, outboundIdx); err != nil {
-			if rErr := ifMgr.RestoreAll(); rErr != nil {
-				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
-			}
-			log.Fatalf("Failed to configure fast forward: %v", err)
 		}
 
 		// Attach XDP to inbound interface via the Phase 4 resolver. The
 		// resolver handles pre-detach internally when taking the fresh-
 		// attach branch, and skips pre-detach when reusing a pinned link
 		// (pre-detach in the reuse path would break zero-gap continuity).
-		inRes, err := resolveLink(xdpProg, pair.Inbound, cfg.BPF.Pinning)
+		inRes, err := resolveLink(xdpProg, pair.Inbound, string(mainPinResult.EffectiveMode), cfg.BPF.XDPMode)
 		if err != nil {
-			if rErr := ifMgr.RestoreAll(); rErr != nil {
+			if rErr := restoreFFInterfaces(cfg.FastForward.Pairs[0], xdropbpf.ReadXDPAttachment, ifMgr.RestoreInterface); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
-			logXDPAttachFailure(pair.Inbound, err)
+			logXDPAttachFailure(pair.Inbound, cfg.BPF.XDPMode, err)
 		}
 		xdpLinks = append(xdpLinks, inRes)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Inbound)
-		logXDPAttachOutcome(pair.Inbound, "inbound", inRes)
+		logXDPAttachOutcome(pair.Inbound, "inbound", cfg.BPF.XDPMode, inRes)
 
 		// Attach XDP to outbound interface. With cilium/ebpf each attach
 		// returns an independent Link, so the dual-NIC detach correctness
 		// quirk we had with goebpf's shared program pointer no longer
 		// applies.
-		outRes, err := resolveLink(xdpProg, pair.Outbound, cfg.BPF.Pinning)
+		outRes, err := resolveLink(xdpProg, pair.Outbound, string(mainPinResult.EffectiveMode), cfg.BPF.XDPMode)
 		if err != nil {
 			// Roll back the inbound attach before failing startup. Must
 			// use ForceDetach, not Link.Close: if the inbound link is
@@ -420,25 +371,26 @@ func main() {
 			// EXIT handler doesn't try to Close() it twice.
 			xdpLinks = xdpLinks[:len(xdpLinks)-1]
 			xdpAttachedIfaces = xdpAttachedIfaces[:len(xdpAttachedIfaces)-1]
-			if rErr := ifMgr.RestoreAll(); rErr != nil {
+			if rErr := restoreFFInterfaces(cfg.FastForward.Pairs[0], xdropbpf.ReadXDPAttachment, ifMgr.RestoreInterface); rErr != nil {
 				log.Printf("[main] Warning: interface restore reported errors during fatal cleanup: %v", rErr)
 			}
-			logXDPAttachFailure(pair.Outbound, err)
+			logXDPAttachFailure(pair.Outbound, cfg.BPF.XDPMode, err)
 		}
 		xdpLinks = append(xdpLinks, outRes)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, pair.Outbound)
-		logXDPAttachOutcome(pair.Outbound, "outbound", outRes)
+		logXDPAttachOutcome(pair.Outbound, "outbound", cfg.BPF.XDPMode, outRes)
+		warnXDPFFModes(pair.Inbound, pair.Outbound, inRes, outRes)
 
 	} else {
 		// === TRADITIONAL MODE ===
 		log.Println("Traditional mode (single interface)")
-		res, err := resolveLink(xdpProg, cfg.Server.Interface, cfg.BPF.Pinning)
+		res, err := resolveLink(xdpProg, cfg.Server.Interface, string(mainPinResult.EffectiveMode), cfg.BPF.XDPMode)
 		if err != nil {
-			logXDPAttachFailure(cfg.Server.Interface, err)
+			logXDPAttachFailure(cfg.Server.Interface, cfg.BPF.XDPMode, err)
 		}
 		xdpLinks = append(xdpLinks, res)
 		xdpAttachedIfaces = append(xdpAttachedIfaces, cfg.Server.Interface)
-		logXDPAttachOutcome(cfg.Server.Interface, "filter", res)
+		logXDPAttachOutcome(cfg.Server.Interface, "filter", cfg.BPF.XDPMode, res)
 	}
 
 	// Set XDP interface info for stats reporting (after XDP attach completed)
@@ -447,34 +399,17 @@ func main() {
 		handlers.SetXDPInfo(&api.XDPInfo{
 			Mode: "fast_forward",
 			Interfaces: []api.XDPInterface{
-				{Name: pair.Inbound, Role: "inbound"},
-				{Name: pair.Outbound, Role: "outbound"},
+				{Name: pair.Inbound, Role: "inbound", AttachMode: xdpLinks[0].AttachMode},
+				{Name: pair.Outbound, Role: "outbound", AttachMode: xdpLinks[1].AttachMode},
 			},
 		})
 	} else {
 		handlers.SetXDPInfo(&api.XDPInfo{
 			Mode: "traditional",
 			Interfaces: []api.XDPInterface{
-				{Name: cfg.Server.Interface, Role: "filter"},
+				{Name: cfg.Server.Interface, Role: "filter", AttachMode: xdpLinks[0].AttachMode},
 			},
 		})
-	}
-
-	// Sync from Controller if configured
-	if cfg.Auth.ControllerURL != "" {
-		log.Printf("Controller configured: %s", cfg.Auth.ControllerURL)
-		syncConfig := sync.SyncConfig{
-			ControllerURL: cfg.Auth.ControllerURL,
-			APIKey:        cfg.Auth.ControllerSyncKey,
-			RetryCount:    3,
-			RetryInterval: 5 * time.Second,
-			Timeout:       10 * time.Second,
-		}
-		controllerSync := sync.NewControllerSync(syncConfig)
-		if err := controllerSync.SyncOnStartup(handlers); err != nil {
-			log.Printf("[Sync] Warning: failed to sync from Controller: %v", err)
-			log.Printf("[Sync] Continuing without initial rules...")
-		}
 	}
 
 	// Setup Gin router
@@ -494,20 +429,14 @@ func main() {
 		rules := protected.Group("/rules")
 		{
 			rules.GET("", handlers.ListRules)
-			rules.POST("", handlers.AddRule)
-			rules.DELETE("/:id", handlers.DeleteRule)
-			rules.POST("/batch", handlers.AddRulesBatch)
-			rules.DELETE("/batch", handlers.DeleteRulesBatch)
+			rules.GET("/hits", handlers.Hits)
+			rules.POST("/commit", handlers.CommitRules)
 		}
 
 		// Whitelist API
 		wl := protected.Group("/whitelist")
 		{
 			wl.GET("", handlers.ListWhitelist)
-			wl.POST("", handlers.AddWhitelist)
-			wl.DELETE("/:id", handlers.DeleteWhitelist)
-			wl.POST("/batch", handlers.AddWhitelistBatch)
-			wl.DELETE("/batch", handlers.DeleteWhitelistBatch)
 		}
 
 		// Sync API (Phase 4.2 atomic sync + Phase 8 whitelist atomic sync)
@@ -519,6 +448,7 @@ func main() {
 
 		// Stats API
 		protected.GET("/stats", handlers.GetStats)
+		protected.GET("/stats/cpu", handlers.GetCPUStats)
 	}
 
 	// Start server
@@ -560,8 +490,8 @@ func logPinResult(label string, r xdropbpf.Result) {
 // stable distro ships a recent-enough kernel. On older kernels the
 // resolver wraps the returned error with ErrLinkPinningUnsupported so
 // operators see the right diagnostic rather than a raw ENOTSUP.
-func resolveLink(xdpProg *ebpf.Program, ifname, pinningMode string) (*xdropbpf.ResolvedXDPLink, error) {
-	return xdropbpf.ResolveXDPLink(xdpProg, ifname, xdropbpf.Mode(pinningMode), xdropbpf.DefaultPinRoot)
+func resolveLink(xdpProg *ebpf.Program, ifname, pinningMode, xdpMode string) (*xdropbpf.ResolvedXDPLink, error) {
+	return xdropbpf.ResolveXDPLink(xdpProg, ifname, xdropbpf.Mode(pinningMode), xdropbpf.XDPMode(xdpMode), xdropbpf.DefaultPinRoot)
 }
 
 // logXDPAttachOutcome emits a structured startup log line describing
@@ -569,20 +499,65 @@ func resolveLink(xdpProg *ebpf.Program, ifname, pinningMode string) (*xdropbpf.R
 // zero-gap path (program swapped in-place on an existing pinned link);
 // "pinned" means fresh attach + newly pinned (zero-gap available on
 // next restart); "unpinned" means the Phase-2-equivalent fallback.
-func logXDPAttachOutcome(ifname, role string, res *xdropbpf.ResolvedXDPLink) {
+func warnXDPFFModes(inbound, outbound string, inRes, outRes *xdropbpf.ResolvedXDPLink) {
+	if inRes.AttachMode != outRes.AttachMode {
+		log.Printf("WARN: FF interfaces have different XDP modes: %s=%s %s=%s", inbound, inRes.AttachMode, outbound, outRes.AttachMode)
+	}
+}
+
+func logXDPAttachOutcome(ifname, role, requested string, res *xdropbpf.ResolvedXDPLink) {
 	switch {
 	case res.Reused:
-		log.Printf("XDP program updated in place on %s (%s, zero-gap link reuse via %s)", ifname, role, res.PinPath)
+		log.Printf("XDP program updated in place on %s (%s, zero-gap link reuse via %s) requested=%s attached=%s", ifname, role, res.PinPath, requested, res.AttachMode)
 	case res.PinPath != "":
-		log.Printf("XDP program attached and pinned on %s (%s, pin=%s)", ifname, role, res.PinPath)
+		log.Printf("XDP program attached and pinned on %s (%s, pin=%s) requested=%s attached=%s", ifname, role, res.PinPath, requested, res.AttachMode)
 	default:
 		reason := res.DowngradeReason
 		if reason == "" {
 			reason = "link pinning disabled"
 		}
-		log.Printf("XDP program attached on %s (%s, unpinned — next restart will have a brief gap; reason: %s)",
-			ifname, role, reason)
+		log.Printf("XDP program attached on %s (%s, unpinned — next restart will have a brief gap; reason: %s) requested=%s attached=%s",
+			ifname, role, reason, requested, res.AttachMode)
 	}
+}
+
+// logBPFLoadFailure logs+exits when a BPF collection fails to load.
+//
+// KERNEL FLOOR — this is the step with the *higher* floor, and it runs
+// before attach. xdp_firewall_main walks its combination loops with the
+// open-coded iterator kfuncs (bpf_iter_num_new / _next / _destroy), which
+// landed in Linux 6.4; earlier verifiers refuse the program. kfunc calls
+// additionally need the BPF JIT — with the JIT disabled, load fails on
+// 6.4+ too. (Until B1 cut 5-4 the documented reason was "subprogram calls
+// mixed with bpf_tail_call" with a 5.10 floor; 5-4 removed main's tail
+// call, and the iterator requirement already applied since M1.)
+//
+// Do not infer the cause from the verifier message alone; this diagnostic
+// names both causes and asks for the version and the sysctl separately.
+//
+// 5.9 IS mentioned below, deliberately, and only as a contrast: an
+// operator who followed the pre-2026-08-20 docs believes 5.9 is the
+// requirement, and deleting the number leaves them unable to place their
+// own situation. What this diagnostic must never do is state 5.9 as the
+// requirement — that was the defect it replaced ("requires Linux 5.9+"
+// printed to someone already running 5.9, pointing them the wrong way).
+func logBPFLoadFailure(which, path string, err error) {
+	log.Fatalf(
+		"Failed to load %s BPF collection from %s: %v\n\n"+
+			"  If this is a verifier rejection, check the kernel floor for\n"+
+			"  *loading* xdrop (higher than the 5.9 floor for XDP attach):\n"+
+			"    >= 6.4 (x86-64 / arm64)\n"+
+			"  xdrop supports little-endian x86-64 and arm64 only.\n"+
+			"  xdp_firewall_main uses open-coded iterator kfuncs (bpf_iter_num_*),\n"+
+			"  added in Linux 6.4; earlier verifiers refuse the program.\n\n"+
+			"  Calling kfuncs also requires the BPF JIT to be enabled. Verify:\n"+
+			"    uname -rm\n"+
+			"    sysctl net.core.bpf_jit_enable   # expect non-zero\n"+
+			"      0 = JIT off | 1 = on | 2 = on with JIT debug output\n"+
+			"  With the JIT off, load fails on 6.4+ as well.\n"+
+			"  NOTE: do not rely on the verifier message alone — check the\n"+
+			"  kernel version and the sysctl separately.",
+		which, path, err)
 }
 
 // logXDPAttachFailure logs+exits for a resolver error. Splits into
@@ -597,11 +572,16 @@ func logXDPAttachOutcome(ifname, role string, res *xdropbpf.ResolvedXDPLink) {
 //     those failures happen on fully-supported modern kernels and the
 //     kernel hint would actively mislead.
 //  3. anything else: generic "attach failed" message.
-func logXDPAttachFailure(ifname string, err error) {
+func logXDPAttachFailure(ifname, requested string, err error) {
+	if requested == "native" && xdropbpf.XDPFailureReason(err) == "xdp_attach_failed" {
+		log.Fatalf("Failed to attach XDP to %s: requested=native: 驱动不支持 native 或驱动故障: %v", ifname, err)
+	}
 	if xdropbpf.IsXDPLinkUnsupported(err) {
 		log.Fatalf(
 			"Failed to attach XDP to %s: %v\n\n"+
-				"  xdrop requires Linux 5.9+ for XDP attach (BPF_LINK_TYPE_XDP).\n"+
+				"  XDP attach via BPF_LINK_TYPE_XDP requires Linux 5.9+. (Note: the\n"+
+				"  BPF program already loaded, and loading needs a HIGHER kernel —\n"+
+				"  >= 6.4 — so a version problem is unlikely here.)\n"+
 				"  The pre-5.9 netlink fallback described in proposal §Phase 4.a is\n"+
 				"  intentionally NOT implemented (AUD-PH2-001 closure). Upgrade the\n"+
 				"  host kernel or hold xdrop on the prior v2.4.2 goebpf-based release.",
@@ -621,43 +601,56 @@ func logXDPAttachFailure(ifname string, err error) {
 	log.Fatalf("Failed to attach XDP to %s: %v", ifname, err)
 }
 
-// setupDevmap configures bidirectional interface mapping. DEVMAP is an
-// array-backed type — all max_entries slots are pre-allocated with empty
-// references, so Update(UpdateExist) succeeds and strictly matches the
-// pre-migration goebpf.Update (BPF_EXIST) semantics per §5.2.
+// setupDevmap writes both DEVMAP_HASH directions before removing obsolete keys.
 func setupDevmap(devmap *ebpf.Map, inboundIdx, outboundIdx int) error {
 	// inbound -> outbound
-	if err := devmap.Update(uint32ToBytes(uint32(inboundIdx)), uint32ToBytes(uint32(outboundIdx)), ebpf.UpdateExist); err != nil {
+	if err := devmap.Update(uint32ToBytes(uint32(inboundIdx)), uint32ToBytes(uint32(outboundIdx)), ebpf.UpdateAny); err != nil {
 		return fmt.Errorf("failed to set devmap[%d]=%d: %w", inboundIdx, outboundIdx, err)
 	}
 
 	// outbound -> inbound
-	if err := devmap.Update(uint32ToBytes(uint32(outboundIdx)), uint32ToBytes(uint32(inboundIdx)), ebpf.UpdateExist); err != nil {
+	if err := devmap.Update(uint32ToBytes(uint32(outboundIdx)), uint32ToBytes(uint32(inboundIdx)), ebpf.UpdateAny); err != nil {
 		return fmt.Errorf("failed to set devmap[%d]=%d: %w", outboundIdx, inboundIdx, err)
 	}
 
+	var key, value uint32
+	var stale []uint32
+	iter := devmap.Iterate()
+	for iter.Next(&key, &value) {
+		if key != uint32(inboundIdx) && key != uint32(outboundIdx) {
+			stale = append(stale, key)
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("iterate devmap: %w", err)
+	}
+	for _, key := range stale {
+		if err := devmap.Delete(key); err != nil {
+			return fmt.Errorf("delete devmap[%d]: %w", key, err)
+		}
+	}
 	return nil
 }
 
-func configureRateLimitDivisor(configA, configB *ebpf.Map) error {
-	divisor := runtime.NumCPU()
-	if divisor < 1 {
-		divisor = 1
+func configureRateLimitDivisor(configA, configB *ebpf.Map, override int) (ratelimit.Snapshot, error) {
+	snapshot, err := ratelimit.Resolve("/sys/devices/system/cpu/online", ebpf.PossibleCPU, override)
+	if err != nil {
+		return snapshot, err
 	}
-
+	if snapshot.Source == "possible" {
+		log.Print("[rate_limit] WARN: online CPU source unavailable or invalid; using possible CPU count")
+	}
 	key := make([]byte, 4)
 	binary.LittleEndian.PutUint32(key, api.ConfigRLCPUDivisor)
 	value := make([]byte, 8)
-	binary.LittleEndian.PutUint64(value, uint64(divisor))
-
+	binary.LittleEndian.PutUint64(value, uint64(snapshot.Divisor))
 	for _, m := range []*ebpf.Map{configA, configB} {
 		if err := m.Update(key, value, ebpf.UpdateExist); err != nil {
-			return fmt.Errorf("failed to set rate-limit CPU divisor: %w", err)
+			return snapshot, fmt.Errorf("failed to set rate-limit CPU divisor: %w", err)
 		}
 	}
-
-	log.Printf("[rate_limit] divisor auto-selected: divisor=%d source=online_cpu", divisor)
-	return nil
+	log.Print(snapshot.LogLine())
+	return snapshot, nil
 }
 
 // configureFastForward sets up fast forward mode in both config maps
@@ -682,8 +675,7 @@ func configureFastForward(configA, configB *ebpf.Map, pair config.InterfacePair,
 	}
 
 	// Write to both config maps so whichever is active sees the values.
-	// Runs AFTER NewHandlers → initDynamicConfig has zeroed both slots
-	// (AUD-PH3-001); these writes overwrite with the real FF values.
+	// Runs before tail/link publication; initDynamicConfig preserves both slots.
 	for _, m := range []*ebpf.Map{configA, configB} {
 		binary.LittleEndian.PutUint32(key, api.ConfigFastForwardEnabled)
 		binary.LittleEndian.PutUint64(value, 1)
@@ -707,4 +699,32 @@ func uint32ToBytes(v uint32) []byte {
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, v)
 	return b
+}
+
+// clearFastForwardSlots owns the traditional-mode reset (AUD-PH3-001).
+func clearFastForwardSlots(configA, configB *ebpf.Map) error {
+	for _, m := range []*ebpf.Map{configA, configB} {
+		for _, slot := range []uint32{api.ConfigFastForwardEnabled, api.ConfigFilterIfindex} {
+			if err := m.Update(slot, uint64(0), ebpf.UpdateExist); err != nil {
+				return fmt.Errorf("clear FF slot %d: %w", slot, err)
+			}
+		}
+	}
+	return nil
+}
+
+// Read the kernel, including attachments inherited from an earlier process.
+func restoreFFInterfaces(pair config.InterfacePair, read func(string) (xdropbpf.XDPAttachment, error), restore func(string) error) error {
+	var errs []error
+	for _, name := range []string{pair.Inbound, pair.Outbound} {
+		state, err := read(name)
+		if err != nil {
+			log.Printf("[main] WARN: XDP readback for %s failed; restoring: %v", name, err)
+		} else if state.Attached != 0 {
+			log.Printf("[main] XDP still attached to %s; skipping interface restore", name)
+			continue
+		}
+		errs = append(errs, restore(name))
+	}
+	return errors.Join(errs...)
 }

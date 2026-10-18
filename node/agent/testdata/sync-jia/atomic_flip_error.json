@@ -1,0 +1,4 @@
+{
+  "status": 500,
+  "body": "{\"added\":1,\"error\":\"failed to flip config selector: update: operation not permitted\",\"failed\":1,\"withdrawal_pending\":false}"
+}

@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"id\":\"w\",\"message\":\"Whitelist entry unchanged (idempotent)\",\"success\":true}"
+}

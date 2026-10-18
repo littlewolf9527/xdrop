@@ -1,557 +1,89 @@
-# XDrop Node Agent — API Reference
+# Node API — protocol 11
 
-[中文文档](API.zh.md)
+## Transport and authentication
 
-Base URL: `http://<node-host>:8080`
+The configured HTTP port defaults to 8080. Use JSON bodies and Content-Type: application/json. Only welcome and health are public. The eight protected routes require `X-API-Key: <node-api-key>` on every request. `auth.node_api_key` is required; empty values (including whitespace) or placeholders reject startup (`config.Config.Validate` in `node/agent/config/config.go`). If called directly with an empty configured key, `api.AuthMiddleware` in `node/agent/api/middleware.go` refuses protected requests with 503. Missing and wrong keys return 401 with error/message fields. Unknown routes return the router plain-text 404.
 
-All API endpoints (except `/` and `/api/v1/health`) require the `X-API-Key` header.
+Controller machine credentials and node API keys are different credentials. The node does not pull policy: the controller sends full rules and whitelist snapshots after startup. These are separate publications, not one transaction.
 
----
+## All routes
 
-## Authentication
+| Method | Path | Authentication | Success |
+|---|---|---|---|
+| GET | / | Public | 200 |
+| GET | /api/v1/health | Public | 200 |
+| GET | /api/v1/rules | Key | 200 |
+| GET | /api/v1/rules/hits | Key | 200 |
+| POST | /api/v1/rules/commit | Key | 200 |
+| GET | /api/v1/whitelist | Key | 200 |
+| POST | /api/v1/sync/atomic | Key | 200 |
+| POST | /api/v1/sync/whitelist | Key | 200 |
+| GET | /api/v1/stats | Key | 200 |
+| GET | /api/v1/stats/cpu | Key | 200 |
 
-Every request to the Node Agent API must include:
+## Welcome and health
 
-```
-X-API-Key: <node_api_key>
-```
+`GET /` has no body and returns `{name:"XDrop Agent",version,sync_protocol:11}`. Source builds use version=dev; the build script injects git describe output. Protocol is independent of that string.
 
-The key is set in `config.yaml` under `auth.node_api_key`.
+Health always returns HTTP 200. Before both full snapshots succeed it returns `{status:"degraded",reason:"awaiting_full_sync",rules_synced,whitelist_synced}`; afterwards `{status:"healthy"}`. Flags are sticky until restart. Atomic sync with rejected items can still set rules_synced; commit does not set it. Startup clears policy/logical state, so health alone is not proof that every requested rule exists.
 
-**Unauthenticated endpoints:**
+## Rule objects and matching
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /` | Welcome / version info |
-| `GET /api/v1/health` | Health check |
+| Fields | Meaning |
+|---|---|
+| id, logical_id | String ID and nonzero uint32 logical ID; unique ownership |
+| src_ip, dst_ip, src_cidr, dst_cidr | Address/prefix strings; exact and prefix fields cannot mix |
+| src_port, dst_port, protocol | uint16 ports; protocol all/tcp/udp/icmp/icmpv6/igmp/gre/esp |
+| action, rate_limit | drop or rate_limit; rate_limit requires positive uint32 packets/s |
+| tcp_flags, pkt_len_min, pkt_len_max | TCP flags; legacy uint16 inclusive length bounds, zero unspecified |
+| ttl, dscp, icmp_type, icmp_code, fragment, pkt_len | Optional condition expressions |
+| match_anomaly | uint8 any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment offset one |
+| comment, stats | Comment is not persisted/read back; stats contains match_count,drop_count,match_bytes,drop_bytes,drop_pps |
 
-**Response `401`** is returned for any missing or invalid key on protected endpoints.
+At least one supported five-tuple dimension is needed. Reject mapped IPv6 spellings and mixed address families. Prefixes normalize to network addresses. Ports must agree with protocol. Conditions in different fields are ANDed; one canonical tuple is one group, with at most four physical candidates and two length spans per candidate. Anomaly conditions require bounded targets; IPv6 cannot use bits 1 or 8.
 
----
+Numeric conditions accept comma-separated values/ranges and optional leading !; domains for ttl/dscp/icmp_type/icmp_code/pkt_len are 0..255/0..63/0..255/0..255/0..65535. Fragment names are nofrag,first,middle,last,frag,nonfirst and need IPv4. ICMP conditions need ICMP/ICMPv6. Rate-limit buckets belong to a logical ID and CPU, using the configured startup divisor rather than one global bucket.
 
-## Common Response Format
+## Read rules and whitelist
 
-All endpoints return JSON. Errors return an appropriate HTTP status code with:
+Rules accepts page (positive, default 1), limit (1..1000, default 50) and case-insensitive search on ID/address/prefix. It returns `{rules,count,pagination:{page,limit,total,pages}}`, ordered by ID; no query still returns only page one. Invalid page/limit and unsupported sort/order/enabled/action parameters return 400 with error. Stats read errors leave zero counters.
 
-```json
-{ "error": "description" }
-```
+Whitelist returns `{entries,count}` without pagination; entries contain id and canonical exact five-tuple fields. Ordering is unspecified. Common 401 errors apply to both routes.
 
----
+## Commit rule groups
 
-## Info & Health
+POST commit accepts `{groups:[{key,rules:[Rule,...]},...]}`. The canonical key has kind=exact/cidr, src_port,dst_port,protocol and present address/prefix fields. All members must have that key. Commit requires explicit IDs and cannot change an existing ID's logical identity. Empty rules deletes that group; undeclared groups remain. Moving a rule requires declaring old and new groups together.
 
-### `GET /`
+Success is `{code:"committed",groups:[{index,result}],receipt:"confirmed"}`; result is created/replaced/deleted/unchanged. receipt=deferred means publication succeeded but reclamation is pending. A no-change response has code=unchanged and no receipt. Errors contain code,error,groups, with optional localized rule/key/capacity details. Read back and reconcile after ambiguous transport or publication failures.
 
-```json
-{
-  "name": "XDrop Agent",
-  "version": "2.7.0",
-  "status": "running",
-  "features": ["ipv4", "ipv6", "rate_limit", "decoder_sugar", "anomaly_match", "whitelist_31combo"]
-}
-```
+## Full rules and whitelist snapshots
 
-### `GET /api/v1/health`
+POST atomic accepts `{rules:[Rule,...]}` and replaces all rules through a shadow generation. Empty or omitted rules clears them. Global preflight conflicts reject publication; ordinary invalid items may be excluded while valid items publish. Success returns `{success,added,failed,rules,cidr_rules,rejected}`; inspect failed/rejected even on HTTP 200. Rejections include id,reason and index when the original ID is empty. Whitelist is unchanged.
 
-```json
-{ "status": "healthy" }
-```
+POST sync/whitelist accepts `{entries:[{id,src_ip?,dst_ip?,src_port?,dst_port?,protocol?},...]}`. Empty or omitted entries clears all whitelist entries. IDs and canonical keys must be unique; the complete input is validated before publishing. Success returns `{total,failed:0}` and sets the whitelist health flag. Malformed/invalid entries return 400, map/configuration failures 500; rules remain unchanged.
 
----
+## Statistics and recent hits
 
-## Rules
+Stats returns packet counters total_packets,dropped_packets,passed_packets,whitelisted_packets,rate_limited_packets,mapped_v6_dropped; byte counters total_bytes,dropped_bytes,passed_bytes; diagnostics cond_row_missing,tailcall_fail; rules_count,whitelist_count; total_pps,dropped_pps,passed_pps; and system,agent_state,xdp_info,capacity. Independent reads are not one atomic snapshot. Bytes count XDP L2 frame length without FCS.
 
-### Rule Object
+Capacity reports blacklist,cidr_blacklist,cond,cidr_cond,whitelist,sv4_cidr_trie,dv4_cidr_trie,sv6_cidr_trie,dv6_cidr_trie,logical_state, each with limit/used. Usage is published in-memory state, not a fresh kernel dump. Pinned counters can survive agent restart, but policy does not; tailcall_fail starts over.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string (UUID) | Rule identifier |
-| `src_ip` | string | Source IPv4/IPv6 (exact match). Mutually exclusive with `src_cidr` |
-| `dst_ip` | string | Destination IPv4/IPv6 (exact match). Mutually exclusive with `dst_cidr` |
-| `src_cidr` | string | Source CIDR prefix, e.g. `10.0.0.0/8`. Mutually exclusive with `src_ip` |
-| `dst_cidr` | string | Destination CIDR prefix. Mutually exclusive with `dst_ip` |
-| `src_port` | integer | Source port. `0` = any |
-| `dst_port` | integer | Destination port. `0` = any |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` (any) |
-| `action` | string | `drop` or `rate_limit` |
-| `rate_limit` | integer | PPS limit. Required (> 0) when `action` is `rate_limit` |
-| `pkt_len_min` | integer | Minimum L3 packet length in bytes. `0` = disabled |
-| `pkt_len_max` | integer | Maximum L3 packet length in bytes. `0` = disabled |
-| `tcp_flags` | string | TCP flags filter (e.g. `SYN`, `SYN,ACK`, `RST`). Requires `protocol=tcp` |
-| `match_anomaly` | integer | **v2.6+.** Anomaly bitmask (`0x01=bad_fragment`, `0x02=invalid`). `0` = legacy no-op. Rules with non-zero `match_anomaly` are processed by `xdp_anomaly_verify` tail-called program |
-| `comment` | string | Free-text note |
-| `stats` | RuleStats | Per-rule match/drop counters (included in list responses) |
+Stats/cpu returns `{per_cpu,rate_limit,divisor_in_map}`; each possible CPU has the original five packet counters. rate_limit has divisor,source,online_cpus,possible_cpus. A failed divisor read still returns 200 with null and divisor_in_map_error; stats read failure returns 500 with code=stats_read_failed. It does not advance global PPS baselines.
 
-### RuleStats Object
+Hits requires since_ns as uint64 and returns `{now_ns,truncated,scanned,hits}`. Rows contain rule_id,logical_id,match_count,drop_count,match_bytes,drop_bytes,last_hit_ns. Timestamps use the Linux monotonic coarse clock, not Unix time. Results filter current owners with last_hit_ns >= since_ns, sort by cumulative drop_count then logical_id, and return at most 10000 rows.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `match_count` | integer | Total packets that matched this rule |
-| `drop_count` | integer | Total packets dropped by this rule |
-| `drop_pps` | float | Current drop rate (packets per second) |
+The candidate snapshot is cached for 2 seconds and concurrent scans coalesce. truncated is true above 10000 filtered rows or at candidate occupancy >=8192. LRU eviction can omit active rules, so rankings may be incomplete. A shared hits token bucket defaults to 20 requests/s and burst 20; excess returns 429 `{error:"rate_limited"}` with Retry-After: 1. Invalid since_ns returns 400, map read failures 500.
 
-**Constraints:**
-- `src_ip` and `src_cidr` are mutually exclusive.
-- `dst_ip` and `dst_cidr` are mutually exclusive.
-- `rate_limit` must be > 0 when `action` is `rate_limit`.
-- At least one matching field should be set (pure packet-length rules may have restrictions).
+## Mutation error codes
 
----
+| Operation | HTTP | Codes / body |
+|---|---|---|
+| Commit | 400 | validation_rejected |
+| Commit | 409 | duplicate_id, duplicate_logical_id, group_undeclared, content_different, cidr_overlap, condition_capacity, table_full |
+| Commit | 500 | quiescence_failed, commit_failed |
+| Atomic | 400 | error (JSON binding) |
+| Atomic | 409 | condition_group_invalid, table_full, duplicate_logical_id, duplicate_id, duplicate_key, cidr_overlap |
+| Atomic | 500 | quiescence_failed or error without code |
+| Whitelist sync | 400 / 500 | error |
 
-### `GET /api/v1/rules`
-
-List rules. Includes per-rule statistics.
-
-**Query parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | — | Page number (≥ 1). If omitted, returns all rules |
-| `limit` | integer | `50` | Results per page. Range: 1–1000 |
-| `search` | string | — | Search across `src_ip`, `dst_ip`, `src_cidr`, `dst_cidr`, `id` |
-
-> `sort`, `order`, `enabled`, and `action` query parameters are not supported on the node and will return `400`.
-
-**Behavior:**
-- If **no pagination parameters**: returns all rules with stats (legacy mode).
-- If **any pagination parameter**: returns a paginated slice with stats.
-
-**Response `200` (paginated):**
-
-```json
-{
-  "rules": [
-    {
-      "id": "uuid",
-      "src_ip": "1.2.3.4",
-      "dst_port": 80,
-      "protocol": "tcp",
-      "action": "drop",
-      "rate_limit": 0,
-      "pkt_len_min": 0,
-      "pkt_len_max": 0,
-      "comment": "",
-      "stats": {
-        "match_count": 10000,
-        "drop_count": 9800,
-        "drop_pps": 120.5
-      }
-    }
-  ],
-  "count": 42,
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 42,
-    "pages": 5
-  }
-}
-```
-
-**Response `200` (full list, no pagination):**
-
-```json
-{
-  "rules": [ { ...Rule + stats } ],
-  "count": 42
-}
-```
-
-**Response `400`:** Invalid parameter or unsupported filter.
-
----
-
-### `GET /api/v1/rules/:id`
-
-Get a single rule by ID.
-
-**Response `200`:** Rule object (without stats).
-
-**Response `404`:** Rule not found.
-
----
-
-### `POST /api/v1/rules`
-
-Add a rule. Triggers AtomicSync (double-buffer config publish).
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | **Yes** | `drop` or `rate_limit` |
-| `rate_limit` | integer | When action=`rate_limit` | PPS limit (> 0) |
-| `id` | string | No | UUID. Auto-generated if omitted |
-| `src_ip` | string | No | Source IP (exact) |
-| `dst_ip` | string | No | Destination IP (exact) |
-| `src_cidr` | string | No | Source CIDR prefix |
-| `dst_cidr` | string | No | Destination CIDR prefix |
-| `src_port` | integer | No | Source port (0 = any) |
-| `dst_port` | integer | No | Destination port (0 = any) |
-| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
-| `pkt_len_min` | integer | No | Min packet length (0 = disabled) |
-| `pkt_len_max` | integer | No | Max packet length (0 = disabled) |
-| `tcp_flags` | string | No | TCP flags filter (e.g. `SYN`, `RST`). Requires `protocol=tcp` |
-| `match_anomaly` | integer | No | **v2.6+.** Anomaly bitmask — `bit0=bad_fragment (0x01)`, `bit1=invalid (0x02)`. `0` = don't check (legacy). Non-zero triggers tail_call dispatch to `xdp_anomaly_verify`. The Node Agent accepts this field directly on sync from the Controller (after the Controller's `decoder` sugar has been expanded — Node never sees a `decoder` field). Anomaly rules must use `action=drop`; `action=rate_limit` with non-zero `match_anomaly` is accepted by the Node (contract boundary is Controller's `normalizeDecoder`) but the dataplane maps it to `XDP_DROP` as a safety net. |
-| `comment` | string | No | Notes |
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "rule_id": "uuid",
-  "message": "Rule added"
-}
-```
-
-**Response `400`:** Validation error (mixed IP/CIDR, invalid action, missing rate_limit, etc.).
-
-**Response `409`:** A rule with the same match key already exists under a different ID.
-
-**Response `500`:** BPF map insertion failed.
-
----
-
-### `DELETE /api/v1/rules/:id`
-
-Delete a rule by ID. Triggers AtomicSync.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "message": "Rule deleted"
-}
-```
-
-**Response `404`:** Rule not found.
-
-**Response `500`:** BPF map deletion failed.
-
----
-
-### `POST /api/v1/rules/batch`
-
-Add multiple rules in one request. A single AtomicSync is performed after all rules are inserted.
-
-**Request body:**
-
-```json
-{
-  "rules": [
-    {
-      "id": "optional-uuid",
-      "src_ip": "1.2.3.4",
-      "dst_port": 80,
-      "protocol": "tcp",
-      "action": "drop"
-    }
-  ]
-}
-```
-
-Each element uses the same fields as `POST /api/v1/rules`.
-
-**Deduplication:** If multiple rules in the batch share the same `id`, the last one wins.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "added": 8,
-  "failed": 2
-}
-```
-
-Partial success is possible. `failed` counts the number of rejected rules.
-
-**Response `400`:** Invalid request body.
-
----
-
-### `DELETE /api/v1/rules/batch`
-
-Delete multiple rules. A single AtomicSync is performed after all deletions.
-
-**Request body:**
-
-```json
-{ "ids": ["uuid1", "uuid2", "uuid3"] }
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "deleted": 3,
-  "failed": 0
-}
-```
-
----
-
-## Whitelist
-
-Whitelist entries are matched before any blacklist rule. A packet matching a whitelist entry is immediately passed (`XDP_PASS`), bypassing all rules.
-
-### Whitelist Entry Object
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string (UUID) | Entry identifier |
-| `src_ip` | string | Source IPv4/IPv6 |
-| `dst_ip` | string | Destination IPv4/IPv6 |
-| `src_port` | integer | Source port (`0` = any) |
-| `dst_port` | integer | Destination port (`0` = any) |
-| `protocol` | string | `tcp`, `udp`, `icmp`, `icmpv6`, or `""` |
-| `comment` | string | Notes |
-
-**Constraints (v2.7.0+, Phase 8):**
-- At least one field must be non-empty/non-zero (all-zero/all-empty entry is rejected).
-- `protocol=all` alone (no IP, no port) is rejected — would whitelist all traffic.
-- Portless protocols (`icmp`, `icmpv6`, `igmp`, `gre`, `esp`) cannot carry `src_port` or `dst_port`.
-- Duplicate five-tuple key is rejected with `409`.
-- Any non-empty subset of the five fields is valid: e.g., `protocol=udp` alone, `dst_port=80+protocol=tcp`, `src_ip+protocol=tcp`, etc. The BPF data path uses 31-combo bitmap-gated lookup.
-
----
-
-### `GET /api/v1/whitelist`
-
-List all whitelist entries.
-
-**Response `200`:**
-
-```json
-{
-  "entries": [ { ...WhitelistEntry } ],
-  "count": 3
-}
-```
-
----
-
-### `POST /api/v1/whitelist`
-
-Add a whitelist entry.
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `src_ip` | string | No | Source IP |
-| `dst_ip` | string | No | Destination IP |
-| `src_port` | integer | No | Source port |
-| `dst_port` | integer | No | Destination port |
-| `protocol` | string | No | `tcp`, `udp`, `icmp`, `icmpv6`, `igmp`, `gre`, `esp`, or `""` |
-| `id` | string | No | UUID. Auto-generated if omitted |
-| `comment` | string | No | Notes |
-
-At least one field must be non-empty/non-zero.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "id": "uuid",
-  "message": "Whitelist entry added"
-}
-```
-
-**Response `400`:** All fields empty (no-op entry); `protocol=all` alone; portless protocol with port fields; invalid field format.
-
-**Response `409`:** Duplicate key already exists under a different ID.
-
-**Response `500`:** BPF map insertion failed.
-
----
-
-### `DELETE /api/v1/whitelist/:id`
-
-Delete a whitelist entry.
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "message": "Whitelist entry deleted"
-}
-```
-
-**Response `404`:** Entry not found.
-
----
-
-### `POST /api/v1/whitelist/batch`
-
-Add multiple whitelist entries. A single BPF update is performed after all entries are inserted.
-
-**Request body:**
-
-```json
-{
-  "entries": [
-    {
-      "src_ip": "10.0.0.1",
-      "comment": "trusted host"
-    }
-  ]
-}
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "added": 5,
-  "failed": 0
-}
-```
-
----
-
-### `DELETE /api/v1/whitelist/batch`
-
-Delete multiple whitelist entries.
-
-**Request body:**
-
-```json
-{ "ids": ["uuid1", "uuid2"] }
-```
-
-**Response `200`:**
-
-```json
-{
-  "success": true,
-  "deleted": 5,
-  "failed": 0
-}
-```
-
----
-
-## Stats
-
-### `GET /api/v1/stats`
-
-Full statistics snapshot. Includes global counters, system metrics, XDP interface info, and internal agent state.
-
-**Response `200`:**
-
-```json
-{
-  "total_packets": 50000000,
-  "dropped_packets": 2500000,
-  "passed_packets": 47000000,
-  "whitelisted_packets": 500000,
-  "rate_limited_packets": 100000,
-  "rules_count": 42,
-  "whitelist_count": 3,
-  "dropped_pps": 1250.5,
-  "passed_pps": 23500.0,
-  "total_pps": 25000.0,
-  "xdp_info": {
-    "mode": "traditional",
-    "interfaces": [
-      { "name": "eth0", "role": "filter" }
-    ]
-  },
-  "system": {
-    "cpu_percent": 12.5,
-    "mem_total_mb": 8192,
-    "mem_used_mb": 1024,
-    "mem_percent": 12.5,
-    "uptime_seconds": 86400,
-    "load_avg_1": 0.8,
-    "load_avg_5": 0.9,
-    "load_avg_15": 1.0
-  },
-  "agent_state": {
-    "exact_rules": 40,
-    "cidr_rules": 2,
-    "whitelist_entries": 3,
-    "active_slot": 1,
-    "rule_map_selector": 0,
-    "tailcall_fail": 0
-  }
-}
-```
-
-**Field descriptions:**
-
-| Field | Description |
-|-------|-------------|
-| `total_packets` | Total packets seen since agent start |
-| `dropped_packets` | Total packets dropped |
-| `passed_packets` | Total packets passed |
-| `whitelisted_packets` | Total packets bypassed via whitelist |
-| `rate_limited_packets` | Total packets rate-limited |
-| `*_pps` | Current rate (packets per second), sampled |
-| `xdp_info.mode` | `traditional` or `fast_forward` |
-| `xdp_info.interfaces` | Attached interfaces with their roles (`filter`, `inbound`, `outbound`) |
-| `system.cpu_percent` | Host CPU utilization (%) |
-| `system.mem_total_mb` | Total host memory (MB) |
-| `system.mem_used_mb` | Used host memory (MB) |
-| `system.uptime_seconds` | Host uptime in seconds |
-| `system.load_avg_1/5/15` | 1/5/15-minute load averages |
-| `agent_state.exact_rules` | Number of exact five-tuple rules in active BPF map |
-| `agent_state.cidr_rules` | Number of CIDR rules in active BPF map |
-| `agent_state.whitelist_entries` | Number of whitelist entries in BPF map |
-| `agent_state.active_slot` | Active config map slot (0 = A, 1 = B) |
-| `agent_state.rule_map_selector` | Active rule map selector (0 = primary, 1 = shadow) |
-| `agent_state.tailcall_fail` | **v2.7.0+.** Sum of `tailcall_fail_stats` per-CPU counters — number of times `xdp_whitelist_gate` failed to tail-call into `xdp_firewall_main`. Non-zero indicates a kernel PROG_ARRAY lookup failure; gate falls open (`XDP_PASS`) on failure. Should always be 0 in normal operation. |
-
----
-
-## Internal Sync
-
-### `POST /api/v1/sync/whitelist` *(v2.7.0+)*
-
-Atomic full whitelist snapshot sync. Used by the Controller FullSync path to atomically replace the entire whitelist on this node using the double-buffer protocol (`DoWhitelistAtomicSync`): writes all entries to the shadow map, flips `CONFIG_WL_MAP_SELECTOR`, then clears the old active map — zero false-drop window. Not intended for direct use; invoke via `POST /api/v1/nodes/:id/sync` on the Controller instead.
-
-**Request body:**
-
-```json
-{
-  "entries": [
-    { "id": "uuid", "src_ip": "", "dst_ip": "", "src_port": 0, "dst_port": 0, "protocol": "udp" }
-  ]
-}
-```
-
-**Response `200`:**
-
-```json
-{ "success": true, "synced": 5 }
-```
-
-**Response `400`:** Invalid entry (unknown combo, duplicate key, etc.).
-
-**Response `500`:** BPF map operation failed.
-
----
-
-## Error Reference
-
-| HTTP Status | Meaning |
-|-------------|---------|
-| `400` | Bad request — invalid or missing fields |
-| `401` | Unauthorized — missing or invalid `X-API-Key` |
-| `404` | Not found |
-| `409` | Conflict — duplicate entry |
-| `500` | Internal error — BPF operation failed |
-
-All error responses include:
-
-```json
-{ "error": "description" }
-```
+Atomic failures also carry added/failed except JSON binding errors. Commit errors carry groups; localized group errors can identify rule_id,undeclared_key,rule_ids,table,excess. Node error shapes differ from the controller error object.

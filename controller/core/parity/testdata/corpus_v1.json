@@ -1,0 +1,1042 @@
+[
+  {
+    "name": "P-af-mapped-src-dotted",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::ffff:10.20.0.1",
+      "action": "drop",
+      "protocol": "tcp"
+    },
+    "tags": [
+      "drift:e"
+    ]
+  },
+  {
+    "name": "P-af-mapped-dst-dotted",
+    "kind": "rule",
+    "input": {
+      "dst_ip": "::ffff:10.20.0.1",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-src-hex",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::ffff:a14:1",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-dst-hex",
+    "kind": "rule",
+    "input": {
+      "dst_ip": "::ffff:a14:1",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-src-expanded",
+    "kind": "rule",
+    "input": {
+      "src_ip": "0:0:0:0:0:ffff:a14:1",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-dst-expanded",
+    "kind": "rule",
+    "input": {
+      "dst_ip": "0:0:0:0:0:ffff:a14:1",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-src-uppercase",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::FFFF:0A14:0001",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-dst-uppercase",
+    "kind": "rule",
+    "input": {
+      "dst_ip": "::FFFF:0A14:0001",
+      "action": "drop",
+      "protocol": "tcp"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-120",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/120"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-120",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/120"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-96",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/96"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-96",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/96"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-104",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/104"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-104",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/104"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-32",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/32"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-32",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/32"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-0120",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/0120"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-0120",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/0120"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-096",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:10.20.0.1/096"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-096",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:10.20.0.1/096"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-src-95",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:0:0/95"
+    }
+  },
+  {
+    "name": "P-af-mapped-cidr-dst-95",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "::ffff:0:0/95"
+    }
+  },
+  {
+    "name": "P-af-mixed-exact",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "dst_ip": "2001:db8::1"
+    }
+  },
+  {
+    "name": "P-af-mixed-cidr",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.0/24",
+      "dst_cidr": "2001:db8::/64"
+    }
+  },
+  {
+    "name": "P-af-mixed-default",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "0.0.0.0/0",
+      "dst_cidr": "2001:db8::/64"
+    }
+  },
+  {
+    "name": "P-af-literal-v6",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::",
+      "dst_ip": "10.20.0.1"
+    }
+  },
+  {
+    "name": "P-af-literal-v4",
+    "kind": "rule",
+    "input": {
+      "src_ip": "0.0.0.0",
+      "dst_ip": "2001:db8::1"
+    }
+  },
+  {
+    "name": "P-af-nonliteral-zero",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::0",
+      "dst_ip": "10.20.0.1"
+    }
+  },
+  {
+    "name": "P-af-positive-default-v6",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::/0"
+    }
+  },
+  {
+    "name": "P-af-positive-unmapped",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "::ffff:0:0:0/96"
+    }
+  },
+  {
+    "name": "P-af-positive-nat64",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "64:ff9b::/96"
+    }
+  },
+  {
+    "name": "P-af-positive-compatible",
+    "kind": "rule",
+    "input": {
+      "src_ip": "::10.20.0.1"
+    }
+  },
+  {
+    "name": "P-anom-01",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 1
+    }
+  },
+  {
+    "name": "P-anom-02",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 2
+    }
+  },
+  {
+    "name": "P-anom-04",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 4
+    },
+    "tags": [
+      "drift:a"
+    ]
+  },
+  {
+    "name": "P-anom-08",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 8
+    }
+  },
+  {
+    "name": "P-anom-0f",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 15
+    }
+  },
+  {
+    "name": "P-anom-10",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 16
+    }
+  },
+  {
+    "name": "P-anom-v6-01",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "match_anomaly": 1
+    }
+  },
+  {
+    "name": "P-anom-v6-08",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "match_anomaly": 8
+    }
+  },
+  {
+    "name": "P-anom-v6-02",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "match_anomaly": 2
+    }
+  },
+  {
+    "name": "P-anom-v6-04",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "match_anomaly": 4
+    }
+  },
+  {
+    "name": "P-anom-unbounded-protocol",
+    "kind": "rule",
+    "input": {
+      "protocol": "tcp",
+      "match_anomaly": 1
+    }
+  },
+  {
+    "name": "P-anom-unbounded-default",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "0.0.0.0/0",
+      "match_anomaly": 1
+    }
+  },
+  {
+    "name": "P-anom-rate",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "match_anomaly": 1,
+      "action": "rate_limit",
+      "rate_limit": 100
+    },
+    "tags": [
+      "drift:c",
+      "drift:d"
+    ]
+  },
+  {
+    "name": "P-anom-flags",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 1,
+      "tcp_flags": "SYN"
+    },
+    "tags": [
+      "drift:b"
+    ]
+  },
+  {
+    "name": "P-anom-08-port",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 8,
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-anom-09-port",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 9,
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-d2-nonfirst-port",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "udp",
+      "dst_port": 53,
+      "fragment": "nonfirst"
+    }
+  },
+  {
+    "name": "P-d2-last-flags",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "fragment": "last",
+      "tcp_flags": "SYN"
+    }
+  },
+  {
+    "name": "P-d2-nonfirst-icmp",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "icmp",
+      "fragment": "nonfirst",
+      "icmp_type": "8"
+    }
+  },
+  {
+    "name": "P-d2-frag-port",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "udp",
+      "dst_port": 53,
+      "fragment": "frag"
+    }
+  },
+  {
+    "name": "P-d2-fragment-v6",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "fragment": "frag"
+    }
+  },
+  {
+    "name": "P-d2-fragment-protocol",
+    "kind": "rule",
+    "input": {
+      "protocol": "udp",
+      "fragment": "frag"
+    }
+  },
+  {
+    "name": "P-act-drop-rate",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "rate_limit": 100
+    },
+    "tags": [
+      "drift:f"
+    ]
+  },
+  {
+    "name": "P-act-zero-rate",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "action": "rate_limit",
+      "rate_limit": 0
+    }
+  },
+  {
+    "name": "P-act-uppercase",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "action": "DROP"
+    }
+  },
+  {
+    "name": "P-act-default",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1"
+    }
+  },
+  {
+    "name": "P-proto-TCP",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "TCP",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-proto-6",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "6",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-proto-gre",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "gre",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-proto-GRE",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "GRE",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-proto-all",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "all",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-cidr-hostbits",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.77/24"
+    }
+  },
+  {
+    "name": "P-cidr-uppercase",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "2001:DB8:ABCD::1/64"
+    }
+  },
+  {
+    "name": "P-cidr-bad-mask",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.1/33"
+    }
+  },
+  {
+    "name": "P-cidr-bare",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.1"
+    }
+  },
+  {
+    "name": "P-cidr-same-end",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.0/24",
+      "src_ip": "10.20.0.1"
+    }
+  },
+  {
+    "name": "P-cidr-cross-v4",
+    "kind": "rule",
+    "input": {
+      "src_cidr": "10.20.0.0/24",
+      "dst_ip": "0.0.0.0"
+    }
+  },
+  {
+    "name": "P-cidr-cross-v6",
+    "kind": "rule",
+    "input": {
+      "dst_cidr": "2001:db8::/64",
+      "src_ip": "::"
+    }
+  },
+  {
+    "name": "P-num-port",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "dst_port": 70000
+    }
+  },
+  {
+    "name": "P-num-anomaly",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "match_anomaly": 256
+    }
+  },
+  {
+    "name": "P-num-rate",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "rate_limit": 4294967296
+    }
+  },
+  {
+    "name": "P-flags-empty-mask",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "udp",
+      "tcp_flags": " , "
+    }
+  },
+  {
+    "name": "P-combo-empty",
+    "kind": "rule",
+    "input": {}
+  },
+  {
+    "name": "P-combo-zeros",
+    "kind": "rule",
+    "input": {
+      "src_ip": "0.0.0.0",
+      "dst_ip": "::"
+    }
+  },
+  {
+    "name": "P-combo-length",
+    "kind": "rule",
+    "input": {
+      "pkt_len": "64"
+    }
+  },
+  {
+    "name": "P-expr-full",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "0-255"
+    }
+  },
+  {
+    "name": "P-expr-empty",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "!0-255"
+    }
+  },
+  {
+    "name": "P-expr-leading-zero",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "05"
+    }
+  },
+  {
+    "name": "P-expr-dscp",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "dscp": "64"
+    }
+  },
+  {
+    "name": "P-expr-normalize",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": " 5,3-4 , 1 "
+    }
+  },
+  {
+    "name": "P-expr-flags",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "tcp_flags": " syn, ,!ack,SYN"
+    }
+  },
+  {
+    "name": "P-expr-contradiction",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "tcp_flags": "SYN,!SYN"
+    }
+  },
+  {
+    "name": "P-expr-icmp-protocol",
+    "kind": "rule",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "icmp_type": "8"
+    }
+  },
+  {
+    "name": "P-expr-icmpv6",
+    "kind": "rule",
+    "input": {
+      "src_ip": "2001:db8::1",
+      "protocol": "icmpv6",
+      "icmp_type": "128"
+    }
+  },
+  {
+    "name": "P-cap-count-4",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "2"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "3"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "4"
+    }
+  },
+  {
+    "name": "P-cap-count-5",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "2"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "3"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "4"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "5"
+    }
+  },
+  {
+    "name": "P-cap-split-3",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "2"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "pkt_len": "100,120,140"
+    }
+  },
+  {
+    "name": "P-cap-split-4",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "2"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "pkt_len": "100,120,140,160"
+    }
+  },
+  {
+    "name": "P-cap-split-5",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      },
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "2"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "pkt_len": "100,120,140,160,180"
+    }
+  },
+  {
+    "name": "P-cap-single-8",
+    "kind": "group",
+    "existing": [],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "pkt_len": "100,120,140,160,180,200,220,240"
+    }
+  },
+  {
+    "name": "P-cap-single-9",
+    "kind": "group",
+    "existing": [],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "pkt_len": "100,120,140,160,180,200,220,240,260"
+    }
+  },
+  {
+    "name": "P-cap-two-ttl",
+    "kind": "group",
+    "existing": [
+      {
+        "src_ip": "10.20.0.1",
+        "protocol": "tcp",
+        "action": "drop",
+        "ttl": "1"
+      }
+    ],
+    "incoming": {
+      "src_ip": "10.20.0.1",
+      "protocol": "tcp",
+      "action": "drop",
+      "ttl": "2"
+    }
+  },
+  {
+    "name": "P-ovl-nested",
+    "kind": "overlap",
+    "existing": [
+      {
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp"
+      }
+    ],
+    "incoming": {
+      "src_cidr": "10.20.0.0/25"
+    }
+  },
+  {
+    "name": "P-ovl-cross",
+    "kind": "overlap",
+    "existing": [
+      {
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp"
+      }
+    ],
+    "incoming": {
+      "dst_cidr": "10.20.0.0/25"
+    }
+  },
+  {
+    "name": "P-ovl-same",
+    "kind": "overlap",
+    "existing": [
+      {
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp"
+      }
+    ],
+    "incoming": {
+      "src_cidr": "10.20.0.0/24",
+      "protocol": "udp"
+    }
+  },
+  {
+    "name": "P-ovl-family",
+    "kind": "overlap",
+    "existing": [
+      {
+        "src_cidr": "10.20.0.0/24",
+        "protocol": "tcp"
+      }
+    ],
+    "incoming": {
+      "src_cidr": "2001:db8::/64"
+    }
+  },
+  {
+    "name": "P-wl-mapped-src",
+    "kind": "whitelist",
+    "input": {
+      "src_ip": "::ffff:10.20.0.1"
+    }
+  },
+  {
+    "name": "P-wl-mapped-dst",
+    "kind": "whitelist",
+    "input": {
+      "dst_ip": "::ffff:10.20.0.1"
+    }
+  },
+  {
+    "name": "P-wl-mixed",
+    "kind": "whitelist",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "dst_ip": "2001:db8::1"
+    }
+  },
+  {
+    "name": "P-wl-empty",
+    "kind": "whitelist",
+    "input": {}
+  },
+  {
+    "name": "P-wl-gre-port",
+    "kind": "whitelist",
+    "input": {
+      "protocol": "gre",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-wl-v4",
+    "kind": "whitelist",
+    "input": {
+      "src_ip": "10.20.0.1",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-wl-v6",
+    "kind": "whitelist",
+    "input": {
+      "src_ip": "2001:DB8::1",
+      "protocol": "tcp",
+      "dst_port": 80
+    }
+  },
+  {
+    "name": "P-wl-wild-port",
+    "kind": "whitelist",
+    "input": {
+      "src_ip": "0.0.0.0",
+      "dst_port": 80
+    }
+  }
+]

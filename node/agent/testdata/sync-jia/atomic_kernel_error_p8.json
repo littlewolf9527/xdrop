@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/YiFailures/atomic_kernel_error_p8": {
+    "status": 500,
+    "body": "{\"added\":0,\"error\":\"write shadow exact rule r: update: operation not permitted\",\"failed\":1}"
+  }
+}

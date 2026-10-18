@@ -71,7 +71,7 @@ func (o *fakeOps) LoadPinned(path string) (XDPLink, error) {
 	return o.loadPinLink, o.loadPinErr
 }
 
-func (o *fakeOps) AttachXDP(prog *ebpf.Program, ifname string) (XDPLink, error) {
+func (o *fakeOps) AttachXDP(prog *ebpf.Program, ifname string, _ XDPMode) (XDPLink, error) {
 	o.attachCalls = append(o.attachCalls, ifname)
 	return o.attachLink, o.attachErr
 }
@@ -91,6 +91,13 @@ func (o *fakeOps) RemovePin(path string) error {
 	o.removedPaths = append(o.removedPaths, path)
 	return o.removePinErr
 }
+
+func (o *fakeOps) ProbeBPFFS(root string) error                 { return probeBPFFS(root) }
+func (o *fakeOps) MkdirAll(path string, mode os.FileMode) error { return os.MkdirAll(path, mode) }
+func (o *fakeOps) ReadXDP(string) (XDPAttachment, error) {
+	return XDPAttachment{Attached: 1, ProgID: 41}, nil
+}
+func (o *fakeOps) ProgramID(*ebpf.Program) (uint32, error) { return 41, nil }
 
 // newBpffsPinRoot creates a tmpdir and — just for the bpffs probe —
 // arranges for probeBPFFS to succeed. Since probeBPFFS uses statfs, we
@@ -130,7 +137,7 @@ func TestResolveXDPLink_Disable_FreshAttachNoPin(t *testing.T) {
 	// Use a tmpdir — we're in disable mode so bpffs probe is never called.
 	pinRoot := t.TempDir()
 
-	res, err := resolveXDPLink(nil, "ens38", ModeDisable, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeDisable, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +171,7 @@ func TestResolveXDPLink_Disable_SweepsStalePin(t *testing.T) {
 	}
 	pinRoot := t.TempDir()
 
-	res, err := resolveXDPLink(nil, "ens38", ModeDisable, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeDisable, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -188,7 +195,7 @@ func TestResolveXDPLink_Disable_AttachErrorSurfaced(t *testing.T) {
 		attachErr: fmt.Errorf("simulated attach error"),
 	}
 	pinRoot := t.TempDir()
-	_, err := resolveXDPLink(nil, "ens38", ModeDisable, pinRoot, ops)
+	_, err := resolveXDPLink(nil, "ens38", ModeDisable, XDPAuto, pinRoot, ops)
 	if err == nil {
 		t.Fatal("expected attach error, got nil")
 	}
@@ -206,7 +213,7 @@ func TestResolveXDPLink_Auto_ReuseViaLoadPinnedAndUpdate(t *testing.T) {
 		statErr:     nil, // pin exists
 		loadPinLink: reused,
 	}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +251,7 @@ func TestResolveXDPLink_Auto_ReuseUpdateFails_FallsThroughToFreshAttach(t *testi
 		loadPinLink: bad,
 		attachLink:  fresh,
 	}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -276,7 +283,7 @@ func TestResolveXDPLink_Auto_LoadPinnedFails_FallsThrough(t *testing.T) {
 		loadPinErr: fmt.Errorf("corrupt pin"),
 		attachLink: fresh,
 	}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,7 +302,7 @@ func TestResolveXDPLink_Auto_NoPinExists_FreshAttachAndPin(t *testing.T) {
 		statErr:    os.ErrNotExist, // no prior pin
 		attachLink: fresh,
 	}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -323,7 +330,7 @@ func TestResolveXDPLink_Auto_PinFails_DowngradesToUnpinned(t *testing.T) {
 		statErr:    os.ErrNotExist,
 		attachLink: fresh,
 	}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, pinRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, pinRoot, ops)
 	if err != nil {
 		t.Fatalf("auto mode should not error on Pin failure: %v", err)
 	}
@@ -348,7 +355,7 @@ func TestResolveXDPLink_Require_PinFails_HardError(t *testing.T) {
 		statErr:    os.ErrNotExist,
 		attachLink: fresh,
 	}
-	_, err := resolveXDPLink(nil, "ens38", ModeRequire, pinRoot, ops)
+	_, err := resolveXDPLink(nil, "ens38", ModeRequire, XDPAuto, pinRoot, ops)
 	if err == nil {
 		t.Fatal("require mode must hard-fail on Pin error")
 	}
@@ -364,7 +371,7 @@ func TestResolveXDPLink_Require_BpffsProbeFails_HardError(t *testing.T) {
 	// Pick a path whose ancestor is deliberately not bpffs (tmpfs /tmp).
 	badRoot := filepath.Join(t.TempDir(), "fake-bpffs")
 	ops := &fakeOps{}
-	_, err := resolveXDPLink(nil, "ens38", ModeRequire, badRoot, ops)
+	_, err := resolveXDPLink(nil, "ens38", ModeRequire, XDPAuto, badRoot, ops)
 	if err == nil {
 		t.Fatal("require mode must hard-fail when bpffs probe fails")
 	}
@@ -380,7 +387,7 @@ func TestResolveXDPLink_Auto_BpffsProbeFails_DowngradeAndAttach(t *testing.T) {
 	badRoot := filepath.Join(t.TempDir(), "fake-bpffs")
 	fresh := &fakeLink{name: "fresh"}
 	ops := &fakeOps{attachLink: fresh}
-	res, err := resolveXDPLink(nil, "ens38", ModeAuto, badRoot, ops)
+	res, err := resolveXDPLink(nil, "ens38", ModeAuto, XDPAuto, badRoot, ops)
 	if err != nil {
 		t.Fatalf("auto mode should downgrade, not error: %v", err)
 	}
@@ -401,7 +408,7 @@ func TestResolveXDPLink_Require_AttachFailsOnPre59Kernel_TaggedError(t *testing.
 		statErr:   os.ErrNotExist,
 		attachErr: ebpf.ErrNotSupported,
 	}
-	_, err := resolveXDPLink(nil, "ens38", ModeRequire, pinRoot, ops)
+	_, err := resolveXDPLink(nil, "ens38", ModeRequire, XDPAuto, pinRoot, ops)
 	if err == nil {
 		t.Fatal("expected AttachXDP failure to surface as error")
 	}

@@ -1,0 +1,29 @@
+--- a/node/bpf/xdrop_main.c
++++ b/node/bpf/xdrop_main.c
+@@ -1497,7 +1497,7 @@
+           stats_inc(STATS_PASSED_PACKETS);
+           stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
+           if (fast_forward) {
+-            return bpf_redirect_map(&devmap, ingress_ifindex, 0);
++            return XDP_PASS;
+           }
+           return XDP_PASS;
+         }
+@@ -1507,7 +1507,7 @@
+           stats_inc(STATS_PASSED_PACKETS);
+           stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
+           if (fast_forward) {
+-            return bpf_redirect_map(&devmap, ingress_ifindex, 0);
++            return XDP_PASS;
+           }
+           return XDP_PASS;
+         }
+@@ -1516,7 +1516,7 @@
+           stats_inc(STATS_PASSED_PACKETS);
+           stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
+           if (fast_forward) {
+-            return bpf_redirect_map(&devmap, ingress_ifindex, 0);
++            return XDP_PASS;
+           }
+           return XDP_PASS;
+         } else {

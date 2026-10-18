@@ -1,0 +1,80 @@
+--- a/node/agent/main.go
++++ b/node/agent/main.go
+@@ -159,38 +159,6 @@
+ 		requireMapFrom(mainColl, "main", "sv6_cidr_trie_b"), requireMapFrom(mainColl, "main", "dv6_cidr_trie_b"))
+ 	log.Println("CIDR manager initialized")
+ 
+-	// FF state must be ready before any new program can receive traffic.
+-	if fastForwardMode {
+-		if devmapMain == nil {
+-			log.Fatal("BPF map 'devmap' not found in main ELF but fast_forward is enabled")
+-		}
+-		pair := cfg.FastForward.Pairs[0]
+-		// Get interface indices
+-		inboundIdx, err := ifmgr.GetInterfaceIndex(pair.Inbound)
+-		if err != nil {
+-			log.Fatalf("Failed to find inbound interface: %v", err)
+-		}
+-		outboundIdx, err := ifmgr.GetInterfaceIndex(pair.Outbound)
+-		if err != nil {
+-			log.Fatalf("Failed to find outbound interface: %v", err)
+-		}
+-		log.Printf("Interface indices: %s=%d, %s=%d", pair.Inbound, inboundIdx, pair.Outbound, outboundIdx)
+-
+-		// Setup devmap: bidirectional mapping
+-		if err := setupDevmap(devmapMain, inboundIdx, outboundIdx); err != nil {
+-			log.Fatalf("Failed to setup devmap: %v", err)
+-		}
+-		log.Printf("Devmap configured: %d <-> %d", inboundIdx, outboundIdx)
+-
+-		// Configure fast forward settings in BPF config map
+-		if err := configureFastForward(configA, configB, pair, inboundIdx, outboundIdx); err != nil {
+-			log.Fatalf("Failed to configure fast forward: %v", err)
+-		}
+-
+-	} else if err := clearFastForwardSlots(configA, configB); err != nil {
+-		log.Fatalf("Failed to clear fast forward: %v", err)
+-	}
+-
+ 	// Phase 8: XDP entry point is xdp_whitelist_gate from gate ELF.
+ 	xdpProg, ok := gateColl.Programs["xdp_whitelist_gate"]
+ 	if !ok || xdpProg == nil {
+@@ -247,6 +215,38 @@
+ 	// detach. See bpf/xdp_link.go.
+ 	var xdpAttachedIfaces []string
+ 	var xdpLinks []*xdropbpf.ResolvedXDPLink
++
++	// FF state must be ready before any new program can receive traffic.
++	if fastForwardMode {
++		if devmapMain == nil {
++			log.Fatal("BPF map 'devmap' not found in main ELF but fast_forward is enabled")
++		}
++		pair := cfg.FastForward.Pairs[0]
++		// Get interface indices
++		inboundIdx, err := ifmgr.GetInterfaceIndex(pair.Inbound)
++		if err != nil {
++			log.Fatalf("Failed to find inbound interface: %v", err)
++		}
++		outboundIdx, err := ifmgr.GetInterfaceIndex(pair.Outbound)
++		if err != nil {
++			log.Fatalf("Failed to find outbound interface: %v", err)
++		}
++		log.Printf("Interface indices: %s=%d, %s=%d", pair.Inbound, inboundIdx, pair.Outbound, outboundIdx)
++
++		// Setup devmap: bidirectional mapping
++		if err := setupDevmap(devmapMain, inboundIdx, outboundIdx); err != nil {
++			log.Fatalf("Failed to setup devmap: %v", err)
++		}
++		log.Printf("Devmap configured: %d <-> %d", inboundIdx, outboundIdx)
++
++		// Configure fast forward settings in BPF config map
++		if err := configureFastForward(configA, configB, pair, inboundIdx, outboundIdx); err != nil {
++			log.Fatalf("Failed to configure fast forward: %v", err)
++		}
++
++	} else if err := clearFastForwardSlots(configA, configB); err != nil {
++		log.Fatalf("Failed to clear fast forward: %v", err)
++	}
+ 
+ 	// Initialize API handlers before XDP attach so the signal handler can call
+ 	// handlers.Shutdown(). NewHandlers only needs BPF map handles; it does not

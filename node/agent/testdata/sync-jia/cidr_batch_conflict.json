@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"added\":0,\"failed\":1,\"results\":[{\"id\":\"other\",\"code\":\"key_occupied\",\"existing_id\":\"r\",\"error\":\"rule key is occupied\"}],\"success\":true,\"withdrawal_pending\":false}"
+}

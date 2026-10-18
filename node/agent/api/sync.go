@@ -1,8 +1,9 @@
-// XDrop Agent - Controller sync path (AtomicSync / AddRuleFromSync / AddWhitelistFromSync)
+// XDrop Agent - Controller push path (AtomicSync / SyncWhitelistHandler)
 package api
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,189 +14,6 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 )
 
-func (h *Handlers) AddRuleFromSync(rule SyncRule) error {
-	// Detect CIDR rule and route to internal CIDR add
-	if rule.SrcCIDR != "" || rule.DstCIDR != "" {
-		return h.addCIDRRuleFromSync(rule)
-	}
-
-	// Convert to internal Rule format
-	req := Rule{
-		ID:           rule.ID,
-		SrcIP:        rule.SrcIP,
-		DstIP:        rule.DstIP,
-		SrcPort:      rule.SrcPort,
-		DstPort:      rule.DstPort,
-		Protocol:     rule.Protocol,
-		Action:       rule.Action,
-		RateLimit:    rule.RateLimit,
-		PktLenMin:    rule.PktLenMin,
-		PktLenMax:    rule.PktLenMax,
-		TcpFlags:     rule.TcpFlags,
-		MatchAnomaly: rule.MatchAnomaly,
-	}
-
-	// Validation is done at Controller level, but do a sanity check
-	if err := validateRule(req.SrcIP, req.DstIP, req.Protocol, req.SrcPort, req.DstPort, req.PktLenMin, req.PktLenMax); err != nil {
-		return fmt.Errorf("invalid rule: %w", err)
-	}
-
-	key, err := h.ruleToKey(req)
-	if err != nil {
-		return fmt.Errorf("failed to convert rule: %w", err)
-	}
-
-	if err := validateComboType(getComboType(key)); err != nil {
-		return fmt.Errorf("rule rejected: %w", err)
-	}
-
-	action, err := parseAction(req.Action)
-	if err != nil {
-		return fmt.Errorf("invalid action: %w", err)
-	}
-
-	// Validate rate_limit consistency
-	if action == ActionRateLimit && req.RateLimit <= 0 {
-		return fmt.Errorf("rate_limit must be > 0 for rate_limit action")
-	}
-	// Anomaly semantic guard
-	if err := validateNodeAnomalyFields(req.MatchAnomaly, req.Action, req.SrcIP, req.DstIP, req.SrcCIDR, req.DstCIDR); err != nil {
-		return err
-	}
-
-	fm, fv, fErr := parseTcpFlags(req.TcpFlags)
-	if fErr != nil {
-		return fmt.Errorf("invalid tcp_flags %q: %w", req.TcpFlags, fErr)
-	}
-	if fm != 0 && parseProtocol(req.Protocol) != ProtoTCP {
-		return fmt.Errorf("tcp_flags requires protocol=tcp")
-	}
-	value := RuleValue{
-		Action:        action,
-		TcpFlagsMask:  fm,
-		TcpFlagsValue: fv,
-		MatchAnomaly:  req.MatchAnomaly,
-		RateLimit:     req.RateLimit,
-		PktLenMin:     req.PktLenMin,
-		PktLenMax:     req.PktLenMax,
-	}
-
-	keyBytes := ruleKeyToBytes(key)
-	valueBytes := ruleValueToBytes(value)
-
-	// Use provided ID or generate new one
-	id := rule.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
-
-	// Double-buffer: BPF Insert + memory update + publish all inside lock
-	h.syncMu.Lock()
-	h.publishMu.Lock()
-	h.rulesMu.Lock()
-	bl := h.activeBlacklist()
-
-	// Duplicate key check: reject if another ID already owns this key
-	if existingID, ok := h.ruleKeyIndex[key]; ok && existingID != id {
-		h.rulesMu.Unlock()
-		h.publishMu.Unlock()
-		h.syncMu.Unlock()
-		return fmt.Errorf("rule key already exists under id %s", existingID)
-	}
-
-	// Check for existing rule with same ID (replacement case)
-	var oldStored *StoredRule
-	countDelta := int64(1)
-	if old, exists := h.rules[id]; exists {
-		oldCopy := old
-		oldStored = &oldCopy
-		countDelta = 0 // replacing, not adding
-	}
-
-	// Step 1: Insert new BPF entry (old entry still intact if different key)
-	if err := bl.Update(keyBytes, valueBytes, ebpf.UpdateNoExist); err != nil {
-		h.rulesMu.Unlock()
-		h.publishMu.Unlock()
-		h.syncMu.Unlock()
-		return fmt.Errorf("BPF insert failed: %w", err)
-	}
-
-	// Step 2: Delete old BPF entry BEFORE publish (hard failure to avoid orphan)
-	if oldStored != nil && oldStored.Key != key {
-		if err := bl.Delete(ruleKeyToBytes(oldStored.Key)); err != nil {
-			if delErr := bl.Delete(keyBytes); delErr != nil {
-				log.Printf("[AddRuleFromSync] WARN: best-effort cleanup of new BPF entry failed during abort: %v", delErr)
-			}
-			h.rulesMu.Unlock()
-			h.publishMu.Unlock()
-			h.syncMu.Unlock()
-			return fmt.Errorf("failed to delete old BPF entry during replacement: %w", err)
-		}
-	}
-
-	// Step 3: Update memory state
-	if oldStored != nil {
-		oldCombo := getComboType(oldStored.Key)
-		if oldCombo >= 0 && oldCombo < 64 {
-			h.comboRefCount[oldCombo]--
-		}
-		delete(h.ruleKeyIndex, oldStored.Key)
-	}
-	comboType := getComboType(key)
-	if comboType >= 0 && comboType < 64 {
-		h.comboRefCount[comboType]++
-	}
-	h.rules[id] = StoredRule{
-		Key:          key,
-		Action:       req.Action,
-		RateLimit:    req.RateLimit,
-		PktLenMin:    req.PktLenMin,
-		PktLenMax:    req.PktLenMax,
-		TcpFlags:     req.TcpFlags,
-		MatchAnomaly: req.MatchAnomaly,
-	}
-	h.ruleKeyIndex[key] = id
-
-	// Step 4: Publish config
-	if err := h.publishConfigUpdate(countDelta, 0, 0); err != nil {
-		// Strong failure: rollback memory + BPF
-		if delErr := bl.Delete(keyBytes); delErr != nil {
-			log.Printf("[AddRuleFromSync] WARN: best-effort rollback delete of new BPF entry failed: %v", delErr)
-		}
-		if comboType >= 0 && comboType < 64 {
-			h.comboRefCount[comboType]--
-		}
-		delete(h.ruleKeyIndex, key)
-		delete(h.rules, id)
-		// Restore old state if replacement
-		if oldStored != nil {
-			oldCombo := getComboType(oldStored.Key)
-			if oldCombo >= 0 && oldCombo < 64 {
-				h.comboRefCount[oldCombo]++
-			}
-			h.rules[id] = *oldStored
-			h.ruleKeyIndex[oldStored.Key] = id
-			// Re-insert old BPF entry if it was deleted (best-effort restore)
-			if oldStored.Key != key {
-				oldValue := ruleValueFromStored(*oldStored) // AUD-008
-				if insErr := bl.Update(ruleKeyToBytes(oldStored.Key), ruleValueToBytes(oldValue), ebpf.UpdateNoExist); insErr != nil {
-					log.Printf("[AddRuleFromSync] WARN: best-effort rollback re-insert of old BPF entry failed: %v", insErr)
-				}
-			}
-		}
-		h.rulesMu.Unlock()
-		h.publishMu.Unlock()
-		h.syncMu.Unlock()
-		return fmt.Errorf("config publish failed: %w", err)
-	}
-
-	h.rulesMu.Unlock()
-	h.publishMu.Unlock()
-	h.syncMu.Unlock()
-
-	return nil
-}
-
 // AtomicSync performs zero-gap full sync of blacklist rules using dual rule maps.
 // POST /api/v1/sync/atomic — only syncs blacklist rules (exact + CIDR), not whitelist.
 // Whitelist must be synced separately before calling this endpoint.
@@ -204,13 +22,57 @@ func (h *Handlers) AtomicSync(c *gin.Context) {
 		Rules []Rule `json:"rules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		h.ruleJSON(c, http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	result, err := h.DoAtomicSync(req.Rules)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		var group *atomicConditionGroupError
+		if errors.As(err, &group) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{"code": "condition_group_invalid", "error": group.Error(), "key": group.Key, "conflicts": group.Conflicts, "added": result.Added, "failed": result.Failed})
+			return
+		}
+		var full *logicalTableFullError
+		if errors.As(err, &full) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{"code": "table_full", "error": full.Error(), "added": result.Added, "failed": result.Failed})
+			return
+		}
+		var logical *atomicDuplicateLogicalIDError
+		if errors.As(err, &logical) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{"code": "duplicate_logical_id", "error": err.Error(), "logical_id": logical.LogicalID, "conflicts": logical.Conflicts, "added": result.Added, "failed": result.Failed})
+			return
+		}
+		if errors.Is(err, errQuiescence) {
+			h.ruleJSON(c, http.StatusInternalServerError, gin.H{"code": "quiescence_failed", "error": err.Error(), "added": result.Added, "failed": result.Failed})
+			return
+		}
+		var duplicateID *atomicDuplicateIDError
+		if errors.As(err, &duplicateID) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{
+				"code": "duplicate_id", "error": duplicateID.Error(),
+				"conflicts": duplicateID.Conflicts, "added": result.Added, "failed": result.Failed,
+			})
+			return
+		}
+		var duplicate *atomicDuplicateKeyError
+		if errors.As(err, &duplicate) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{
+				"code": "duplicate_key", "error": duplicate.Error(),
+				"conflicts": duplicate.Conflicts, "added": result.Added, "failed": result.Failed,
+			})
+			return
+		}
+		var nested *atomicNestedCIDRError
+		if errors.As(err, &nested) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{
+				"code": "cidr_overlap", "error": nested.Error(), "direction": nested.Direction,
+				"conflicts": nested.Conflicts, "prefixes": nested.Prefixes,
+				"added": result.Added, "failed": result.Failed,
+			})
+			return
+		}
+		h.ruleJSON(c, http.StatusInternalServerError, gin.H{
 			"error":  err.Error(),
 			"added":  result.Added,
 			"failed": result.Failed,
@@ -218,16 +80,63 @@ func (h *Handlers) AtomicSync(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	h.rulesSynced.Store(true)
+	h.ruleJSON(c, http.StatusOK, gin.H{
 		"success":    true,
 		"added":      result.Added,
 		"failed":     result.Failed,
 		"rules":      result.ExactRules,
 		"cidr_rules": result.CIDRRules,
+		"rejected":   result.Rejected,
 	})
 }
 
-// DoAtomicSync is the core atomic sync logic — callable from both the HTTP handler and SyncOnStartup.
+type atomicRuleIdentity struct {
+	ID    string `json:"id"`
+	Index *int   `json:"index,omitempty"`
+}
+
+func (r atomicRuleIdentity) String() string {
+	if r.Index != nil {
+		return fmt.Sprintf("rule at index %d (empty ID)", *r.Index)
+	}
+	return fmt.Sprintf("rule ID %q", r.ID)
+}
+
+type atomicDuplicateKeyError struct {
+	Conflicts [2]atomicRuleIdentity
+}
+
+func (e *atomicDuplicateKeyError) Error() string {
+	return fmt.Sprintf("duplicate key between %s and %s; batch not published", e.Conflicts[0], e.Conflicts[1])
+}
+
+type atomicDuplicateIDError struct {
+	Conflicts [2]atomicRuleIdentity
+}
+
+type atomicNestedCIDRError struct {
+	Direction string
+	Conflicts [2]atomicRuleIdentity
+	Prefixes  [2]string
+}
+
+func (e *atomicNestedCIDRError) Error() string {
+	return fmt.Sprintf("%s_cidr overlap: %s (%s) contains %s (%s) (strict containment); batch not published",
+		e.Direction, e.Conflicts[0], e.Prefixes[0], e.Conflicts[1], e.Prefixes[1])
+}
+
+func (e *atomicDuplicateIDError) Error() string {
+	return fmt.Sprintf("duplicate ID %q at index %d and index %d; batch not published",
+		e.Conflicts[0].ID, *e.Conflicts[0].Index, *e.Conflicts[1].Index)
+}
+
+// Fixed stage: shadow config 3b is complete, and no new prefix is published.
+// Production leaves this nil.
+var cidrBeforeAtomicPublishTestHook func(*Handlers)
+var atomicMemoTestHook func(**atomicMemo)
+
+// DoAtomicSync is the core atomic sync logic — called by the HTTP full-snapshot handler.
 // It acquires syncMu and publishMu internally.
 func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	h.syncMu.Lock()
@@ -236,12 +145,52 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	h.publishMu.Lock()
 	defer h.publishMu.Unlock()
 
-	shadow := h.shadowBlacklist()
-	cidrShadow := h.shadowCidrBlacklist()
+	memo := &atomicMemo{cidrs: make(map[string]atomicCIDRParse), prepared: make(map[int]atomicPreparation)}
+	if atomicMemoTestHook != nil {
+		atomicMemoTestHook(&memo)
+	}
 
-	// --- Step 1: Clear shadow rule maps ---
-	clearMap(shadow)
-	clearMap(cidrShadow)
+	// Preflight must precede any business mutation: duplicate IDs change no state.
+	seenIDs := make(map[string]int, len(rules))
+	for index, rule := range rules {
+		if rule.ID == "" {
+			continue // Each empty ID is generated independently during construction.
+		}
+		if first, exists := seenIDs[rule.ID]; exists {
+			second := index
+			return AtomicSyncResult{Failed: 1}, &atomicDuplicateIDError{Conflicts: [2]atomicRuleIdentity{
+				{ID: rule.ID, Index: &first}, {ID: rule.ID, Index: &second},
+			}}
+		}
+		seenIDs[rule.ID] = index
+	}
+
+	if err := checkAtomicLogicalIDs(rules); err != nil {
+		return AtomicSyncResult{Failed: 1}, err
+	}
+
+	groups, err := h.preflightAtomicConditions(rules, memo)
+	if err != nil {
+		return AtomicSyncResult{Failed: 1}, err
+	}
+	logicalUsed, err := h.admitAtomicLogicalUsage(rules, memo)
+	if err != nil {
+		return AtomicSyncResult{Failed: 1}, err
+	}
+	// Payment follows all business writes and precedes unlock, including exits
+	// after a published generation whose regular R5c reclamation was deferred.
+	defer func() { h.rulesMu.Lock(); h.maybePayLogicalLocked(); h.rulesMu.Unlock() }()
+
+	// R0 must precede any reuse, including Step 3a's opposite config slot.
+	if !h.quiescenceConfirmed {
+		if err := h.awaitQuiescence(); err != nil {
+			return AtomicSyncResult{}, fmt.Errorf("%w: %v", errQuiescence, err)
+		}
+	}
+	beforePrefixes := h.cidrMgr.Snapshot([2][]string{})
+	shadowSlot := 1 - int(h.activeRuleSlot.Load())
+	shadow := h.mirrorTable(shadowSlot, mirrorExact)
+	cidrShadow := h.mirrorTable(shadowSlot, mirrorCIDR)
 
 	// --- Step 2: Write all rules to shadow maps ---
 	var shadowCombo [64]int
@@ -250,260 +199,255 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	var shadowCidrCount int64
 	newRules := make(map[string]StoredRule)
 	newCidrRules := make(map[string]StoredCIDRRule)
-	newRuleKeyIndex := make(map[RuleKey]string)
-	newCidrRuleKeyIndex := make(map[CIDRRuleKey]string)
+	newRuleKeyIndex := make(map[RuleKey]ruleIDSet)
+	newCidrRuleKeyIndex := make(map[CIDRRuleKey]ruleIDSet)
+	exactPositions := make(map[RuleKey]int)
+	cidrPositions := make(map[CIDRRuleKey]int)
+	batchPrefixes := []struct {
+		direction string
+		first     map[string]int
+		prefixes  []cidr.PrefixIndex
+	}{
+		{direction: "src", first: make(map[string]int)},
+		{direction: "dst", first: make(map[string]int)},
+	}
+	recordPrefixes := func(src, dst string, index int) {
+		for direction, prefix := range []string{src, dst} {
+			if prefix == "" {
+				continue
+			}
+			set := &batchPrefixes[direction]
+			if _, exists := set.first[prefix]; exists {
+				continue
+			}
+			set.first[prefix] = index
+			set.prefixes = append(set.prefixes, cidr.PrefixIndex{Prefix: prefix, Index: index})
+		}
+	}
+	duplicateKey := func(first, second int) error {
+		e := &atomicDuplicateKeyError{}
+		for i, index := range []int{first, second} {
+			e.Conflicts[i].ID = rules[index].ID
+			if rules[index].ID == "" {
+				position := index
+				e.Conflicts[i].Index = &position
+			}
+		}
+		return e
+	}
 
 	added := 0
-	failed := 0
+	rejected := make([]AtomicSyncRejection, 0)
+	reject := func(index int, rule Rule, reason string) {
+		item := AtomicSyncRejection{ID: rule.ID, Reason: reason}
+		if rule.ID == "" {
+			item.Index = &index
+		}
+		rejected = append(rejected, item)
+	}
+	// Each successful reservation has one matching borrow, including shared IDs.
+	release := func(src, dst string) {
+		if src != "" {
+			if err := h.cidrMgr.UndoSrcReservation(src); err != nil {
+				log.Printf("[AtomicSync rollback] CIDR reference release: %v", err)
+			}
+		}
+		if dst != "" {
+			if err := h.cidrMgr.UndoDstReservation(dst); err != nil {
+				log.Printf("[AtomicSync rollback] CIDR reference release: %v", err)
+			}
+		}
+	}
+	abort := func(err error) (AtomicSyncResult, error) {
+		h.cidrMgr.Invalidate(1 - int(h.activeRuleSlot.Load()))
+		for _, stored := range newCidrRules {
+			release(stored.SrcCIDR, stored.DstCIDR)
+		}
+		return AtomicSyncResult{Added: added, Failed: len(rejected) + 1, Rejected: rejected}, err
+	}
 
-	// Save old CIDR rules — their IDs will be released AFTER the flip
-	// to avoid destroying active trie entries during shadow build.
+	// Step 1 invalidates the mirror before any shadow mutation, including aborts.
+	h.mirrorReady = false
+	h.observeAtomicStage("1")
+	have, err := h.prepareAtomicShadow(h.atomicKeepKeys(rules, groups, memo))
+	if err != nil {
+		return abort(err)
+	}
+
+	wantRows := newAtomicTableRows()
+
+	// Old CIDR references remain alive until the new rule generation is active.
 	h.rulesMu.Lock()
 	oldCidrRules := h.cidrRules
 	h.rulesMu.Unlock()
 
-	for _, r := range rules {
-		hasCIDR := r.SrcCIDR != "" || r.DstCIDR != ""
-		hasExactIP := r.SrcIP != "" || r.DstIP != ""
-
-		if hasCIDR && hasExactIP {
-			failed++
+	for index, original := range rules {
+		g := groups[index]
+		if g != nil && g.Condition && g.Indexes[0] != index {
 			continue
 		}
-
-		id := r.ID
-		if id == "" {
-			id = uuid.New().String()
-		}
-
-		action, err := parseAction(r.Action)
-		if err != nil {
-			failed++
-			continue
-		}
-		if action == ActionRateLimit && r.RateLimit <= 0 {
-			failed++
-			continue
-		}
-
-		if hasCIDR {
-			// --- CIDR rule ---
-			var srcCIDR, dstCIDR string
-			if r.SrcCIDR != "" {
-				srcCIDR, err = cidr.NormalizeCIDR(r.SrcCIDR)
-				if err != nil {
-					failed++
-					continue
-				}
-			}
-			if r.DstCIDR != "" {
-				dstCIDR, err = cidr.NormalizeCIDR(r.DstCIDR)
-				if err != nil {
-					failed++
-					continue
-				}
-			}
-
-			// Validate tcp_flags + protocol + anomaly semantics BEFORE CIDR allocation
-			// so a rejection here does not leave freshly-allocated trie IDs leaked.
-			cfm, cfv, cfErr := parseTcpFlags(r.TcpFlags)
-			if cfErr != nil {
-				failed++
-				continue
-			}
-			if cfm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
-				failed++
-				continue
-			}
-			if err := validateNodeAnomalyFields(r.MatchAnomaly, r.Action, r.SrcIP, r.DstIP, r.SrcCIDR, r.DstCIDR); err != nil {
-				log.Printf("[AtomicSync] CIDR rule %s anomaly guard rejected: %v", id, err)
-				failed++
-				continue
-			}
-			// B-10 (rev11 codex round 9 P2): portless+port guard for CIDR
-			// AtomicSync path. Rejected items count toward `failed` so the
-			// Controller's DiffSync dual-failure contract sees the reject.
-			if err := validatePortProtocolCompatNode(r.Protocol, r.SrcPort, r.DstPort); err != nil {
-				log.Printf("[AtomicSync] CIDR rule %s portless+port rejected: %v", id, err)
-				failed++
-				continue
-			}
-
-			// Allocate CIDR IDs (overlap check skipped for atomic sync — full replacement)
-			var srcID, dstID uint32
-			if srcCIDR != "" {
-				srcID, err = h.cidrMgr.AllocSrcID(srcCIDR)
-				if err != nil {
-					failed++
-					continue
-				}
-			}
-			if dstCIDR != "" {
-				dstID, err = h.cidrMgr.AllocDstID(dstCIDR)
-				if err != nil {
-					if srcCIDR != "" {
-						h.cidrMgr.ReleaseSrcID(srcCIDR)
-					}
-					failed++
-					continue
-				}
-			}
-
-			ck := CIDRRuleKey{
-				SrcID:    srcID,
-				DstID:    dstID,
-				SrcPort:  htons(r.SrcPort),
-				DstPort:  htons(r.DstPort),
-				Protocol: parseProtocol(r.Protocol),
-			}
-
-			if err := validateComboType(getCIDRComboType(ck)); err != nil {
-				if srcCIDR != "" {
-					h.cidrMgr.ReleaseSrcID(srcCIDR)
-				}
-				if dstCIDR != "" {
-					h.cidrMgr.ReleaseDstID(dstCIDR)
-				}
-				log.Printf("[AtomicSync] CIDR rule %s rejected: %v", id, err)
-				failed++
-				continue
-			}
-			value := RuleValue{
-				Action:        action,
-				TcpFlagsMask:  cfm,
-				TcpFlagsValue: cfv,
-				MatchAnomaly:  r.MatchAnomaly,
-				RateLimit:     r.RateLimit,
-				PktLenMin:     r.PktLenMin,
-				PktLenMax:     r.PktLenMax,
-			}
-
-			if err := cidrShadow.Update(cidrRuleKeyToBytes(ck), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
-				if srcCIDR != "" {
-					h.cidrMgr.ReleaseSrcID(srcCIDR)
-				}
-				if dstCIDR != "" {
-					h.cidrMgr.ReleaseDstID(dstCIDR)
-				}
-				failed++
-				continue
-			}
-
-			comboType := getCIDRComboType(ck)
-			if comboType >= 0 && comboType < 64 {
-				shadowCidrCombo[comboType]++
-			}
-			shadowCidrCount++
-			newCidrRules[id] = StoredCIDRRule{
-				Key:          ck,
-				SrcCIDR:      srcCIDR,
-				DstCIDR:      dstCIDR,
-				Action:       r.Action,
-				RateLimit:    r.RateLimit,
-				PktLenMin:    r.PktLenMin,
-				PktLenMax:    r.PktLenMax,
-				TcpFlags:     r.TcpFlags,
-				MatchAnomaly: r.MatchAnomaly,
-			}
-			newCidrRuleKeyIndex[ck] = id
-			added++
+		var members []atomicPreparedRule
+		if g != nil && g.Condition {
+			members = g.Members
 		} else {
-			// --- Exact rule ---
-			if err := validateRule(r.SrcIP, r.DstIP, r.Protocol, r.SrcPort, r.DstPort, r.PktLenMin, r.PktLenMax); err != nil {
-				failed++
-				continue
-			}
-			if err := validateNodeAnomalyFields(r.MatchAnomaly, r.Action, r.SrcIP, r.DstIP, r.SrcCIDR, r.DstCIDR); err != nil {
-				log.Printf("[AtomicSync] rule %s anomaly guard rejected: %v", id, err)
-				failed++
-				continue
-			}
-
-			key, err := h.ruleToKey(r)
+			prepared, err := h.prepareAtomicAt(original, index, memo)
 			if err != nil {
-				failed++
+				reject(index, original, err.Error())
 				continue
 			}
-
-			if err := validateComboType(getComboType(key)); err != nil {
-				log.Printf("[AtomicSync] rule %s rejected: %v", id, err)
-				failed++
+			if err := validateLogicalID(prepared.Rule.LogicalID); err != nil {
+				reject(index, original, err.Error())
 				continue
 			}
-
-			efm, efv, efErr := parseTcpFlags(r.TcpFlags)
-			if efErr != nil {
-				failed++
-				continue
+			if prepared.Rule.ID == "" {
+				prepared.Rule.ID = uuid.NewString()
 			}
-			if efm != 0 && parseProtocol(r.Protocol) != ProtoTCP {
-				failed++
-				continue
+			members = []atomicPreparedRule{prepared}
+		}
+		first := members[0]
+		value := first.Value
+		conditional := g != nil && g.Condition
+		if conditional {
+			value.Pad2[0] = RuleHasConditions
+			value.Action, value.RateLimit = g.Row.Action[0], g.Row.Rate[0]
+			value.LogicalID = g.Row.RuleID[0]
+		}
+		failure := func(err error) error {
+			if conditional {
+				return conditionGroupFailure(g, rules, err.Error())
 			}
-			value := RuleValue{
-				Action:        action,
-				TcpFlagsMask:  efm,
-				TcpFlagsValue: efv,
-				MatchAnomaly:  r.MatchAnomaly,
-				RateLimit:     r.RateLimit,
-				PktLenMin:     r.PktLenMin,
-				PktLenMax:     r.PktLenMax,
+			return err
+		}
+		if first.IsCIDR {
+			// Preserve a borrow for every logical member, including shared IDs.
+			var reserved []atomicPreparedRule
+			undoReserved := func() {
+				for _, p := range reserved {
+					release(p.Rule.SrcCIDR, p.Rule.DstCIDR)
+				}
 			}
-
-			if err := shadow.Update(ruleKeyToBytes(key), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
-				failed++
-				continue
+			for _, prepared := range members {
+				r := prepared.Rule
+				var srcID, dstID uint32
+				if r.SrcCIDR != "" {
+					var err error
+					srcID, err = h.cidrMgr.ReserveSrcID(r.SrcCIDR)
+					if err != nil {
+						undoReserved()
+						return abort(failure(fmt.Errorf("allocate src CIDR for rule %s: %w", r.ID, err)))
+					}
+				}
+				if r.DstCIDR != "" {
+					var err error
+					dstID, err = h.cidrMgr.ReserveDstID(r.DstCIDR)
+					if err != nil {
+						release(r.SrcCIDR, "")
+						undoReserved()
+						return abort(failure(fmt.Errorf("allocate dst CIDR for rule %s: %w", r.ID, err)))
+					}
+				}
+				prepared.CIDR.SrcID, prepared.CIDR.DstID = srcID, dstID
+				reserved = append(reserved, prepared)
 			}
-
-			comboType := getComboType(key)
-			if comboType >= 0 && comboType < 64 {
-				shadowCombo[comboType]++
+			ck := reserved[0].CIDR
+			for _, prepared := range reserved {
+				identity, err := h.classifyRuleKey(prepared.Rule, memo)
+				if prepared.CIDR != ck || err != nil || (conditional && identity != g.Key) {
+					undoReserved()
+					return abort(failure(fmt.Errorf("CIDR group identity changed after reservation")))
+				}
 			}
+			if previous, exists := cidrPositions[ck]; exists {
+				undoReserved()
+				return abort(duplicateKey(previous, index))
+			}
+			if conditional {
+				if err := atomicWriteRow(h.mirrorTable(shadowSlot, mirrorCIDRCondition), have[mirrorCIDRCondition], wantRows[mirrorCIDRCondition], cidrRuleKeyToBytes(ck), conditionValueToBytes(g.Row), ebpf.UpdateNoExist); err != nil {
+					undoReserved()
+					return abort(failure(fmt.Errorf("write shadow CIDR condition: %w", err)))
+				}
+				h.observeAtomicStage("2-cidr-condition")
+			}
+			if err := atomicWriteRow(cidrShadow, have[mirrorCIDR], wantRows[mirrorCIDR], cidrRuleKeyToBytes(ck), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
+				undoReserved()
+				return abort(failure(fmt.Errorf("write shadow CIDR rule %s: %w", original.ID, err)))
+			}
+			if conditional {
+				h.observeAtomicStage("2-cidr-rule")
+			}
+			shadowCidrCombo[getCIDRComboType(ck)]++
+			shadowCidrCount++
+			for _, prepared := range reserved {
+				r := prepared.Rule
+				newCidrRules[r.ID] = ruleToStoredCIDR(ck, r.SrcCIDR, r.DstCIDR, r)
+				addRuleID(newCidrRuleKeyIndex, ck, r.ID)
+				added++
+			}
+			recordPrefixes(first.Rule.SrcCIDR, first.Rule.DstCIDR, index)
+			cidrPositions[ck] = index
+		} else {
+			key := first.Exact
+			for _, prepared := range members {
+				if prepared.Exact != key {
+					return abort(failure(fmt.Errorf("exact group identity changed after normalization")))
+				}
+			}
+			if previous, exists := exactPositions[key]; exists {
+				return abort(duplicateKey(previous, index))
+			}
+			if conditional {
+				if err := atomicWriteRow(h.mirrorTable(shadowSlot, mirrorCondition), have[mirrorCondition], wantRows[mirrorCondition], ruleKeyToBytes(key), conditionValueToBytes(g.Row), ebpf.UpdateNoExist); err != nil {
+					return abort(failure(fmt.Errorf("write shadow exact condition: %w", err)))
+				}
+				h.observeAtomicStage("2-exact-condition")
+			}
+			if err := atomicWriteRow(shadow, have[mirrorExact], wantRows[mirrorExact], ruleKeyToBytes(key), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
+				return abort(failure(fmt.Errorf("write shadow exact rule %s: %w", original.ID, err)))
+			}
+			if conditional {
+				h.observeAtomicStage("2-exact-rule")
+			}
+			shadowCombo[getComboType(key)]++
 			shadowRuleCount++
-			newRules[id] = StoredRule{
-				Key:          key,
-				Action:       r.Action,
-				RateLimit:    r.RateLimit,
-				PktLenMin:    r.PktLenMin,
-				PktLenMax:    r.PktLenMax,
-				TcpFlags:     r.TcpFlags,
-				MatchAnomaly: r.MatchAnomaly,
+			for _, prepared := range members {
+				r := prepared.Rule
+				newRules[r.ID] = ruleToStored(key, r)
+				addRuleID(newRuleKeyIndex, key, r.ID)
+				added++
 			}
-			newRuleKeyIndex[key] = id
-			added++
+			exactPositions[key] = index
 		}
 	}
 
-	// --- Fail-fast: abort if any rule failed (don't publish partial rule set) ---
-	if failed > 0 {
-		// Release any CIDR IDs we allocated for the shadow (they're orphaned now)
-		for _, stored := range newCidrRules {
-			if stored.SrcCIDR != "" {
-				h.cidrMgr.ReleaseSrcID(stored.SrcCIDR)
+	// Only accepted prefixes participate; source conflicts take precedence.
+	for _, set := range batchPrefixes {
+		container, contained, found := cidr.FindNested(set.prefixes)
+		if found {
+			e := &atomicNestedCIDRError{Direction: set.direction}
+			for i, entry := range []cidr.PrefixIndex{container, contained} {
+				e.Prefixes[i] = entry.Prefix
+				e.Conflicts[i].ID = rules[entry.Index].ID
+				if rules[entry.Index].ID == "" {
+					position := entry.Index
+					e.Conflicts[i].Index = &position
+				}
 			}
-			if stored.DstCIDR != "" {
-				h.cidrMgr.ReleaseDstID(stored.DstCIDR)
-			}
+			return abort(e)
 		}
-		// Shadow maps contain partial data but won't be read (no flip).
-		// Next AtomicSync will clearMap() them before use.
-		log.Printf("[AtomicSync] Aborted: %d rules failed, %d succeeded — no flip", failed, added)
-		return AtomicSyncResult{Added: added, Failed: failed},
-			fmt.Errorf("atomic sync aborted: %d rules failed", failed)
 	}
 
-	// --- Step 3: Build shadow config and flip ---
-	// 3a. Copy active config → shadow config (preserve fast_forward, filter_ifindex, whitelist_count, etc.)
-	activeConf := h.activeMap()
-	shadowConf := h.shadowMap()
+	// Step 3a: copy every active config slot; either syscall error aborts.
+	h.observeAtomicStage("3a")
+	shadowConf, activeConf, selector := h.configPublishTables()
 	for i := uint32(0); i < ConfigMapEntries; i++ {
 		key := make([]byte, 4)
 		binary.LittleEndian.PutUint32(key, i)
 		var value [8]byte
-		if err := activeConf.Lookup(key, &value); err == nil {
-			// shadowConf is an ARRAY map → Update(UpdateExist) is the
-			// strict §5.2 translation of the prior goebpf.Update call.
-			shadowConf.Update(key, value[:], ebpf.UpdateExist)
+		if err := activeConf.Lookup(key, &value); err != nil {
+			return abort(fmt.Errorf("read active config index %d: %w", i, err))
+		}
+		if err := shadowConf.Update(key, value[:], ebpf.UpdateExist); err != nil {
+			return abort(fmt.Errorf("copy shadow config index %d: %w", i, err))
 		}
 	}
 
@@ -521,12 +465,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		}
 	}
 
-	newRuleMapSel := 1 - h.activeRuleSlot
-
-	// AUD-003: count anomaly rules from the NEW ruleset being installed.
-	// Must NOT call countAnomalyRulesLocked() — that reads h.rules/h.cidrRules
-	// (old state). We need the absolute count for the shadow config before flip.
-	anomalyCount := countAnomalyRulesIn(newRules, newCidrRules)
+	newRuleMapSel := 1 - int(h.activeRuleSlot.Load())
 
 	configUpdates := []struct {
 		idx uint32
@@ -537,7 +476,6 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		{ConfigCIDRBitmap, cidrBitmap},
 		{ConfigCIDRRuleCount, uint64(shadowCidrCount)},
 		{ConfigRuleMapSelector, uint64(newRuleMapSel)},
-		{ConfigAnomalyRuleCount, uint64(anomalyCount)},
 	}
 	for _, u := range configUpdates {
 		key := make([]byte, 4)
@@ -545,19 +483,22 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 		val := make([]byte, 8)
 		binary.LittleEndian.PutUint64(val, u.val)
 		if err := shadowConf.Update(key, val, ebpf.UpdateExist); err != nil {
-			// Release allocated CIDR IDs and abort
-			for _, stored := range newCidrRules {
-				if stored.SrcCIDR != "" {
-					h.cidrMgr.ReleaseSrcID(stored.SrcCIDR)
-				}
-				if stored.DstCIDR != "" {
-					h.cidrMgr.ReleaseDstID(stored.DstCIDR)
-				}
-			}
-			log.Printf("[AtomicSync] CRITICAL: failed to update shadow config index %d: %v", u.idx, err)
-			return AtomicSyncResult{Added: added, Failed: failed},
-				fmt.Errorf("failed to update shadow config index %d: %w", u.idx, err)
+			return abort(fmt.Errorf("failed to update shadow config index %d: %w", u.idx, err))
 		}
+	}
+
+	if cidrBeforeAtomicPublishTestHook != nil {
+		cidrBeforeAtomicPublishTestHook(h)
+	}
+	// Apply the accepted prefix delta; unknown copies fall back to actual contents.
+	wantPrefixes := h.cidrMgr.Snapshot(prefixReferences(oldCidrRules))
+	if err := h.cidrMgr.Apply(newRuleMapSel, beforePrefixes, wantPrefixes); err != nil {
+		return abort(err)
+	}
+
+	verifiedRows, err := h.readAtomicShadow(wantRows)
+	if err != nil {
+		return abort(err)
 	}
 
 	// --- Step 4: Atomic flip (switch active config slot) ---
@@ -565,25 +506,21 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	selKey := make([]byte, 4) // key = 0
 	selValue := make([]byte, 8)
 	binary.LittleEndian.PutUint64(selValue, uint64(newSlot))
-	if err := h.activeConfig.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
-		// Release newly allocated CIDR IDs (they're in shared tries and can affect LPM behavior)
-		for _, stored := range newCidrRules {
-			if stored.SrcCIDR != "" {
-				h.cidrMgr.ReleaseSrcID(stored.SrcCIDR)
-			}
-			if stored.DstCIDR != "" {
-				h.cidrMgr.ReleaseDstID(stored.DstCIDR)
-			}
-		}
-		log.Printf("[AtomicSync] CRITICAL: failed to flip active config: %v", err)
-		return AtomicSyncResult{Added: added, Failed: failed},
-			fmt.Errorf("failed to flip config selector: %w", err)
+	if err := selector.Update(selKey, selValue, ebpf.UpdateExist); err != nil {
+		return abort(fmt.Errorf("failed to flip config selector: %w", err))
 	}
+	h.quiescenceConfirmed = false
 	h.activeSlot = newSlot
-	h.activeRuleSlot = newRuleMapSel
+	h.activeRuleSlot.Store(int32(newRuleMapSel))
+	h.ruleRowCounts = [4]int{int(shadowRuleCount), int(shadowCidrCount), 0, 0}
+	h.ruleRowCountsKnown = false // Step 6 counts actual rows, including conditions.
+	h.publishRuleState(len(newRules), len(newCidrRules))
+	h.publishAtomicCapacity(verifiedRows, wantPrefixes, logicalUsed)
+	h.observeAtomicStage("flip")
 
 	// --- Step 5: Update in-memory state ---
 	h.rulesMu.Lock()
+	h.replaceLogicalOwnersLocked(newRules, newCidrRules)
 	h.rules = newRules
 	h.ruleKeyIndex = newRuleKeyIndex
 	h.cidrRules = newCidrRules
@@ -592,16 +529,21 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	h.cidrComboRefCount = shadowCidrCombo
 	h.rulesMu.Unlock()
 
-	// --- Step 5b: Release old CIDR IDs (AFTER flip, so active trie entries are safe) ---
+	// Step 5b releases memory references; old trie writes await this R5c receipt.
 	for _, stored := range oldCidrRules {
 		if stored.SrcCIDR != "" {
-			h.cidrMgr.ReleaseSrcID(stored.SrcCIDR)
+			if err := h.cidrMgr.ReleaseSrcID(stored.SrcCIDR); err != nil {
+				log.Printf("[AtomicSync 5b] CIDR reference release: %v", err)
+			}
 		}
 		if stored.DstCIDR != "" {
-			h.cidrMgr.ReleaseDstID(stored.DstCIDR)
+			if err := h.cidrMgr.ReleaseDstID(stored.DstCIDR); err != nil {
+				log.Printf("[AtomicSync 5b] CIDR reference release: %v", err)
+			}
 		}
 	}
 
+	h.observeAtomicStage("5b")
 	// Clear PPS cache (rules changed completely)
 	h.rulePPSMu.Lock()
 	h.lastRuleDropCount = make(map[string]uint64)
@@ -609,188 +551,29 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	h.rulePPSMu.Unlock()
 
 	log.Printf("[AtomicSync] Flipped: slot=%d, ruleMapSel=%d, exact=%d, cidr=%d, failed=%d, bitmap=0x%x, cidrBitmap=0x%x",
-		newSlot, newRuleMapSel, shadowRuleCount, shadowCidrCount, failed, bitmap, cidrBitmap)
+		newSlot, newRuleMapSel, shadowRuleCount, shadowCidrCount, len(rejected), bitmap, cidrBitmap)
 
-	// --- Step 6: Cleanup old map (now shadow) synchronously under lock ---
-	// Must be synchronous to prevent race with next DoAtomicSync reusing the same map pair.
-	// Cleanup failures are logged but do not fail the overall sync (the active side
-	// already holds the new authoritative state). Next DoAtomicSync will retry clearing.
-	cleanupOK := true
-	if err := clearMap(h.shadowBlacklist()); err != nil {
-		log.Printf("[cleanupOldRuleMap] WARN: shadow blacklist cleanup failed: %v", err)
-		cleanupOK = false
-	}
-	if err := clearMap(h.shadowCidrBlacklist()); err != nil {
-		log.Printf("[cleanupOldRuleMap] WARN: shadow CIDR blacklist cleanup failed: %v", err)
-		cleanupOK = false
-	}
-	if cleanupOK {
-		log.Printf("[cleanupOldRuleMap] Old rule maps cleared")
-	} else {
-		log.Printf("[cleanupOldRuleMap] Cleanup completed with errors; next AtomicSync will retry")
+	result := AtomicSyncResult{Added: added, Failed: len(rejected), Rejected: rejected, ExactRules: int64(len(newRules)), CIDRRules: int64(len(newCidrRules))}
+	// R5c follows both the flip and release of old CIDR references.
+	if err := h.awaitQuiescence(); err != nil {
+		log.Printf("[AtomicSync R5c] %v; reclamation deferred until next full sync", err)
+		h.cidrMgr.Invalidate(1 - newRuleMapSel)
+		return result, nil
 	}
 
-	return AtomicSyncResult{
-		Added:      added,
-		Failed:     failed,
-		ExactRules: shadowRuleCount,
-		CIDRRules:  shadowCidrCount,
-	}, nil
-}
-
-// AddWhitelistFromSync adds a whitelist entry from Controller incremental sync (DiffSync path).
-// Phase 8: uses 31-combo bitmap validation, activeWhitelist(), wlComboRefCount.
-// Lock order: syncMu → publishMu → wlMu.
-func (h *Handlers) AddWhitelistFromSync(entry SyncWhitelistEntry) error {
-	req := WhitelistEntry{
-		ID:       entry.ID,
-		SrcIP:    entry.SrcIP,
-		DstIP:    entry.DstIP,
-		SrcPort:  entry.SrcPort,
-		DstPort:  entry.DstPort,
-		Protocol: entry.Protocol,
+	if err := h.cidrMgr.Apply(1-newRuleMapSel, beforePrefixes, wantPrefixes); err != nil {
+		log.Printf("[AtomicSync R5c] old prefix alignment deferred: %v", err)
 	}
 
-	// Phase 8: replace old exact-only guard with combo-type validation
-	key, err := h.whitelistToKey(req)
-	if err != nil {
-		return fmt.Errorf("failed to convert whitelist entry: %w", err)
-	}
-	newCombo := getComboType(key)
-	if err := validateComboType(newCombo); err != nil {
-		return fmt.Errorf("unsupported whitelist combo: %w", err)
-	}
-	if err := validatePortProtocolCompatNode(req.Protocol, req.SrcPort, req.DstPort); err != nil {
-		return err
-	}
+	// Step 6 reads the old maps and aligns to the verified shadow bytes; failures keep M3 pending.
+	h.observeAtomicStage("6")
+	h.finishAtomicMirrorLocked(verifiedRows)
 
-	id := entry.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
-
-	newKeyBytes := ruleKeyToBytes(key)
-	wlValue := []byte{1}
-
-	h.syncMu.Lock()
-	defer h.syncMu.Unlock()
-	h.publishMu.Lock()
-	defer h.publishMu.Unlock()
-	h.wlMu.Lock()
-	defer h.wlMu.Unlock()
-
-	if existingID, ok := h.wlKeyIndex[key]; ok && existingID != id {
-		return fmt.Errorf("whitelist key already exists under id %s", existingID)
-	}
-
-	var oldKey *RuleKey
-	var oldCombo int
-	wlCountDelta := int64(1)
-	if existingKey, exists := h.wlEntries[id]; exists {
-		// Same-ID same-key: idempotent, no-op
-		if existingKey == key {
-			return nil
-		}
-		keyCopy := existingKey
-		oldKey = &keyCopy
-		oldCombo = getComboType(*oldKey)
-		wlCountDelta = 0
-	}
-
-	// Security-first: delete old BPF entry before adding new (always different key here)
-	if oldKey != nil {
-		if err := h.activeWhitelist().Delete(ruleKeyToBytes(*oldKey)); err != nil {
-			return fmt.Errorf("failed to delete old whitelist entry: %w", err)
-		}
-		h.wlComboRefCount[oldCombo]--
-	}
-
-	// Increment new combo refcount BEFORE publish
-	h.wlComboRefCount[newCombo]++
-
-	if err := h.publishConfigUpdate(0, wlCountDelta, 0); err != nil {
-		h.wlComboRefCount[newCombo]--
-		if oldKey != nil {
-			h.wlComboRefCount[oldCombo]++
-			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
-				log.Printf("[AddWhitelistFromSync] WARN: rollback re-insert of old entry failed: %v", insErr)
-			}
-		}
-		return fmt.Errorf("config publish failed: %w", err)
-	}
-
-	if err := h.activeWhitelist().Update(newKeyBytes, wlValue, ebpf.UpdateNoExist); err != nil {
-		h.wlComboRefCount[newCombo]--
-		if oldKey != nil {
-			h.wlComboRefCount[oldCombo]++
-			if insErr := h.activeWhitelist().Update(ruleKeyToBytes(*oldKey), wlValue, ebpf.UpdateNoExist); insErr != nil {
-				log.Printf("[AddWhitelistFromSync] WARN: rollback re-insert of old entry failed: %v", insErr)
-			}
-		}
-		if pubErr := h.publishConfigUpdate(0, -wlCountDelta, 0); pubErr != nil {
-			log.Printf("[AddWhitelistFromSync] WARN: rollback re-publish failed: %v", pubErr)
-		}
-		return fmt.Errorf("failed to insert whitelist into BPF: %w", err)
-	}
-
-	if oldKey != nil {
-		delete(h.wlKeyIndex, *oldKey)
-	}
-	h.wlEntries[id] = key
-	h.wlKeyIndex[key] = id
-
-	return nil
-}
-
-// ClearAllWhitelistFromSync clears the active whitelist map and resets combo state.
-// Used for error recovery / cleanup paths. Full sync uses DoWhitelistAtomicSync instead.
-// Lock order: syncMu → publishMu → wlMu (must not be called while syncMu is held by caller).
-func (h *Handlers) ClearAllWhitelistFromSync() error {
-	h.syncMu.Lock()
-	defer h.syncMu.Unlock()
-	h.publishMu.Lock()
-	h.wlMu.Lock()
-
-	deleted := 0
-	for id, key := range h.wlEntries {
-		combo := getComboType(key)
-		keyBytes := ruleKeyToBytes(key)
-		if err := h.activeWhitelist().Delete(keyBytes); err != nil {
-			if deleted > 0 {
-				if pubErr := h.publishConfigUpdate(0, -int64(deleted), 0); pubErr != nil {
-					log.Printf("[ClearAllWhitelistFromSync] WARN: publish failed: %v", pubErr)
-				}
-			}
-			h.wlMu.Unlock()
-			h.publishMu.Unlock()
-			return fmt.Errorf("BPF delete failed for whitelist entry %s: %w", id, err)
-		}
-		h.wlComboRefCount[combo]--
-		delete(h.wlKeyIndex, key)
-		delete(h.wlEntries, id)
-		deleted++
-	}
-
-	// Reset all combo refcounts to zero (should already be zero after loop above)
-	h.wlComboRefCount = [64]int{}
-
-	if deleted > 0 {
-		if err := h.publishConfigUpdate(0, -int64(deleted), 0); err != nil {
-			log.Printf("[ClearAllWhitelistFromSync] ERROR: publish failed after clearing %d entries: %v", deleted, err)
-			h.wlMu.Unlock()
-			h.publishMu.Unlock()
-			return fmt.Errorf("whitelist cleared but publishConfigUpdate failed: %w", err)
-		}
-		log.Printf("[ClearAllWhitelistFromSync] Cleared %d whitelist entries", deleted)
-	}
-
-	h.wlMu.Unlock()
-	h.publishMu.Unlock()
-	return nil
+	return result, nil
 }
 
 // DoWhitelistAtomicSync performs a zero-window full whitelist replacement.
-// This is the ONLY entry point for full whitelist sync (Controller FullSync + startup pull-sync).
+// This is the ONLY entry point for full whitelist sync (Controller FullSync).
 // Pattern: clear shadow → write shadow → flip selector → commit memory.
 // All CRUD paths are blocked via syncMu for the entire duration.
 func (h *Handlers) DoWhitelistAtomicSync(entries []SyncWhitelistEntry) error {
@@ -924,5 +707,6 @@ func (h *Handlers) SyncWhitelistHandler(c *gin.Context) {
 		return
 	}
 
+	h.whitelistSynced.Store(true)
 	c.JSON(http.StatusOK, gin.H{"total": len(req.Entries), "failed": 0})
 }

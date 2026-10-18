@@ -1,0 +1,82 @@
+{
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/\"match_anomaly\":1": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"all\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/action": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/dst_ip": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/dst_port": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/pkt_len_max": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/pkt_len_min": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/rate_limit": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/src_ip": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/src_port": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=false/tcp_flags": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"exact\",\"src_ip\":\"10.0.0.1\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/\"match_anomaly\":1": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.30.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"all\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/action": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/dst_cidr": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/dst_port": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/pkt_len_max": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/pkt_len_min": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/rate_limit": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/src_cidr": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/src_port": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  },
+  "TestJiaHandlerGolden/EveryStoredField/cidr=true/tcp_flags": {
+    "status": 409,
+    "body": "{\"code\":\"condition_group_required\",\"error\":\"condition five-tuple requires a whole-group write\",\"key\":{\"kind\":\"cidr\",\"src_cidr\":\"10.0.0.0/24\",\"src_port\":0,\"dst_port\":0,\"protocol\":\"tcp\"},\"withdrawal_pending\":false}"
+  }
+}

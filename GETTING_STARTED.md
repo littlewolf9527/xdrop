@@ -1,280 +1,195 @@
-# Getting Started
+# Getting started
 
-This guide covers everything you need to set up before building XDrop.
+## 1. Prepare the hosts
 
-[中文文档](GETTING_STARTED.zh.md)
+Use one controller host and at least one Linux filtering node. Run commands from the repository root unless stated otherwise.
 
----
+Node checklist: kernel ≥ 6.4 (x86-64 / arm64), little-endian, BPF JIT enabled, dedicated NIC and root access. Check the kernel version and sysctl separately: `uname -rm`; `sysctl net.core.bpf_jit_enable` must be non-zero. In `bpf.xdp_mode: auto`, native/generic selection is decided by the NIC driver and kernel attachment result; `native` refuses fallback, while `generic` explicitly requests SKB.
 
-## Overview
+Use the build requirements in [README](README.md). Keep management traffic reachable while changing the filtering interface.
 
-XDrop has two components with different build and runtime requirements:
-
-| Component | Build Host | Runtime Host |
-|-----------|-----------|--------------|
-| **Controller** | Any OS (Linux / macOS / Windows) | Any OS |
-| **Node Agent** | **Linux only** | **Linux only**, requires root |
-
-The Node Agent uses BPF/XDP, which is a Linux kernel feature. It cannot be built or run on macOS or Windows.
-
----
-
-## Controller Prerequisites
-
-### Go ≥ 1.21
+## 2. Build the controller
 
 ```bash
-# Install from https://go.dev/dl/ or via your package manager
-go version
-# Expected: go version go1.21.x ...
+./scripts/build-controller.sh all
 ```
 
-### Node.js ≥ 18
+For an offline build with dependencies already installed, export `XDROP_SKIP_NPM_CI=1` before that command; it skips `npm ci` and still runs `npm run build`. The executable is `controller/xdrop-controller` and embeds the console with `-tags webui`.
 
-Required only to build the Vue 3 frontend. The compiled frontend is embedded into the Go binary, so Node.js is not needed at runtime.
+The console and node builds take their version from `git describe`. When building from a source archive (no `.git` directory), set `XDROP_VERSION` first, for example `export XDROP_VERSION=v3.0.0-rc1`; otherwise the version is reported as `unknown`.
+
+## 3. Prepare controller configuration
 
 ```bash
-# Install from https://nodejs.org or via nvm
-node --version
-# Expected: v18.x.x or higher
-
-npm --version
+export STATE_DIR="${STATE_DIR:-$PWD/controller-state}"
+export CTL_LISTEN="${CTL_LISTEN:-127.0.0.1:8000}"
+mkdir -p "$STATE_DIR"
+export XDROP_CONFIG="$STATE_DIR/controller.example.yaml"
+export XDROP_RUN_DIR="$STATE_DIR/run"
+cp controller/config.example.yaml "$XDROP_CONFIG"
+python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ['XDROP_CONFIG'])
+values = {'listen': os.environ['CTL_LISTEN'],
+          'database': str(Path(os.environ['STATE_DIR']) / 'controller.db'),
+          'secret_key_file': str(Path(os.environ['STATE_DIR']) / 'master.key')}
+import json
+lines = []
+for line in p.read_text().splitlines():
+    key = line.split(':', 1)[0]
+    lines.append(key + ': ' + json.dumps(values[key]) if key in values else line)
+p.write_text('\n'.join(lines) + '\n')
+PY
 ```
 
-**That's all for the Controller.** It can be built and run on Linux, macOS, or Windows.
+Choose an absolute `STATE_DIR`. Only the three active example values are changed above. There are no default configuration values; unknown keys are rejected. Keep `listen` on loopback: browsers reach the console through the HTTPS reverse proxy in section 6, while the curl checks below use the local listener directly.
 
----
-
-## Node Agent Prerequisites
-
-The Node Agent must be built and run on a **Linux host**.
-
-### 1. Linux Kernel ≥ 5.9
-
-The node agent uses `BPF_LINK_TYPE_XDP` for XDP attach, which landed in
-Linux 5.9 (October 2020). On older kernels the agent refuses to start
-with a clear error message pointing to this requirement.
+## 4. Initialize the master key and administrator
 
 ```bash
-uname -r
-# Expected: 5.9.x or higher
+./controller/xdrop-controller -config "$XDROP_CONFIG" secret-key init
+read -r -s -p 'Administrator password: ' ADMIN_PASSWORD; printf '\n'
+printf '%s\n' "$ADMIN_PASSWORD" | ./controller/xdrop-controller -config "$XDROP_CONFIG" user add admin
 ```
 
-> **Kernel 5.9–5.10**: XDP works but typically only in generic (SKB) mode — lower performance.
-> **Kernel 5.10+**: Native XDP mode available on most drivers — recommended.
->
-> **Running an older kernel?** Pin to xdrop **v2.4.2**, the last release
-> that uses the netlink-based attach path and supports kernels down to
-> 5.4. See the Phase 2 migration note in
-> `docs/proposals/goebpf-to-cilium-migration.md` §Phase 4.a for why a
-> pre-5.9 fallback was intentionally not implemented in v2.5+.
+Use a password of 10..72 bytes. The master file is created with mode 0600 and is never overwritten by init. The CLI creates an administrator; keep the database and master key together when backing up. The password variable is used below without printing it.
 
-### 2. clang and llvm ≥ 11
-
-Required to compile the BPF/C program.
+## 5. Start and check the controller
 
 ```bash
-# Ubuntu / Debian
-apt install clang llvm
-
-# RHEL / CentOS / Fedora
-dnf install clang llvm
-
-# Verify
-clang --version
-# Expected: clang version 11.x.x or higher
+./scripts/manage-controller.sh start
+export BASE_URL="http://$CTL_LISTEN"
+curl --fail --silent --show-error "$BASE_URL/api/v1/health"
+curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' "$BASE_URL/"
 ```
 
-### 3. make
+Health returns `{"status":"ok"}`; the static entry returns HTTP 200. This health check reports controller API availability, not node synchronization.
 
-Required to run the BPF Makefile.
+## 6. Open the console over HTTPS
+
+The session cookie is always `Secure`, so a browser does not stay signed in over plain HTTP. Put an HTTPS reverse proxy in front of the loopback listener:
+
+- Run the proxy on the controller host. The controller trusts `X-Forwarded-For` only from loopback, so audit records show the real client address only when the proxy connects from `127.0.0.1` or `::1`.
+- Forward everything under `/`: the console, `/api/v1/` and the event stream `/api/v1/events`. The controller turns off proxy buffering for the event stream (`X-Accel-Buffering: no`) and sends a keepalive every 15 seconds, so default proxy timeouts are enough.
+
+nginx (replace the server name and certificate paths; the upstream is the `CTL_LISTEN` address from section 3):
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name xdrop.example.com;
+
+    ssl_certificate     /etc/ssl/xdrop/fullchain.pem;
+    ssl_certificate_key /etc/ssl/xdrop/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+Caddy (obtains and renews a certificate automatically when the name resolves to this host and ports 80/443 are reachable; otherwise add `tls <cert-file> <key-file>` inside the block):
+
+```
+xdrop.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+Open `https://xdrop.example.com/` and sign in as `admin` with the password from section 4. The console has Overview, Blocklist, Allowlist, Nodes, Audit and Settings pages. Sections 9 and 10 give the console steps first and the command-line steps after them.
+
+## 7. Log in from the command line
 
 ```bash
-# Ubuntu / Debian
-apt install make
-
-# RHEL / CentOS / Fedora
-dnf install make
-
-which make
+umask 077
+printf '%s' "$ADMIN_PASSWORD" | python3 -c 'import json,sys; print(json.dumps({"username":"admin","password":sys.stdin.read()}))' > "$STATE_DIR/login.json"
+curl --fail --silent --show-error -D "$STATE_DIR/login.headers" -o "$STATE_DIR/login.response" \
+  -H 'Content-Type: application/json' --data-binary @"$STATE_DIR/login.json" "$BASE_URL/api/v1/auth/login"
+python3 - "$STATE_DIR" <<'PY'
+import sys
+from pathlib import Path
+from http.cookies import SimpleCookie
+d = Path(sys.argv[1]); cookies = SimpleCookie()
+for line in (d / 'login.headers').read_text().splitlines():
+    if line.lower().startswith('set-cookie:'):
+        cookies.load(line.split(':', 1)[1].strip())
+token = cookies['xdrop_session'].value
+(d / 'session.header').write_text('Cookie: xdrop_session=' + token + '\n')
+print('session_length=' + str(len(token)))
+PY
+curl --fail --silent --show-error -H @"$STATE_DIR/session.header" "$BASE_URL/api/v1/auth/me"
+rm -f "$STATE_DIR/login.json" "$STATE_DIR/login.headers"
+unset ADMIN_PASSWORD
+./scripts/manage-controller.sh status
 ```
 
-### 4. Linux kernel headers
+The read-only reply identifies `kind: user`, `name: admin`, `role: admin`. Keep `session.header` private and delete it after use. The command-line steps in sections 9 and 10 use it.
 
-Required for BPF compilation. The headers must match the **running kernel version**.
+## 8. Build and configure a node
+
+On the Linux node, run the commands below, then edit the copied configuration before starting. Replace `CHANGE_ME_NODE_KEY`: otherwise validation reports `auth.node_api_key still contains a placeholder value ...; generate a real key before starting` and the agent exits. Set `server.interface` to the intended filtering interface; keep the key nonempty.
+
+`bpf.rate_limit_divisor` accepts 0 (online CPU count, possible CPU count on read failure) or an integer override 1..4096. X7: the receiving CPU set must be fixed and no larger than the override; a divisor that is too small amplifies the aggregate rule limit. For example, keep one RX queue, fixed IRQ affinity and no RPS when using a divisor of one.
 
 ```bash
-# Ubuntu / Debian
-apt install linux-headers-$(uname -r)
-
-# RHEL / CentOS
-dnf install kernel-devel-$(uname -r)
-
-# Verify headers exist
-ls /usr/src/linux-headers-$(uname -r)/
+./scripts/build-node.sh all
+unset XDROP_CONFIG XDROP_RUN_DIR
+cp node/config.example.yaml node/config.yaml
+# Edit node/config.yaml before continuing.
+sudo ./scripts/manage-node.sh start
+curl --fail --silent --show-error http://127.0.0.1:8080/
+curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/health
 ```
 
-> If the exact version is unavailable, install the closest available version and create a symlink. Alternatively, most BPF programs compile fine with the generic `linux-headers-generic` package.
+The welcome response reports `sync_protocol: 11`; health is initially `degraded` with `reason: awaiting_full_sync`. Node API requests do not initiate a connection back to the controller. Restrict access to the node management listener at the host/network boundary.
 
-### 5. Go ≥ 1.24
+## 9. Register the node
 
-Bumped from 1.21 in v2.5 because `github.com/cilium/ebpf@v0.21.0`
-(used by the node agent for BPF loader + link management) requires
-Go 1.24. The Controller still targets 1.21+ — only the node agent
-build needs the newer toolchain.
+In the console: Settings → Nodes → Add. Enter a name, the node address (for example `http://192.0.2.10:8080`) and the same key as `auth.node_api_key`. Test checks reachability, compatibility and the key before you save. A node saved while it cannot be reached shows as Offline until it answers.
+
+From the command line:
 
 ```bash
-go version
-# Expected: go version go1.24.x linux/amd64
+read -r -s -p 'Node API key: ' NODE_API_KEY; printf '\n'
+printf '%s' "$NODE_API_KEY" | python3 -c 'import json,sys; print(json.dumps({"name":"node-01","base_url":"http://192.0.2.10:8080","api_key":sys.stdin.read()}))' > "$STATE_DIR/node.json"
+curl --fail --silent --show-error -H @"$STATE_DIR/session.header" -H 'Content-Type: application/json' \
+  --data-binary @"$STATE_DIR/node.json" "$BASE_URL/api/v1/nodes"
+rm -f "$STATE_DIR/node.json"
+unset NODE_API_KEY
+curl --fail --silent --show-error -H @"$STATE_DIR/session.header" "$BASE_URL/api/v1/nodes"
 ```
 
-### 6. Root access at runtime
+Replace the documentation address `192.0.2.10` with your node address and enter the same key as `auth.node_api_key`. Registration requires an administrator session. Wait for the node to be online, compatible and healthy, with both rules and whitelist sides recovered; an empty full snapshot is still required on each side. Node keys are never returned by the controller.
 
-The node agent must run as root (or with `CAP_NET_ADMIN`) to load BPF programs and attach them to network interfaces.
+## 10. Create and confirm the first rule
+
+In the console: Blocklist → Create. From the command line:
 
 ```bash
-# Check current user
-whoami
-
-# The start script enforces this:
-sudo ./scripts/node.sh start
+curl --fail --silent --show-error -H @"$STATE_DIR/session.header" -H 'Content-Type: application/json' \
+  --data '{"dst_ip":"192.0.2.20","protocol":"udp","dst_port":9999,"action":"drop","expires_in":"10m","comment":"first rule"}' \
+  "$BASE_URL/api/v1/rules" > "$STATE_DIR/rule.json"
+python3 - "$STATE_DIR/rule.json" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1]))
+print('/api/v1/rules/' + r['id'] + '/delivery?gen=' + str(r['gen']) + '&epoch=' + r['epoch'])
+PY
 ```
 
-### 7. bpffs mounted at /sys/fs/bpf (optional but recommended)
+Choose a test destination and port appropriate to your traffic before creating the rule. Read the printed delivery path using `curl -H @"$STATE_DIR/session.header" "$BASE_URL<printed-path>"`; wait until the target node reports `confirmed`, and also inspect `enabled` in the create reply. A successful create is not a packet-drop measurement. Send matching test traffic through that node and inspect its rule counters; no matching traffic means counters may stay zero. Delete the rule through `DELETE /api/v1/rules/{id}` or let its explicit expiry elapse.
 
-v2.5+ pins its BPF objects under `/sys/fs/bpf/xdrop/` so state
-survives across `systemctl restart xdrop-agent`:
-
-- **18 map files** (v2.7.0+): `blacklist`/`blacklist_b`, `whitelist`/`whitelist_b`, the four LPM tries, `config_a`/`config_b`, `active_config`, `stats`, `rl_states`, `prog_tail_map`, `tailcall_fail_stats`. Stable map IDs for `bpftool map dump pinned /sys/fs/bpf/xdrop/<name>` and external BPF tooling.
-- **1 XDP link file per interface** (Phase 4): `link_<ifname>`
-  (e.g. `link_ens38`). Agent restart does `LoadPinnedLink +
-  Link.Update(newProg)` — zero-gap kernel attachment swap. Without
-  link pinning, restart leaves a ~1.5–3 s window with no filter.
-
-Both require `/sys/fs/bpf` to be mounted as a `bpf` filesystem.
+## 11. Stop the controller
 
 ```bash
-# Verify — f_type should be "bpf_fs" (magic 0xcafe4a11)
-stat -f -c '%T' /sys/fs/bpf
-# Expected: bpf_fs
+./scripts/manage-controller.sh stop
+./scripts/manage-controller.sh status
 ```
 
-Most modern distros mount bpffs automatically via systemd's
-`sys-fs-bpf.mount` unit. If the check above returns something else
-(e.g. `sysfs`), mount it manually:
+`stop` sends SIGTERM and waits up to 30 seconds without SIGKILL; the supervisor records the process exit code. `status` returns 0 when running and 3 when stopped. Stop the node with `sudo ./scripts/manage-node.sh stop`; use `restart` to retain link pins, but expect a policy recovery interval after every agent start. See the component guides for backups and recovery.
 
-```bash
-mount -t bpf bpf /sys/fs/bpf
-
-# Persist via /etc/fstab:
-echo 'bpf /sys/fs/bpf bpf defaults 0 0' >> /etc/fstab
-```
-
-If you cannot mount bpffs for any reason, the agent falls back to
-non-pinned mode automatically under the default `bpf.pinning: auto`
-policy — rules still load, you just lose restart-survival of map
-fds AND zero-gap XDP attach (Phase 2-equivalent ~1.5 s detach-reattach
-window on every restart).
-
----
-
-## Verify Your Node Build Environment
-
-Run this checklist on your Linux host before building:
-
-```bash
-echo "=== Kernel ===" && uname -r
-echo "=== Go ===" && go version 2>/dev/null || echo "NOT FOUND"
-echo "=== clang ===" && clang --version 2>/dev/null | head -1 || echo "NOT FOUND"
-echo "=== llvm-strip ===" && llvm-strip --version 2>/dev/null | head -1 || echo "NOT FOUND"
-echo "=== make ===" && make --version 2>/dev/null | head -1 || echo "NOT FOUND"
-echo "=== kernel headers ===" && ls /usr/src/linux-headers-$(uname -r) &>/dev/null && echo "OK" || echo "NOT FOUND"
-```
-
-All items should show a version or "OK" before proceeding to build.
-
----
-
-## Network Interface Requirements
-
-### Check XDP support
-
-Not all drivers support native XDP mode. To check whether your NIC supports it:
-
-```bash
-# Using ethtool (kernel 5.3+)
-ethtool -i <interface>
-# Look for "driver" field — check driver documentation for XDP support
-
-# Attempt native XDP attach (the agent will log the mode used)
-# If native mode is unavailable, it falls back to generic (SKB) mode automatically
-```
-
-**Drivers with native XDP support** (partial list): `mlx5`, `i40e`, `ice`, `ixgbe`, `virtio_net`, `veth`, `tun`, common cloud VM drivers (AWS ENA, GCP virtio, etc.)
-
-**Generic (SKB) mode** works on any driver but runs after the kernel allocates `sk_buff`, so performance is lower. It is sufficient for moderate traffic.
-
-### Identify the correct interface
-
-```bash
-ip link show
-# or
-ip addr show
-
-# Note the interface name you want to attach XDP to (e.g., eth0, ens3, enp3s0)
-# You will set this in node/config.yaml under server.interface
-```
-
-> **Important:** Do not attach XDP to your SSH management interface unless you are certain your rules will not block SSH traffic. Use a dedicated data-plane interface when possible.
-
----
-
-## Recommended Setup
-
-For a typical deployment:
-
-```
-Controller host:  any Linux server or VM (Go + Node.js for build)
-Node Agent host:  Linux server with kernel ≥ 5.10, dedicated NIC for XDP
-```
-
-For a lab / single-host setup, the Controller and Node Agent can run on the same machine. Just ensure the Node Agent is attached to the correct interface and that your rules do not accidentally block controller traffic.
-
----
-
-## Quick Environment Setup (Ubuntu 22.04 / 24.04)
-
-```bash
-# Update package lists
-apt update
-
-# Go (replace with latest version from https://go.dev/dl/)
-wget https://go.dev/dl/go1.21.13.linux-amd64.tar.gz
-tar -C /usr/local -xzf go1.21.13.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# Node.js 20 LTS (controller build only)
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
-
-# BPF build tools
-apt install -y clang llvm make linux-headers-$(uname -r)
-
-# Verify
-go version && node --version && clang --version | head -1
-```
-
----
-
-## Next Steps
-
-Once your environment is ready:
-
-1. **Build** — see [Quick Start](README.md#quick-start) in the root README
-2. **Configure** — copy `config.example.yaml` for each component and edit the required fields
-3. **Run** — use the scripts in `scripts/` to start, stop, and check status
-
-For detailed configuration options, see:
-- [Controller README](controller/README.md)
-- [Node Agent README](node/README.md)
+`auth.node_api_key` is required. Empty values (including whitespace) or placeholders reject startup; generate a real key before starting. Source: [`config.Config.Validate`](node/agent/config/config.go).

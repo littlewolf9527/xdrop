@@ -1,0 +1,11 @@
+--- a/node/agent/main.go
++++ b/node/agent/main.go
+@@ -187,7 +187,7 @@
+ 			log.Fatalf("Failed to configure fast forward: %v", err)
+ 		}
+ 
+-	} else if err := clearFastForwardSlots(configA, configB); err != nil {
++	} else if err := error(nil); err != nil {
+ 		log.Fatalf("Failed to clear fast forward: %v", err)
+ 	}
+ 

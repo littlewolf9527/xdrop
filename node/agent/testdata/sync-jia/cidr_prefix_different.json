@@ -1,0 +1,4 @@
+{
+  "status": 409,
+  "body": "{\"code\":\"content_different\",\"error\":\"rule content differs\",\"withdrawal_pending\":false}"
+}

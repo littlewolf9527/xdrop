@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -21,66 +20,6 @@ func init() {
 }
 
 // ---- AUD-008: ruleValueFromStored ----
-
-func TestRuleValueFromStored_MatchAnomalyPreserved(t *testing.T) {
-	s := StoredRule{
-		Action:       "drop",
-		TcpFlags:     "",
-		MatchAnomaly: 1,
-		RateLimit:    0,
-	}
-	v := ruleValueFromStored(s)
-	if v.MatchAnomaly != 1 {
-		t.Fatalf("expected MatchAnomaly=1, got %d", v.MatchAnomaly)
-	}
-	if v.Action != ActionDrop {
-		t.Fatalf("expected ActionDrop, got %d", v.Action)
-	}
-}
-
-func TestRuleValueFromStored_TcpFlagsPreserved(t *testing.T) {
-	s := StoredRule{
-		Action:   "drop",
-		TcpFlags: "RST",
-	}
-	v := ruleValueFromStored(s)
-	if v.TcpFlagsMask == 0 && v.TcpFlagsValue == 0 {
-		t.Fatal("expected non-zero TcpFlags mask/value for RST flag")
-	}
-}
-
-func TestRuleValueFromStored_FallbackOnInvalidAction(t *testing.T) {
-	s := StoredRule{Action: "invalid-action", MatchAnomaly: 1}
-	v := ruleValueFromStored(s) // must not panic
-	if v.Action != ActionDrop {
-		t.Fatalf("expected fallback to ActionDrop on invalid action, got %d", v.Action)
-	}
-	if v.MatchAnomaly != 1 {
-		t.Fatalf("MatchAnomaly should still be preserved on action fallback, got %d", v.MatchAnomaly)
-	}
-}
-
-func TestRuleValueFromStored_FallbackOnInvalidTcpFlags(t *testing.T) {
-	s := StoredRule{Action: "drop", TcpFlags: "NOTAFLAG", MatchAnomaly: 2}
-	v := ruleValueFromStored(s) // must not panic
-	if v.TcpFlagsMask != 0 {
-		t.Fatalf("expected zero TcpFlagsMask on fallback, got %d", v.TcpFlagsMask)
-	}
-	if v.MatchAnomaly != 2 {
-		t.Fatalf("MatchAnomaly should still be preserved on flags fallback, got %d", v.MatchAnomaly)
-	}
-}
-
-func TestRuleValueFromStoredCIDR_MatchAnomalyPreserved(t *testing.T) {
-	s := StoredCIDRRule{
-		Action:       "drop",
-		MatchAnomaly: 1,
-	}
-	v := ruleValueFromStoredCIDR(s)
-	if v.MatchAnomaly != 1 {
-		t.Fatalf("expected MatchAnomaly=1 in CIDR rollback value, got %d", v.MatchAnomaly)
-	}
-}
 
 // ---- AUD-002: startup sync DTO ----
 
@@ -103,65 +42,7 @@ func TestSyncRuleDTO_HasTcpFlagsAndMatchAnomaly(t *testing.T) {
 	}
 }
 
-// ---- AUD-003: countAnomalyRulesIn ----
-
-func TestCountAnomalyRulesIn_Empty(t *testing.T) {
-	n := countAnomalyRulesIn(nil, nil)
-	if n != 0 {
-		t.Fatalf("expected 0, got %d", n)
-	}
-}
-
-func TestCountAnomalyRulesIn_OnlyExactRules(t *testing.T) {
-	rules := map[string]StoredRule{
-		"a": {MatchAnomaly: 1},
-		"b": {MatchAnomaly: 0},
-		"c": {MatchAnomaly: 2},
-	}
-	n := countAnomalyRulesIn(rules, nil)
-	if n != 2 {
-		t.Fatalf("expected 2, got %d", n)
-	}
-}
-
-func TestCountAnomalyRulesIn_OnlyCIDRRules(t *testing.T) {
-	cidrRules := map[string]StoredCIDRRule{
-		"x": {MatchAnomaly: 1},
-		"y": {MatchAnomaly: 0},
-	}
-	n := countAnomalyRulesIn(nil, cidrRules)
-	if n != 1 {
-		t.Fatalf("expected 1, got %d", n)
-	}
-}
-
-func TestCountAnomalyRulesIn_Mixed(t *testing.T) {
-	rules := map[string]StoredRule{
-		"a": {MatchAnomaly: 1},
-		"b": {MatchAnomaly: 0},
-	}
-	cidrRules := map[string]StoredCIDRRule{
-		"x": {MatchAnomaly: 2},
-	}
-	n := countAnomalyRulesIn(rules, cidrRules)
-	if n != 2 {
-		t.Fatalf("expected 2, got %d", n)
-	}
-}
-
-func TestCountAnomalyRulesIn_ZeroAfterAllNonAnomaly(t *testing.T) {
-	rules := map[string]StoredRule{
-		"a": {MatchAnomaly: 0},
-		"b": {MatchAnomaly: 0},
-	}
-	cidrRules := map[string]StoredCIDRRule{
-		"x": {MatchAnomaly: 0},
-	}
-	n := countAnomalyRulesIn(rules, cidrRules)
-	if n != 0 {
-		t.Fatalf("expected 0 when no anomaly rules, got %d", n)
-	}
-}
+// AUD-003 anomaly count helpers retired by B1 cut 5-4 (D16).
 
 // ---- AUD-004: storedRuleToRule MatchAnomaly ----
 
@@ -193,8 +74,8 @@ func TestStoredCIDRRuleToRule_MatchAnomalyReturned(t *testing.T) {
 // ---- Node anomaly guard ----
 
 func TestValidateNodeAnomalyFields_RateLimit(t *testing.T) {
-	if err := validateNodeAnomalyFields(1, "rate_limit", "", "10.0.0.1", "", ""); err == nil {
-		t.Fatal("expected error: anomaly + rate_limit")
+	if err := validateNodeAnomalyFields(1, "rate_limit", "", "10.0.0.1", "", ""); err != nil {
+		t.Fatalf("bounded anomaly + rate_limit must pass: %v", err)
 	}
 }
 
@@ -297,62 +178,11 @@ func runHandler(handler gin.HandlerFunc, method, path string, body interface{}) 
 	return w.Code, resp
 }
 
-func TestAddRuleHandler_RejectsAnomalyRateLimit(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Action: "rate_limit", RateLimit: 1000,
-		MatchAnomaly: 1, DstIP: "10.0.0.1",
-	}
-	code, resp := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d (resp=%v)", code, resp)
-	}
-	errStr, _ := resp["error"].(string)
-	if !strings.Contains(errStr, "anomaly") && !strings.Contains(errStr, "rate_limit") {
-		t.Fatalf("expected anomaly/rate_limit rejection, got: %s", errStr)
-	}
-}
-
-func TestAddRuleHandler_RejectsAnomalyNoTarget(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Action: "drop", MatchAnomaly: 1,
-	}
-	code, _ := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for anomaly without target, got %d", code)
-	}
-}
-
-func TestAddRuleHandler_RejectsBadFragmentIPv6(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Action: "drop", MatchAnomaly: 1, DstIP: "2001:db8::1",
-	}
-	code, _ := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for bad_fragment + IPv6, got %d", code)
-	}
-}
-
-func TestAddRuleHandler_RejectsUnknownBit(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Action: "drop", MatchAnomaly: 0xFF, DstIP: "10.0.0.1",
-	}
-	code, _ := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for unknown bits, got %d", code)
-	}
-}
-
 // TestBatchInputs_RejectedByAnomalyGuard verifies the per-item validation
 // helper rejects illegal anomaly inputs. The full AddRulesBatch handler
 // requires real BPF maps and lives in integration-tagged tests.
 func TestBatchInputs_RejectedByAnomalyGuard(t *testing.T) {
 	cases := []Rule{
-		// anomaly + rate_limit
-		{Action: "rate_limit", RateLimit: 100, MatchAnomaly: 1, DstIP: "10.0.0.1"},
 		// anomaly + IPv6 + bad_fragment
 		{Action: "drop", MatchAnomaly: 1, DstIP: "2001:db8::1"},
 		// anomaly + wildcard target
@@ -428,39 +258,6 @@ func TestValidateRule_PortlessProtoZeroPorts_Accepted(t *testing.T) {
 	err := validateRule("", "10.0.0.1", "gre", 0, 0, 0, 0)
 	if err != nil {
 		t.Fatalf("validateRule should accept gre + zero ports, got: %v", err)
-	}
-}
-
-// HTTP entry test: AddRule rejects gre+port at the API boundary (validateRule).
-func TestAddRuleHandler_RejectsPortlessProtoWithPort(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Protocol: "gre",
-		SrcPort:  500,
-		DstIP:    "10.99.0.220",
-		Action:   "drop",
-	}
-	code, resp := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d (resp=%v)", code, resp)
-	}
-	errStr, _ := resp["error"].(string)
-	if !strings.Contains(errStr, "does not carry ports") {
-		t.Fatalf("expected portless diagnosis, got: %s", errStr)
-	}
-}
-
-func TestAddRuleHandler_RejectsESPWithDstPort(t *testing.T) {
-	h := &Handlers{}
-	body := Rule{
-		Protocol: "esp",
-		DstPort:  500,
-		DstIP:    "10.99.0.221",
-		Action:   "drop",
-	}
-	code, _ := runHandler(h.AddRule, "POST", "/rules", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for esp+dst_port, got %d", code)
 	}
 }
 
@@ -548,7 +345,7 @@ func TestDoAtomicSyncInputs_PortlessPortFailedAccounting(t *testing.T) {
 
 // rev12 codex round 11 P3: Node-side guard normalizes protocol case so
 // direct-Node clients sending uppercase (e.g. "GRE") still hit the B-10
-// rejection. Without this, parseProtocol("GRE") falls through to ProtoAll
+// rejection. Without this, parseProtocolLenient("GRE") falls through to ProtoAll
 // (legacy contract) and the BPF dead-rule path would silently reopen.
 func TestValidatePortProtocolCompatNode_UppercaseProtocol(t *testing.T) {
 	cases := []string{"GRE", "ESP", "ICMP", "ICMPv6", "Igmp", "GrE"}
@@ -564,40 +361,6 @@ func TestValidatePortProtocolCompatNode_UppercaseProtocol(t *testing.T) {
 // semantics (only TCP/UDP packets fill key.src_port/dst_port). Without this
 // guard, AddWhitelist / AddWhitelistBatch / AddWhitelistFromSync would write
 // ghost whitelist entries that never match.
-
-// HTTP entry: AddWhitelist rejects gre + 5-tuple + src_port=500.
-func TestAddWhitelistHandler_RejectsPortlessProtoWithPort(t *testing.T) {
-	h := &Handlers{}
-	body := WhitelistEntry{
-		Protocol: "gre",
-		SrcPort:  500,
-		SrcIP:    "10.99.0.10",
-		DstIP:    "10.99.0.20",
-	}
-	code, resp := runHandler(h.AddWhitelist, "POST", "/whitelist", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d (resp=%v)", code, resp)
-	}
-	errStr, _ := resp["error"].(string)
-	if !strings.Contains(errStr, "does not carry ports") {
-		t.Fatalf("expected portless diagnosis, got: %s", errStr)
-	}
-}
-
-// HTTP entry: AddWhitelist rejects esp + dst_port.
-func TestAddWhitelistHandler_RejectsESPWithDstPort(t *testing.T) {
-	h := &Handlers{}
-	body := WhitelistEntry{
-		Protocol: "esp",
-		DstPort:  500,
-		SrcIP:    "10.99.0.11",
-		DstIP:    "10.99.0.21",
-	}
-	code, _ := runHandler(h.AddWhitelist, "POST", "/whitelist", body)
-	if code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", code)
-	}
-}
 
 // Batch path: per-item helper-level lock — same matrix as rules.
 func TestAddWhitelistBatchInputs_PortlessPortRejected(t *testing.T) {

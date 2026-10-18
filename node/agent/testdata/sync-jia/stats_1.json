@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"total_packets\":0,\"dropped_packets\":0,\"passed_packets\":0,\"whitelisted_packets\":0,\"rate_limited_packets\":0,\"tailcall_fail\":0,\"rules_count\":1,\"whitelist_count\":0,\"dropped_pps\":0,\"passed_pps\":0,\"total_pps\":0,\"system\":{\"cpu_percent\":0,\"mem_total_mb\":0,\"mem_used_mb\":0,\"mem_percent\":0,\"uptime_seconds\":0,\"load_avg_1\":0,\"load_avg_5\":0,\"load_avg_15\":0},\"agent_state\":{\"exact_rules\":1,\"cidr_rules\":0,\"whitelist_entries\":0,\"active_slot\":0,\"rule_map_selector\":0}}"
+}

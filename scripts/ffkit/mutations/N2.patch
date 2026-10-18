@@ -1,0 +1,11 @@
+--- a/node/agent/main.go
++++ b/node/agent/main.go
+@@ -720,7 +720,7 @@
+ 		state, err := read(name)
+ 		if err != nil {
+ 			log.Printf("[main] WARN: XDP readback for %s failed; restoring: %v", name, err)
+-		} else if state.Attached != 0 {
++		} else if false && state.Attached != 0 {
+ 			log.Printf("[main] XDP still attached to %s; skipping interface restore", name)
+ 			continue
+ 		}

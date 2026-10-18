@@ -5,11 +5,21 @@ package api
 type RuleStats struct {
 	MatchCount uint64  `json:"match_count"`
 	DropCount  uint64  `json:"drop_count"`
+	MatchBytes uint64  `json:"match_bytes"`
+	DropBytes  uint64  `json:"drop_bytes"`
 	DropPPS    float64 `json:"drop_pps"`
 }
 
 // Rule is the API representation of a rule
 type Rule struct {
+	LogicalID uint32  `json:"logical_id,omitempty"`
+	TTL       *string `json:"ttl,omitempty"`
+	DSCP      *string `json:"dscp,omitempty"`
+	ICMPType  *string `json:"icmp_type,omitempty"`
+	ICMPCode  *string `json:"icmp_code,omitempty"`
+	Fragment  *string `json:"fragment,omitempty"`
+	PktLen    *string `json:"pkt_len,omitempty"`
+
 	ID           string     `json:"id"`
 	SrcIP        string     `json:"src_ip,omitempty"`
 	DstIP        string     `json:"dst_ip,omitempty"`
@@ -41,8 +51,9 @@ type WhitelistEntry struct {
 
 // XDPInterface describes a single XDP-attached network interface
 type XDPInterface struct {
-	Name string `json:"name"` // e.g. "ens38"
-	Role string `json:"role"` // "filter" (traditional) / "inbound" / "outbound" (fast_forward)
+	AttachMode string `json:"attach_mode"` // 启动时读回快照 (startup kernel snapshot).
+	Name       string `json:"name"`        // e.g. "ens38"
+	Role       string `json:"role"`        // "filter" (traditional) / "inbound" / "outbound" (fast_forward)
 }
 
 // XDPInfo reports the XDP operating mode and attached interfaces
@@ -53,11 +64,16 @@ type XDPInfo struct {
 
 // Stats represents global statistics
 type Stats struct {
+	TotalBytes         uint64       `json:"total_bytes"`
+	DroppedBytes       uint64       `json:"dropped_bytes"`
+	PassedBytes        uint64       `json:"passed_bytes"`
 	TotalPackets       uint64       `json:"total_packets"`
 	DroppedPackets     uint64       `json:"dropped_packets"`
 	PassedPackets      uint64       `json:"passed_packets"`
 	WhitelistedPackets uint64       `json:"whitelisted_packets"`
 	RateLimitedPackets uint64       `json:"rate_limited_packets"`
+	MappedV6Dropped    uint64       `json:"mapped_v6_dropped"`
+	CondRowMissing     uint64       `json:"cond_row_missing"`
 	TailcallFail       uint64       `json:"tailcall_fail"` // Phase 8: gate→main tail-call failures (non-zero = BL chain bypassed)
 	RulesCount         int          `json:"rules_count"`
 	WhitelistCount     int          `json:"whitelist_count"`
@@ -67,10 +83,38 @@ type Stats struct {
 	System             *SystemStats `json:"system,omitempty"`
 	AgentState         *AgentState  `json:"agent_state,omitempty"`
 	XDPInfo            *XDPInfo     `json:"xdp_info,omitempty"`
+
+	Capacity *CapacityReport `json:"capacity,omitempty"`
+}
+
+type CapacityEntry struct {
+	Limit int `json:"limit"`
+	Used  int `json:"used"`
+}
+
+type CapacityReport struct {
+	Blacklist     CapacityEntry `json:"blacklist"`
+	CIDRBlacklist CapacityEntry `json:"cidr_blacklist"`
+	Cond          CapacityEntry `json:"cond"`
+	CIDRCond      CapacityEntry `json:"cidr_cond"`
+	Whitelist     CapacityEntry `json:"whitelist"`
+	SV4CIDRTrie   CapacityEntry `json:"sv4_cidr_trie"`
+	DV4CIDRTrie   CapacityEntry `json:"dv4_cidr_trie"`
+	SV6CIDRTrie   CapacityEntry `json:"sv6_cidr_trie"`
+	DV6CIDRTrie   CapacityEntry `json:"dv6_cidr_trie"`
+	LogicalState  CapacityEntry `json:"logical_state"`
 }
 
 // SyncRule represents a rule for sync (matches sync.Rule)
 type SyncRule struct {
+	LogicalID uint32  `json:"logical_id,omitempty"`
+	TTL       *string `json:"ttl,omitempty"`
+	DSCP      *string `json:"dscp,omitempty"`
+	ICMPType  *string `json:"icmp_type,omitempty"`
+	ICMPCode  *string `json:"icmp_code,omitempty"`
+	Fragment  *string `json:"fragment,omitempty"`
+	PktLen    *string `json:"pkt_len,omitempty"`
+
 	ID           string
 	SrcIP        string
 	DstIP        string
@@ -97,8 +141,17 @@ type SyncWhitelistEntry struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
+// AtomicSyncRejection identifies the original request item, never a generated ID.
+// Index is present only for an empty request ID (zero-based within the batch).
+type AtomicSyncRejection struct {
+	ID     string `json:"id"`
+	Index  *int   `json:"index,omitempty"`
+	Reason string `json:"reason"`
+}
+
 // AtomicSyncResult holds the outcome of DoAtomicSync.
 type AtomicSyncResult struct {
+	Rejected   []AtomicSyncRejection
 	Added      int
 	Failed     int
 	ExactRules int64

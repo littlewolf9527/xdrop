@@ -1,0 +1,52 @@
+[
+  {
+    "method": "GET",
+    "path": "/",
+    "auth": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/health",
+    "auth": false
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/rules",
+    "auth": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/rules/hits",
+    "auth": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/rules/commit",
+    "auth": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/whitelist",
+    "auth": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sync/atomic",
+    "auth": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/sync/whitelist",
+    "auth": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/stats",
+    "auth": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/stats/cpu",
+    "auth": true
+  }
+]

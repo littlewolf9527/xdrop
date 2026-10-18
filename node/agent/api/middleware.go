@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,9 +10,12 @@ import (
 // AuthMiddleware creates an API Key authentication middleware for Node
 func AuthMiddleware(apiKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Skip auth if no API key configured
+		// Refuse protected requests when authentication is not configured.
 		if apiKey == "" {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "API key not configured",
+				"message": "Configure auth.node_api_key before serving protected routes",
+			})
 			return
 		}
 
@@ -27,7 +31,7 @@ func AuthMiddleware(apiKey string) gin.HandlerFunc {
 			return
 		}
 
-		if providedKey != apiKey {
+		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(apiKey)) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Invalid API key",
 				"message": "The provided API key is incorrect",

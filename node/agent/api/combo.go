@@ -1,4 +1,4 @@
-// XDrop Agent - 34-combo type classification for bitmap optimization
+// XDrop Agent - Stable combo type classification for bitmap optimization
 package api
 
 import "fmt"
@@ -24,7 +24,8 @@ func validateComboType(comboType int) error {
 	return nil
 }
 
-// Combo type constants (must match xdrop.h)
+// Active combo constants (must match xdrop.h). Slots 20 and 32 are retired;
+// surviving IDs and first-match order are unchanged (S2a / F-072).
 const (
 	ComboExact5Tuple       = 0  // src_ip + dst_ip + src_port + dst_port + protocol
 	ComboWildcardSrcIP     = 1  // dst_ip + src_port + dst_port + protocol
@@ -46,7 +47,6 @@ const (
 	ComboSrcIPSrcPort      = 17 // src_ip + src_port
 	ComboSrcIPSrcPortProto = 18 // src_ip + src_port + protocol
 	// Note: combo 19 was removed (duplicate of ComboDstIPProto)
-	ComboDstIPDstPortProto    = 20 // dst_ip + dst_port + protocol
 	ComboSrcDstIPDstPort      = 21 // src_ip + dst_ip + dst_port
 	ComboSrcDstIPDstPortProto = 22 // src_ip + dst_ip + dst_port + protocol
 	ComboSrcIPPorts           = 23 // src_ip + src_port + dst_port
@@ -58,7 +58,6 @@ const (
 	ComboSrcDstIPSrcPort      = 29 // src_ip + dst_ip + src_port
 	ComboSrcDstIPSrcPortProto = 30 // src_ip + dst_ip + src_port + protocol
 	ComboDstIPPorts           = 31 // dst_ip + src_port + dst_port
-	ComboDstIPPortsProto      = 32 // dst_ip + src_port + dst_port + protocol
 	ComboAllExceptProto       = 33 // src_ip + dst_ip + src_port + dst_port
 )
 
@@ -120,8 +119,6 @@ func getComboType(key RuleKey) int {
 		return ComboSrcIPSrcPort
 	case hasSrcIP && !hasDstIP && hasSrcPort && !hasDstPort && hasProto:
 		return ComboSrcIPSrcPortProto
-	case !hasSrcIP && hasDstIP && !hasSrcPort && hasDstPort && hasProto:
-		return ComboDstIPDstPortProto
 	case hasSrcIP && hasDstIP && !hasSrcPort && hasDstPort && !hasProto:
 		return ComboSrcDstIPDstPort
 	case hasSrcIP && hasDstIP && !hasSrcPort && hasDstPort && hasProto:
@@ -144,8 +141,6 @@ func getComboType(key RuleKey) int {
 		return ComboSrcDstIPSrcPortProto
 	case !hasSrcIP && hasDstIP && hasSrcPort && hasDstPort && !hasProto:
 		return ComboDstIPPorts
-	case !hasSrcIP && hasDstIP && hasSrcPort && hasDstPort && hasProto:
-		return ComboDstIPPortsProto
 	case hasSrcIP && hasDstIP && hasSrcPort && hasDstPort && !hasProto:
 		return ComboAllExceptProto
 	default:
@@ -200,8 +195,6 @@ func getCIDRComboType(key CIDRRuleKey) int {
 		return ComboSrcIPSrcPort
 	case hasSrcID && !hasDstID && hasSrcPort && !hasDstPort && hasProto:
 		return ComboSrcIPSrcPortProto
-	case !hasSrcID && hasDstID && !hasSrcPort && hasDstPort && hasProto:
-		return ComboDstIPDstPortProto
 	case hasSrcID && hasDstID && !hasSrcPort && hasDstPort && !hasProto:
 		return ComboSrcDstIPDstPort
 	case hasSrcID && hasDstID && !hasSrcPort && hasDstPort && hasProto:
@@ -224,8 +217,6 @@ func getCIDRComboType(key CIDRRuleKey) int {
 		return ComboSrcDstIPSrcPortProto
 	case !hasSrcID && hasDstID && hasSrcPort && hasDstPort && !hasProto:
 		return ComboDstIPPorts
-	case !hasSrcID && hasDstID && hasSrcPort && hasDstPort && hasProto:
-		return ComboDstIPPortsProto
 	case hasSrcID && hasDstID && hasSrcPort && hasDstPort && !hasProto:
 		return ComboAllExceptProto
 	default:

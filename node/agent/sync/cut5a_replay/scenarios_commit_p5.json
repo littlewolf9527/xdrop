@@ -1,0 +1,3526 @@
+[
+  {
+    "Name": "I15_contract_exact",
+    "Authority": "I15 H1-H6",
+    "Steps": [
+      {
+        "Name": "empty",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": []
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "create",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": []
+            },
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 0,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "identity_pure",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "renamed",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "delete",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": []
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "absent",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": []
+            }
+          ]
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_R0",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "quiescence_failed",
+        "Fault": "R0",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-3",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-3",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-4",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-4",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-5",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-5",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-6",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-6",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-7",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-7",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_Rc",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "deferred",
+        "Fault": "Rc",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_exact_c-9",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "c-9",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_contract_cidr",
+    "Authority": "I15 H1-H6",
+    "Steps": [
+      {
+        "Name": "empty",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": []
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "create",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "condition",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "move",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": []
+            },
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 0,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "identity_pure",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "renamed",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "delete",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": []
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "absent",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": []
+            }
+          ]
+        },
+        "Expect": "unchanged",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-2",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "withdrawal_pending",
+        "Fault": "c-2",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_R0",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "quiescence_failed",
+        "Fault": "R0",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-3",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-3",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-4",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-4",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-5",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-5",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-6",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-6",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-7",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "commit_failed",
+        "Fault": "c-7",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_Rc",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "deferred",
+        "Fault": "Rc",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_cidr_c-9",
+    "Authority": "I15 failure table",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "fault",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 80,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24",
+                  "dst_port": 80,
+                  "tcp_flags": "SYN"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "c-9",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.99",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 99,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.99"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_empty_id",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_zero_id",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 0,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_key_mismatch",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_duplicate_key",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            },
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_duplicate_id",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                },
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "duplicate_id",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_duplicate_logical_id",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "b",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "duplicate_logical_id",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_group_undeclared",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "group_undeclared",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_content_different",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 18,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "content_different",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_condition_capacity",
+    "Authority": "I15 P1-P5",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "r0",
+                  "logical_id": 20,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "60"
+                },
+                {
+                  "id": "r1",
+                  "logical_id": 21,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "61"
+                },
+                {
+                  "id": "r2",
+                  "logical_id": 22,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "62"
+                },
+                {
+                  "id": "r3",
+                  "logical_id": 23,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "63"
+                },
+                {
+                  "id": "r4",
+                  "logical_id": 24,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "64"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "condition_capacity",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_reject_key",
+    "Authority": "I15 P1 canonical key before member key",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject_noncanonical_key",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": null,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject_member_key_mismatch",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "invalid",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_table_full",
+    "Authority": "I15 P7 M5b",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.18",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 18,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.18"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "table_full",
+        "Fault": "capacity_one",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_prefix_overlap",
+    "Authority": "I15 P6",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "c",
+                  "logical_id": 21,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/24"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "reject",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/24",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": []
+            },
+            {
+              "key": {
+                "kind": "cidr",
+                "src_cidr": "192.0.2.0/25",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "n",
+                  "logical_id": 22,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_cidr": "192.0.2.0/25"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "cidr_overlap",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_undeclared_preserved",
+    "Authority": "I15 H3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            },
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.18",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 18,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.18"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "change",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1",
+                  "ttl": "64"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_9b",
+    "Authority": "I15 failure row 9b regression",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "a",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": ""
+      },
+      {
+        "Name": "copy_failure",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/a",
+        "Body": {
+          "id": "a",
+          "logical_id": 17,
+          "protocol": "tcp",
+          "action": "drop",
+          "src_ip": "192.0.2.1",
+          "rate_limit": 7
+        },
+        "ExpectP3": "publish_failure",
+        "ExpectP4": "publish_failure",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "active_config_lookup"
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_9c",
+    "Authority": "I15 failure row 9c regression",
+    "Steps": [
+      {
+        "Name": "startup_refused",
+        "Method": "STARTUP_CLEAR_FAILURE",
+        "Packets": []
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_10",
+    "Authority": "I15 failure row 10 strict Step 1",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "a",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": ""
+      },
+      {
+        "Name": "strict_failure",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "a",
+              "logical_id": 17,
+              "protocol": "tcp",
+              "action": "drop",
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "ExpectP3": "publish_failure",
+        "ExpectP4": "publish_failure",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "full_step1_delete"
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.18",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 18,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.18"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  },
+  {
+    "Name": "I15_failure_9a",
+    "Authority": "I15 failure row 9a payment receipt",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "192.0.2.1",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "a",
+                  "logical_id": 17,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "192.0.2.1"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "committed",
+        "Fault": "",
+        "Packets": [
+          "syn"
+        ]
+      },
+      {
+        "Name": "retire",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/a",
+        "Body": null,
+        "ExpectP3": "success",
+        "ExpectP4": "success",
+        "Packets": [
+          "syn"
+        ],
+        "Fault": ""
+      },
+      {
+        "Name": "payment_failure",
+        "Method": "POST",
+        "Path": "/api/v1/rules/commit",
+        "Body": {
+          "groups": [
+            {
+              "key": {
+                "kind": "exact",
+                "src_ip": "203.0.113.18",
+                "src_port": 0,
+                "dst_port": 0,
+                "protocol": "tcp"
+              },
+              "rules": [
+                {
+                  "id": "u",
+                  "logical_id": 18,
+                  "protocol": "tcp",
+                  "action": "drop",
+                  "src_ip": "203.0.113.18"
+                }
+              ]
+            }
+          ]
+        },
+        "Expect": "table_full",
+        "Fault": "capacity_one_payment_failure",
+        "Packets": [
+          "syn"
+        ]
+      }
+    ]
+  }
+]

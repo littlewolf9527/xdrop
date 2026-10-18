@@ -1,0 +1,4 @@
+{
+  "status": 404,
+  "body": "{\"code\":\"rule_not_found\",\"error\":\"Rule not found\",\"withdrawal_pending\":false}"
+}

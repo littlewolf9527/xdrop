@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"code\":\"already_exists\",\"rule_id\":\"r\",\"success\":true,\"withdrawal_pending\":false}"
+}

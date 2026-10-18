@@ -9,6 +9,7 @@ package api
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -74,74 +75,45 @@ func TestAnomalyBitsStable(t *testing.T) {
 	}
 }
 
-// TestFastForwardStashFields_SourceLock is the v2.6.1 FF regression fix lock
-// (codex round 11 residual P3). It asserts the C-side `struct tail_stash`
-// still carries `is_ff` and `ingress_ifindex`, and that xdp_anomaly_verify's
-// pass-path still routes through the `pass_or_redirect` sink with a
-// bpf_redirect_map call keyed by the stashed ingress_ifindex.
-//
-// Without these fields + control-flow shape, FF-mode traffic that reaches
-// anomaly_verify and falls through (which is ~99% of normal packets when
-// any anomaly rule is registered) returns XDP_PASS → goes to Linux stack on
-// a no-IP interface → flow dies. See LT-D-4-12c live regression case.
-//
-// This is a source-text assertion, so it runs in plain `go test ./...`
-// without CAP_BPF. A stricter runtime check via BPF_PROG_TEST_RUN lives in
-// node/agent/bpf/anomaly_verify_ff_test.go under the integration tag.
+// TD-081: retired header definitions are absent; main owns FF
+// on both lookup paths, with no stash or anomaly-program handoff.
 func TestFastForwardStashFields_SourceLock(t *testing.T) {
 	xdropH := mustReadSource(t, "../../bpf/xdrop.h")
-	xdropC := mustReadSource(t, "../../bpf/xdrop.c")
+	// Phase 0 (T5): 原先读的是 node/bpf/xdrop.c —— 那个文件不参与编译（facts.md F-041），
+	// 断言它等于断言了一份化石。已改读真正编译进 xdrop_main.elf 的源文件。
+	// 换之前逐条核过：本测试用到的 7 个标记在两个文件里都存在，换过来不丢覆盖。
+	xdropC := mustReadSource(t, "../../bpf/xdrop_main.c")
 
 	for _, needle := range []string{
-		"struct tail_stash {",
-		"__u8  is_ff;",
-		"__u32 ingress_ifindex;",
+		"struct tail_stash",
+		"TAIL_SLOT_ANOMALY_VERIFY",
+		"CONFIG_ANOMALY_RULE_COUNT",
 	} {
-		if !strings.Contains(xdropH, needle) {
-			t.Errorf("xdrop.h missing FF regression fix marker %q — \n"+
-				"did someone drop the is_ff/ingress_ifindex fields from tail_stash?\n"+
-				"If so, see proposal §7.8.5 + v2.6.1-deploy-summary.md 'FF-mode regression'.",
-				needle)
+		if strings.Contains(xdropH, needle) {
+			t.Errorf("retired header definition remains: %s", needle)
 		}
 	}
 
-	// Main program must stash FF state before tail_call, otherwise the
-	// anomaly_verify callee sees is_ff=0 and returns XDP_PASS on pass-path.
-	for _, needle := range []string{
-		".is_ff = fast_forward ? 1 : 0,",
-		".ingress_ifindex = ingress_ifindex,",
+	for _, retired := range []string{
+		"int xdp_anomaly_verify(", "struct tail_stash stash",
+		"bpf_map_update_elem(&tail_stash,", "bpf_map_lookup_elem(&tail_stash,",
 	} {
-		if !strings.Contains(xdropC, needle) {
-			t.Errorf("xdrop.c main program not stashing FF state: missing %q", needle)
+		if strings.Contains(xdropC, retired) {
+			t.Errorf("retired anomaly dispatch remains: %s", retired)
 		}
 	}
-
-	// anomaly_verify must consume the stashed FF state + route pass-paths
-	// through the unified sink that redirects under fast_forward.
-	for _, needle := range []string{
-		"fast_forward = st->is_ff;",
-		"ingress_ifindex = st->ingress_ifindex;",
-		"goto pass_or_redirect;",
-		"pass_or_redirect:",
+	if regexp.MustCompile(`(?m)^\s*bpf_tail_call\s*\(`).MatchString(xdropC) {
+		t.Fatal("retired anomaly dispatch contains executable tail call")
+	}
+	for _, live := range []string{
+		"int fast_forward = is_fast_forward_enabled();", ".l4_valid = l4_valid, .pad = {0},",
 		"return bpf_redirect_map(&devmap, ingress_ifindex, 0);",
 	} {
-		if !strings.Contains(xdropC, needle) {
-			t.Errorf("xdrop.c anomaly_verify FF regression shape broken: missing %q — \n"+
-				"the `goto pass_or_redirect:` single-sink pattern is required to stay under\n"+
-				"the 1M insn verifier budget. Do not inline the FF branch at multiple return sites.",
-				needle)
+		if !strings.Contains(xdropC, live) {
+			t.Errorf("main FF source marker missing: %s", live)
 		}
 	}
 
-	// Critical contract: main program's FF pass must NOT use a direct devmap
-	// lookup inside anomaly_verify (that trips the 1M insn budget on linux
-	// 6.12). Assert the anti-pattern is absent.
-	const antiPattern = "int fast_forward = is_fast_forward_enabled();\n" +
-		"\n  // Read stashed state (main program wrote this before tail_call).\n  __u32 zero = 0;\n  struct tail_stash *st = bpf_map_lookup_elem(&tail_stash, &zero);"
-	// (we only fail if a future refactor puts is_fast_forward_enabled() call
-	//  back inside xdp_anomaly_verify — the regression attempt that tripped
-	//  the verifier on 6.12.)
-	_ = antiPattern // kept as documentation; no check until we see regression
 }
 
 func mustReadSource(t *testing.T, relPath string) string {

@@ -1,0 +1,12 @@
+--- a/node/agent/api/commit.go
++++ b/node/agent/api/commit.go
+@@ -220,6 +220,9 @@
+ 		if err := shadow.Update(i, value, ebpf.UpdateExist); err != nil {
+ 			return fmt.Errorf("copy shadow config %d: %w", i, err)
+ 		}
++	}
++	if err := shadow.Update(uint32(ConfigFastForwardEnabled), uint64(0), ebpf.UpdateExist); err != nil {
++		return err
+ 	}
+ 	var exactBitmap, cidrBitmap, exactCount, cidrCount uint64
+ 	for i, count := range p.Combos {

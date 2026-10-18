@@ -5,7 +5,7 @@
 
   <p>Distributed XDP/eBPF firewall with wire-speed packet filtering and a central management controller.</p>
 
-  [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go)](https://go.dev)
+  [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev)
   [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)](https://vuejs.org)
   [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
   [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-orange?logo=anthropic)](https://claude.com/product/claude-code)
@@ -15,210 +15,61 @@
 
 ---
 
-## What is XDrop?
+## Overview
 
-XDrop is a distributed, high-performance packet filtering system built on Linux XDP (eXpress Data Path). It attaches BPF programs directly to network interface drivers — bypassing the kernel network stack entirely — to drop, pass, or rate-limit traffic at the earliest possible point in the receive path.
+XDrop combines Linux XDP packet filtering nodes with a central controller and browser console. The controller stores desired rules in SQLite and pushes updates to registered nodes; the node owns BPF loading and packet processing.
 
-The system has two components:
+Traditional mode passes accepted traffic to the host network stack. Fast Forward mode redirects traffic between one pair of interfaces.
 
-- **Node Agent** — runs on each filtering host, manages the BPF data plane, and exposes a REST API
-- **Controller** — central management plane with a Web UI, stores rules in SQLite, and pushes them to all registered nodes
+## Features
 
-| Classic Theme | Amber Theme |
-|:---:|:---:|
-| ![Classic](.github/assets/dashboard_classic.png) | ![Amber](.github/assets/dashboard_amber.png) |
+- IPv4/IPv6 exact-address and prefix rules, transport ports, protocol and packet conditions; actions are `drop` and `rate_limit`.
+- Exact five-tuple whitelist and separate atomic rules/whitelist publication.
+- Browser sessions with administrator/operator roles, machine credentials, audit records and traffic history.
+- Node status, per-rule delivery results and capacity reporting; an API write acknowledges storage before node delivery finishes.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                            Controller                                │
-│                                                                      │
-│   ┌──────────────┐   ┌─────────────┐   ┌────────────┐   ┌────────┐  │
-│   │  Web UI      │   │  REST API   │   │  Sync      │   │SQLite  │  │
-│   │  (Vue 3 +    │   │  (Gin)      │   │  Scheduler │   │  DB    │  │
-│   │  ECharts)    │   │             │   │            │   │        │  │
-│   └──────────────┘   └─────────────┘   └────────────┘   └────────┘  │
-└─────────────────────────────────┬────────────────────────────────────┘
-                                  │  HTTP (rule push / health poll)
-              ┌───────────────────┼───────────────────┐
-              ▼                   ▼                   ▼
-       ┌────────────┐      ┌────────────┐      ┌────────────┐
-       │  Node 1    │      │  Node 2    │      │  Node N    │
-       │  Agent     │      │  Agent     │      │  Agent     │
-       │ ┌────────┐ │      │ ┌────────┐ │      │ ┌────────┐ │
-       │ │XDP/BPF │ │      │ │XDP/BPF │ │      │ │XDP/BPF │ │
-       │ └────────┘ │      │ └────────┘ │      │ └────────┘ │
-       └────────────┘      └────────────┘      └────────────┘
-        Wire-speed ↑        Wire-speed ↑        Wire-speed ↑
-```
+## Screenshot
 
----
+<p align="center">
+  <img src=".github/assets/console-overview-light.png" alt="XDrop console overview page, light theme" width="49%">
+  <img src=".github/assets/console-overview-dark.png" alt="XDrop console overview page, dark theme" width="49%">
+</p>
 
-## Key Features
+Console overview with sample data, light and dark themes.
 
-### BPF Data Plane
-- **Wire-speed filtering** — XDP programs run before `sk_buff` allocation; near line-rate even on commodity hardware
-- **Five-tuple matching** — src/dst IP, src/dst port, protocol
-- **IPv4 and IPv6** — unified rule format; IPv4 stored as IPv4-mapped IPv6 internally
-- **CIDR rules** — per-direction LPM trie (src or dst prefix); supports /0–/128
-- **Whitelist (v2.7.0+)** — 31-combo bitmap-gated matching with double-buffer atomic sync; hash map bypass checked before any blacklist rule
-- **Actions** — `drop`, `rate_limit` (token bucket, configurable PPS), `pass`
-- **Packet length filter** — `pkt_len_min` / `pkt_len_max` (L3 total length)
-- **TCP flags matching** — `tcp_flags` post-match filter (e.g. `SYN`, `SYN,ACK`, `RST`); mismatch continues wildcard fallback
-- **Decoder sugar** (v2.6+) — `decoder=tcp_ack|tcp_rst|tcp_fin` expands to `protocol=tcp` + matching TCP flags mask at rule creation; lets upstream detectors name attack patterns instead of bit-manipulating flags
-- **Anomaly data plane** (v2.6.1+) — `decoder=bad_fragment|invalid` attaches anomaly bits to rules; a tail-called `xdp_anomaly_verify` program detects Ping-of-Death (offset*8+payload>65535), tiny-first-fragment (TCP <20B / UDP <8B), malformed IHL<5, truncated total_length, and TCP `doff<5` — drops packets only when the rule's `match_anomaly` bits intersect with the packet's actual anomaly signature. Anomaly detection logic ported byte-for-byte from xSight v1.3 for cross-repo parity. IPv6 `invalid` supported; IPv6 `bad_fragment` rejected at the Controller (deferred)
-- **Bitmap optimization** — 64-bit bitmap encodes which of 34 field combinations have active rules (blacklist) or 31 combos (whitelist); BPF skips combinations with no rules, keeping the hot path O(1)
-- **Per-rule statistics** — per-CPU `match_count` and `drop_count` aggregated by the agent
+## Repository layout
 
-### AtomicSync (Double-Buffer Rule Publishing)
-Rule updates follow an RCU-style double-buffer protocol to eliminate race conditions between writing rules and updating the lookup bitmap:
-
-**Blacklist** (v2.0+):
-1. Write rule to the shadow BPF hash map (`blacklist_b` or `cidr_blist_b`)
-2. Build updated config (bitmap, counts) in the shadow config map
-3. Single atomic write flips the `active_config` selector — BPF switches atomically
-
-**Whitelist** (v2.7.0+, Phase 8):
-1. Write whitelist entries to the shadow BPF map (`whitelist_b`)
-2. Update `CONFIG_WL_BITMAP` and `CONFIG_WL_MAP_SELECTOR` in config
-3. Single atomic flip — whitelist switches with zero gap
-
-This guarantees the BPF data path never sees an inconsistent bitmap/rule state.
-
-### Deployment Modes
-| Mode | Description |
-|------|-------------|
-| **Traditional** | Single NIC, XDP attached inline on one interface |
-| **Fast-Forward** | Dual NIC gateway — XDP on both inbound and outbound interfaces; transparent L2 bridge |
-
-### Management Plane
-- Central rule storage in SQLite with full CRUD and batch APIs
-- Configurable sync interval with forced-sync endpoint (`POST /api/v1/nodes/:id/sync`)
-- Node health monitoring with automatic online/offline status
-- Web UI: real-time traffic dashboard (ECharts), node overview, rule management, whitelist editor
-- Optional API key authentication on both controller and node
-
----
-
-## Repository Layout
-
-```
-xdrop/
-├── node/
-│   ├── bpf/          # XDP program in C (xdrop_gate.c + xdrop_main.c / xdrop.h)
-│   └── agent/        # Go agent — BPF loader, API server, AtomicSync engine
-├── controller/
-│   ├── cmd/          # Binary entry point
-│   ├── internal/     # API, service, repository, scheduler, client
-│   └── web/          # Vue 3 + Element Plus + ECharts frontend
-└── scripts/          # Build and service management scripts
-```
-
-- [Node Agent →](node/README.md) — XDP data plane, BPF maps, AtomicSync, API
-- [Controller →](controller/README.md) — Management plane, Web UI, sync engine
-
----
+| Path | Purpose |
+|---|---|
+| `controller/cmd/xdrop-controller/` | Controller executable entry |
+| `controller/core/` | Storage, authentication, API, orchestration and embedded web UI |
+| `console/` | Vue console; builds into `controller/core/webui/build/` |
+| `node/agent/` | Go node agent |
+| `node/bpf/` | Main and whitelist-gate BPF programs |
+| `scripts/build-*.sh`, `scripts/manage-*.sh` | Compilation and process management |
 
 ## Requirements
 
-| Component | Requirement |
-|-----------|-------------|
-| Node Agent | Linux kernel **≥ 5.9**, clang ≥ 11, Go ≥ 1.24, root / CAP_NET_ADMIN |
-| Controller | Go ≥ 1.21, Node.js ≥ 18 (build only) — runs on any OS |
+- Node: Linux kernel ≥ 6.4 on little-endian x86-64 or arm64, root access, and a suitable network interface; the BPF code uses iterator kfuncs.
+- Check kernel version and JIT separately: `uname -rm`; `sysctl net.core.bpf_jit_enable` must report non-zero (1 enables JIT; 2 also enables JIT debug output).
+- Distro coverage (examples): Debian 13 (6.12), Ubuntu 24.04 (6.8), Ubuntu 22.04 HWE (6.5+), RHEL / Rocky / Alma 10 (6.12). Kernels below 6.4 are not supported by this release; earlier v2 releases remain available as tags but are no longer maintained.
+- Build tools: Go supporting the module declarations (controller `go 1.21`; node `go 1.24.0`, toolchain `go1.24.4`), a C compiler for controller SQLite, Node.js/npm for the console, and Linux clang with BPF target, make and Python 3 for node BPF.
 
-> The node agent **must run on Linux** (XDP is a Linux kernel feature). The controller can be deployed anywhere.
+## Quick start
 
-> **Kernel floor note (v2.5+):** the node agent uses `BPF_LINK_TYPE_XDP` for
-> XDP attach, which landed in Linux 5.9 (October 2020). On older kernels
-> (5.8 and below) startup fails with a clear error message pointing to
-> this requirement. Modern distros are covered: Debian 11+ (5.10),
-> RHEL/Rocky/Alma 9+ (5.14), Ubuntu 20.04 HWE / 22.04+ (5.15+). Operators
-> on legacy kernels should hold on xdrop **v2.4.2** (the last release
-> using the netlink attach path) until they can upgrade.
+From the repository root, build the controller with `./scripts/build-controller.sh all`; build a Linux node with `./scripts/build-node.sh all`.
 
-> **BPF pinning (v2.5+):** by default the node agent pins its BPF
-> objects under `/sys/fs/bpf/xdrop/` so state survives across
-> `systemctl restart xdrop-agent`:
-> - **16 map files** (Phase 3) — `blacklist`, `whitelist`,
->   `cidr_blacklist`, the four LPM tries, `config_a` / `config_b`,
->   etc. Keeps map IDs stable for `bpftool map dump pinned
->   /sys/fs/bpf/xdrop/<name>` and for any external BPF tooling
->   pointed at those objects.
-> - **1 XDP link file per interface** (Phase 4) — `link_<ifname>`
->   (e.g. `link_ens38`). Agent restart does
->   `LoadPinnedLink + Link.Update(newProg)` instead of
->   detach/reattach, so the XDP program swap is atomic in the
->   kernel — **zero-gap** attachment. Without link pinning, a
->   restart would leave a ~1.5–3 s window with no filter.
->
-> Requires `/sys/fs/bpf` to be mounted as a `bpf` filesystem — most
-> modern distros do this automatically via systemd. If pinning
-> fails (unmounted, EPERM, etc.) the agent silently falls back to
-> non-pinned mode by default; set `bpf.pinning: require` in
-> `config.yaml` for strict mode, or `disable` to opt out entirely.
+Follow [Getting started](GETTING_STARTED.md) to configure paths, initialize the master key, add an administrator, register a node and verify the first rule. Start and stop with `scripts/manage-controller.sh` and `scripts/manage-node.sh` after initialization.
 
-For a step-by-step environment setup guide, see **[Getting Started](GETTING_STARTED.md)**.
+## Documentation
 
----
-
-## Quick Start
-
-### 1. Build
-
-```bash
-# Build controller (frontend + Go binary)
-./scripts/build-controller.sh
-
-# Build node agent (BPF program + Go binary) — run on a Linux host
-./scripts/build-node.sh
-```
-
-### 2. Configure
-
-```bash
-# Controller
-cp controller/config.example.yaml controller/config.yaml
-# Edit: set jwt_secret, external_api_key, and add nodes under the nodes: section
-
-# Node agent
-cp node/config.example.yaml node/config.yaml
-# Edit: set interface name, node_api_key, sync_key
-```
-
-### 3. Start
-
-```bash
-# Controller (no root required)
-./scripts/controller.sh start
-
-# Node agent (requires root — XDP needs CAP_NET_ADMIN)
-sudo ./scripts/node.sh start
-
-# Check status
-./scripts/controller.sh status
-sudo ./scripts/node.sh status
-```
-
-The Web UI is available at `http://<controller-host>:8000` by default.
-
----
-
-## API Overview
-
-Both the controller and the node expose a versioned REST API at `/api/v1/`.
-
-| Resource | Endpoint | Notes |
-|----------|----------|-------|
-| Rules | `GET/POST /api/v1/rules` | Pagination: `?page=&limit=` |
-| Rule | `GET/PUT/DELETE /api/v1/rules/:id` | |
-| Batch rules | `POST/DELETE /api/v1/rules/batch` | |
-| Whitelist | `GET/POST/DELETE /api/v1/whitelist` | |
-| Stats | `GET /api/v1/stats` | PPS, drop counts, XDP info |
-| Nodes | `GET/POST /api/v1/nodes` | Controller only |
-| Force sync | `POST /api/v1/nodes/:id/sync` | Controller only |
-
-Node API requires `X-API-Key` header. Controller API key is optional (configurable).
-
----
+| Guide | Content |
+|---|---|
+| [Getting started](GETTING_STARTED.md) | First deployment and rule |
+| [Controller](controller/README.md) | Configuration, CLI and operations |
+| [Controller API](controller/API.md) | All controller routes and authentication |
+| [Node](node/README.md) | Build, operating modes and troubleshooting |
+| [Node API](node/API.md) | All node routes and synchronization |
 
 ## License
 

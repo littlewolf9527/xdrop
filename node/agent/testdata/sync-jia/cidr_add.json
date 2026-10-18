@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"code\":\"success\",\"message\":\"CIDR rule added\",\"rule_id\":\"r\",\"success\":true,\"withdrawal_pending\":false}"
+}

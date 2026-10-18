@@ -1,8 +1,0 @@
-/* === XDrop — Base styles (resets, animations, utilities) ===
-   Theme variables and Element Plus overrides are in themes/index.css
-*/
-
-/* Number animation */
-.number-animate {
-  transition: all 0.3s ease;
-}

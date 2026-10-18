@@ -1,0 +1,126 @@
+{
+  "TestAFE1/dst/0": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/dst/1": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_ip: IPv4-mapped IPv6 address ::FFFF:c000:201; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/dst/2": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_ip: IPv4-mapped IPv6 address 0:0:0:0:0:ffff:c000:201; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/dst/3": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_ip: IPv4-mapped IPv6 address ::ffff:0.0.0.0; write the IPv4 address 0.0.0.0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/src/0": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/src/1": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address ::FFFF:c000:201; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/src/2": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address 0:0:0:0:0:ffff:c000:201; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE1/src/3": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:0.0.0.0; write the IPv4 address 0.0.0.0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/0": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/120; write the IPv4 prefix 192.0.2.0/24\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/1": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/96; write the IPv4 prefix 0.0.0.0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/2": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:a00:0/104; write the IPv4 prefix 10.0.0.0/8\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/3": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.129/32\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/4": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/0120; write the IPv4 prefix 192.0.2.0/24\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/5": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/096; write the IPv4 prefix 0.0.0.0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/6": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/95\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/dst/7": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid dst_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/0": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/120; write the IPv4 prefix 192.0.2.0/24\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/1": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/96; write the IPv4 prefix 0.0.0.0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/2": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:a00:0/104; write the IPv4 prefix 10.0.0.0/8\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/3": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.129/32\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/4": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/0120; write the IPv4 prefix 192.0.2.0/24\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/5": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/096; write the IPv4 prefix 0.0.0.0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/6": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/95\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE2/src/7": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:0:0/0\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE3/CIDR+TTL": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_cidr: IPv4-mapped IPv6 prefix ::ffff:192.0.2.0/120; write the IPv4 prefix 192.0.2.0/24\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE3/exact+TTL": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE4": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"invalid src_ip: IPv4-mapped IPv6 address ::ffff:192.0.2.1; write the IPv4 address 192.0.2.1\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE5/CIDR": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"address family mismatch: src is IPv4, dst is IPv6\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE5/exact": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"address family mismatch: src is IPv4, dst is IPv6\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE5/reverse": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"address family mismatch: src is IPv6, dst is IPv4\"}],\"rules\":1,\"success\":true}"
+  },
+  "TestAFE5/v4-default": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"bad\",\"reason\":\"address family mismatch: src is IPv4, dst is IPv6\"}],\"rules\":1,\"success\":true}"
+  }
+}

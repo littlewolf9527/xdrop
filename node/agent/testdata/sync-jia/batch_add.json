@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"added\":2,\"failed\":0,\"results\":[{\"id\":\"r\",\"code\":\"success\"},{\"id\":\"r2\",\"code\":\"success\"}],\"success\":true,\"withdrawal_pending\":false}"
+}

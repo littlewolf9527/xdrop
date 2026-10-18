@@ -1,0 +1,917 @@
+[
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_3/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_3/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_3/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_3/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_POST_3/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "unchanged",
+    "new": "content_different",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_3/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_3/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "unchanged",
+    "new": "content_different",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_3/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_3/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_PUT_3/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_exact_BATCH_0/replay",
+    "field": [
+      "body",
+      "added"
+    ],
+    "old": 1,
+    "new": 0,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_0/replay",
+    "field": [
+      "body",
+      "failed"
+    ],
+    "old": 0,
+    "new": 1,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_0/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_3/replay",
+    "field": [
+      "body",
+      "added"
+    ],
+    "old": 1,
+    "new": 0,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_3/replay",
+    "field": [
+      "body",
+      "failed"
+    ],
+    "old": 0,
+    "new": 1,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_exact_BATCH_3/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_3/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_3/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_3/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_3/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_POST_3/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2461"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "unchanged",
+    "new": "content_different",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_3/replay",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_3/replay",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "unchanged",
+    "new": "content_different",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_3/replay",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_3/replay",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "r",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_PUT_3/replay",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2460 + authorization 1"
+  },
+  {
+    "case": "I3_cidr_BATCH_0/replay",
+    "field": [
+      "body",
+      "added"
+    ],
+    "old": 1,
+    "new": 0,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_0/replay",
+    "field": [
+      "body",
+      "failed"
+    ],
+    "old": 0,
+    "new": 1,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_0/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_0/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_0/replay",
+    "field": [
+      "installed",
+      "rules",
+      0,
+      "logical_id"
+    ],
+    "old": 7,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_3/replay",
+    "field": [
+      "body",
+      "added"
+    ],
+    "old": 1,
+    "new": 0,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_3/replay",
+    "field": [
+      "body",
+      "failed"
+    ],
+    "old": 0,
+    "new": 1,
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_3/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "code"
+    ],
+    "old": "already_exists",
+    "new": "content_different",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I3_cidr_BATCH_3/replay",
+    "field": [
+      "body",
+      "results",
+      0,
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "rule content differs",
+    "authority": "I3 \u2463"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "status"
+    ],
+    "old": 200,
+    "new": 409,
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "success"
+    ],
+    "old": true,
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "rule_id"
+    ],
+    "old": "b",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "message"
+    ],
+    "old": "Rule added",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "code"
+    ],
+    "old": "success",
+    "new": "duplicate_logical_id",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "error"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "logical ID is held by another rule",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "body",
+      "existing_id"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "a",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "installed",
+      "count"
+    ],
+    "old": 2,
+    "new": 1,
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "installed",
+      "rules",
+      1
+    ],
+    "old": {
+      "id": "b",
+      "protocol": "tcp",
+      "action": "drop",
+      "logical_id": 7,
+      "src_ip": "192.0.2.2"
+    },
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_before_packets",
+      "blacklist",
+      "00000000000000000000ffffc0000202000000000000000000000000000000000000000006000000"
+    ],
+    "old": "0100000000000000000000000000000000000000000000000000000000000000",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_before_packets",
+      "config_a",
+      "00000000"
+    ],
+    "old": "0200000000000000",
+    "new": "0000000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_before_packets",
+      "config_a",
+      "02000000"
+    ],
+    "old": "0002000000000000",
+    "new": "0000000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_before_packets",
+      "active_config",
+      "00000000"
+    ],
+    "old": "0000000000000000",
+    "new": "0100000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_after_packets",
+      "blacklist",
+      "00000000000000000000ffffc0000202000000000000000000000000000000000000000006000000"
+    ],
+    "old": "0100000000000000000000000000000000000000000000000000000000000000",
+    "new": {
+      "$absent": true
+    },
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_after_packets",
+      "config_a",
+      "00000000"
+    ],
+    "old": "0200000000000000",
+    "new": "0000000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_after_packets",
+      "config_a",
+      "02000000"
+    ],
+    "old": "0002000000000000",
+    "new": "0000000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I1_increment/duplicate",
+    "field": [
+      "maps_after_packets",
+      "active_config",
+      "00000000"
+    ],
+    "old": "0000000000000000",
+    "new": "0100000000000000",
+    "authority": "I1"
+  },
+  {
+    "case": "I2_deferred/defer",
+    "field": [
+      "maps_before_packets",
+      "blacklist_b",
+      "00000000000000000000ffffc0000201000000000000000000000000000000000000000006000000"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "0100000000000000000000000000000000000000000000000000000000000000",
+    "authority": "I2 R5c"
+  },
+  {
+    "case": "I2_deferred/defer",
+    "field": [
+      "maps_after_packets",
+      "blacklist_b",
+      "00000000000000000000ffffc0000201000000000000000000000000000000000000000006000000"
+    ],
+    "old": {
+      "$absent": true
+    },
+    "new": "0100000000000000000000000000000000000000000000000000000000000000",
+    "authority": "I2 R5c"
+  },
+  {
+    "case": "I5_creation/startup",
+    "field": [
+      "startup_refused"
+    ],
+    "old": false,
+    "new": true,
+    "authority": "I5"
+  }
+]

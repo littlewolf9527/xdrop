@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"code\":\"success\",\"message\":\"Rule deleted\",\"success\":true,\"withdrawal_pending\":false}"
+}

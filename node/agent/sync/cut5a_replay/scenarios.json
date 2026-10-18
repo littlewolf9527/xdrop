@@ -1,0 +1,1847 @@
+[
+  {
+    "Name": "pure_exact",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "update",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1"
+            },
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "198.51.100.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r",
+            "b"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_exact_flags",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "tcp_flags": "SYN,!ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "tcp_flags": "ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "tcp_flags": "ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1",
+              "tcp_flags": "SYN,!ACK"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_exact_length",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "pkt_len_min": 100,
+          "pkt_len_max": 200
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "pkt_len_min": 300,
+          "pkt_len_max": 400
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "pkt_len_min": 300,
+          "pkt_len_max": 400
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1",
+              "pkt_len_min": 100,
+              "pkt_len_max": 200
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_exact_anomaly",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "match_anomaly": 1
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "match_anomaly": 2
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "match_anomaly": 2
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1",
+              "match_anomaly": 1
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "different_id_exact",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replacement",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "replacement",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "rate_exact",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "pure_cidr",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "update",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_cidr": "192.0.2.0/24"
+            },
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "198.51.100.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r",
+            "b"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_cidr_flags",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "tcp_flags": "SYN,!ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "tcp_flags": "ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "tcp_flags": "ACK"
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_cidr": "192.0.2.0/24",
+              "tcp_flags": "SYN,!ACK"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_cidr_length",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "pkt_len_min": 100,
+          "pkt_len_max": 200
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "pkt_len_min": 300,
+          "pkt_len_max": 400
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "pkt_len_min": 300,
+          "pkt_len_max": 400
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_cidr": "192.0.2.0/24",
+              "pkt_len_min": 100,
+              "pkt_len_max": 200
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "legacy_cidr_anomaly",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "match_anomaly": 1
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay_changed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "match_anomaly": 2
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "content_different"
+      },
+      {
+        "Name": "put_changed",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "match_anomaly": 2
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_add",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_cidr": "192.0.2.0/24",
+              "match_anomaly": 1
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "batch_delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "ids": [
+            "r"
+          ]
+        },
+        "Packets": [
+          "syn",
+          "ack",
+          "length400",
+          "bad_fragment",
+          "invalid_tcp",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "different_id_cidr",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "delete",
+        "Method": "DELETE",
+        "Path": "/api/v1/rules/r",
+        "Body": null,
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replacement",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "replacement",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "rate_cidr",
+    "Steps": [
+      {
+        "Name": "add",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "rate_limit",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24",
+          "rate_limit": 1
+        },
+        "Packets": [
+          "rate",
+          "rate",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "atomic_restart",
+    "Steps": [
+      {
+        "Name": "full_A",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "full_B",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "pull",
+        "Method": "RESTART",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1"
+            },
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": ""
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_POST_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_POST_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_PUT_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_PUT_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_BATCH_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_exact_BATCH_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_POST_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_POST_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_PUT_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_PUT_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "PUT",
+        "Path": "/api/v1/rules/r",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_BATCH_0",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 0,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I3_cidr_BATCH_3",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "r",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 3,
+          "src_cidr": "192.0.2.0/24"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "replay",
+        "Method": "POST",
+        "Path": "/api/v1/rules/batch",
+        "Body": {
+          "rules": [
+            {
+              "id": "r",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_cidr": "192.0.2.0/24"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "logical_id_replay"
+      }
+    ]
+  },
+  {
+    "Name": "I1_increment",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "a",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.1"
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "duplicate",
+        "Method": "POST",
+        "Path": "/api/v1/rules",
+        "Body": {
+          "id": "b",
+          "protocol": "tcp",
+          "action": "drop",
+          "logical_id": 7,
+          "src_ip": "192.0.2.2"
+        },
+        "Packets": [
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "duplicate_logical_id"
+      }
+    ]
+  },
+  {
+    "Name": "I2_deferred",
+    "Steps": [
+      {
+        "Name": "seed",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "a",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 3,
+              "src_ip": "192.0.2.1"
+            }
+          ]
+        },
+        "Packets": [],
+        "Fault": "",
+        "Expect": "success"
+      },
+      {
+        "Name": "defer",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "198.51.100.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "1",
+        "Expect": "success"
+      },
+      {
+        "Name": "recover",
+        "Method": "POST",
+        "Path": "/api/v1/sync/atomic",
+        "Body": {
+          "rules": [
+            {
+              "id": "b",
+              "protocol": "tcp",
+              "action": "drop",
+              "logical_id": 7,
+              "src_ip": "198.51.100.1"
+            }
+          ]
+        },
+        "Packets": [
+          "syn",
+          "miss"
+        ],
+        "Fault": "",
+        "Expect": "success"
+      }
+    ]
+  },
+  {
+    "Name": "I5_creation",
+    "Steps": [
+      {
+        "Name": "startup",
+        "Method": "STARTUP_FAILURE",
+        "Path": "/api/v1/rules",
+        "Body": null,
+        "Packets": [],
+        "Fault": ""
+      }
+    ]
+  }
+]

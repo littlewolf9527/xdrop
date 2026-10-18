@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"reason\":\"awaiting_full_sync\",\"rules_synced\":false,\"status\":\"degraded\",\"whitelist_synced\":false}"
+}

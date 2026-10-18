@@ -28,12 +28,12 @@ package bpf
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
+	"net"
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/cilium/ebpf"
+	"github.com/littlewolf9527/xdrop/node/agent/api"
 )
 
 // Stashed ingress_ifindex we will write into tail_stash so that
@@ -56,7 +56,7 @@ const ffTestEgressIfindex = uint32(5)
 //	  __u8  tcp_flags;           // offset 16
 //	  __u8  eth_proto_is_v6;     // offset 17
 //	  __u8  is_ff;               // offset 18  ← FF regression field
-//	  __u8  reserved_b[1];       // offset 19
+//	  __u8  l4_valid;       // offset 19
 //	  __u32 ingress_ifindex;     // offset 20  ← FF regression field
 //	  struct rule_key key;       // offset 24, 40 bytes
 //	  __u8  reserved[28];        // offset 64
@@ -75,115 +75,49 @@ type tailStashWire struct {
 	TcpFlags         uint8
 	EthProtoIsV6     uint8
 	IsFF             uint8
-	ReservedB        [1]uint8
+	L4Valid          uint8
 	IngressIfindex   uint32
 	Key              [40]byte
 	Reserved         [28]byte
 	TailPad          [4]byte // compiler-inserted for __attribute__((aligned(8)))
 }
 
-// TestAnomalyVerifyFFRedirect runs xdp_anomaly_verify via BPF_PROG_TEST_RUN
-// and asserts it returns XDP_REDIRECT (4) when invoked on a normal TCP SYN
-// packet with a valid FF tail_stash. This is the direct runtime lock for the
-// FF regression fix — if anyone reintroduces the `return XDP_PASS` at any of
-// the three pass-paths, this test fails with retval=2.
+// The former anomaly FF witness now enters main directly. The three cases
+// exercise empty rules, a clean packet, and an anomaly predicate miss.
 func TestAnomalyVerifyFFRedirect(t *testing.T) {
-	elfPath := os.Getenv("XDROP_BPF_ELF")
-	if elfPath == "" {
-		// Test CWD is node/agent/bpf/; Phase 8: xdp_anomaly_verify lives in xdrop_main.elf.
-		elfPath = "../../bpf/xdrop_main.elf"
+	path := os.Getenv("XDROP_BPF_ELF")
+	if path == "" {
+		path = "../../bpf/xdrop_main.elf"
 	}
-	if _, err := os.Stat(elfPath); err != nil {
-		t.Skipf("%s not found (build BPF first, or set XDROP_BPF_ELF): %v", elfPath, err)
-	}
-
-	spec, err := ebpf.LoadCollectionSpec(elfPath)
+	c := b1Load(t, path)
+	lo, err := net.InterfaceByName("lo")
 	if err != nil {
-		t.Fatalf("LoadCollectionSpec: %v", err)
+		t.Fatal(err)
 	}
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		// Most commonly: permission denied (needs CAP_BPF) or verifier failed.
-		if errors.Is(err, os.ErrPermission) {
-			t.Skipf("NewCollection: permission denied — needs CAP_BPF / root: %v", err)
-		}
-		t.Fatalf("NewCollection: %v", err)
+	b1Put(t, c, "devmap", uint32(lo.Index), uint32(lo.Index))
+	b1Put(t, c, "config_a", uint32(4), uint64(1))
+	ctx := [6]uint32{0, 0, 0, uint32(lo.Index), 0, 0}
+	for _, name := range []string{"empty-rules", "clean-packet", "anomaly-no-match"} {
+		t.Run(name, func(t *testing.T) {
+			pkt := buildNormalTCPSYN()
+			if name != "empty-rules" {
+				b1Put(t, c, "config_a", uint32(0), uint64(1))
+				b1Put(t, c, "config_a", uint32(2), uint64(1<<5))
+				key := b1Key(false, 6, false)
+				b1Put(t, c, "blacklist", key, b1Wire(t, api.RuleValue{LogicalID: 540501, Pad2: [4]byte{api.RuleHasConditions}}))
+				b1Put(t, c, "cond_a", key, b1Wire(t, b1AnomalyRow(540501, 1)))
+				if name == "anomaly-no-match" {
+					pkt[46] = 0x40
+				}
+			}
+			ctx[1] = uint32(len(pkt))
+			ret, err := c.Programs["xdp_firewall_main"].Run(&ebpf.RunOptions{Data: pkt, Context: ctx, Repeat: 1})
+			if err != nil || ret != 4 {
+				t.Fatalf("main FF %s verdict=%d want=XDP_REDIRECT(4) error=%v", name, ret, err)
+			}
+		})
 	}
-	defer coll.Close()
-
-	prog := coll.Programs["xdp_anomaly_verify"]
-	if prog == nil {
-		t.Fatal("xdp_anomaly_verify program not found in collection")
-	}
-
-	devmap := coll.Maps["devmap"]
-	if devmap == nil {
-		t.Fatal("devmap not found in collection")
-	}
-	tailStash := coll.Maps["tail_stash"]
-	if tailStash == nil {
-		t.Fatal("tail_stash map not found in collection")
-	}
-
-	// Populate devmap[ingressIfindex] = egressIfindex. Without this entry,
-	// bpf_redirect_map returns 0 (XDP_ABORTED) when anomaly_verify tries to
-	// redirect — that would mask the FF regression (wrong failure mode).
-	if err := devmap.Put(ffTestIngressIfindex, ffTestEgressIfindex); err != nil {
-		t.Fatalf("devmap.Put: %v", err)
-	}
-
-	// Populate tail_stash[0] with FF=1 + ingress_ifindex=4. All other fields
-	// zero. Wire format matches C `struct tail_stash` exactly.
-	stash := tailStashWire{
-		IsFF:           1,
-		IngressIfindex: ffTestIngressIfindex,
-	}
-	var stashBytes bytes.Buffer
-	if err := binary.Write(&stashBytes, binary.LittleEndian, &stash); err != nil {
-		t.Fatalf("encode stash: %v", err)
-	}
-	// tail_stash is PER-CPU array with max_entries=1; cilium/ebpf's Put for
-	// per-CPU maps requires a slice with one value per online CPU (so the
-	// caller can populate per-CPU values independently). We write the same
-	// stash to every CPU slot since the packet under BPF_PROG_TEST_RUN will
-	// execute on one unknown CPU and must see our values regardless.
-	nCPU := runtime.NumCPU()
-	perCPU := make([][]byte, nCPU)
-	for i := range perCPU {
-		perCPU[i] = stashBytes.Bytes()
-	}
-	zero := uint32(0)
-	if err := tailStash.Put(zero, perCPU); err != nil {
-		t.Fatalf("tail_stash.Put: %v", err)
-	}
-
-	// Normal TCP SYN packet (no anomaly) — will hit pkt_anomaly==0 path →
-	// goto pass_or_redirect → bpf_redirect_map. 54-byte Ethernet/IP/TCP.
-	pkt := buildNormalTCPSYN()
-
-	ret, _, err := prog.Test(pkt)
-	if err != nil {
-		t.Fatalf("prog.Test: %v", err)
-	}
-
-	// XDP_REDIRECT = 4. If regression: XDP_PASS = 2.
-	const XDP_ABORTED = 0
-	const XDP_DROP = 1
-	const XDP_PASS = 2
-	const XDP_REDIRECT = 4
-
-	switch ret {
-	case XDP_REDIRECT:
-		// Expected.
-	case XDP_PASS:
-		t.Fatalf("anomaly_verify returned XDP_PASS — v2.6.1 FF regression reintroduced!\n"+
-			"see tail_stash is_ff/ingress_ifindex lock in api/tail_stash_layout_test.go\n"+
-			"and xdrop.c xdp_anomaly_verify pass_or_redirect sink")
-	case XDP_ABORTED:
-		t.Fatalf("anomaly_verify returned XDP_ABORTED — devmap setup likely broken")
-	default:
-		t.Fatalf("anomaly_verify returned %d, want %d (XDP_REDIRECT)", ret, XDP_REDIRECT)
-	}
+	t.Log("CUT54_FF main_cases=3 redirects=3")
 }
 
 // buildNormalTCPSYN constructs a 54-byte Ethernet/IPv4/TCP frame with:

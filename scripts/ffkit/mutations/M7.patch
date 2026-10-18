@@ -1,0 +1,12 @@
+--- a/node/agent/api/config.go
++++ b/node/agent/api/config.go
+@@ -55,6 +55,9 @@
+ 		}
+ 	}
+ 
++	if err := shadow.Update(uint32(ConfigFastForwardEnabled), uint64(0), ebpf.UpdateExist); err != nil {
++		return err
++	}
+ 	// Step 2: Overwrite only the 3 whitelist-owned slots
+ 
+ 	// 2a. Absolute whitelist count

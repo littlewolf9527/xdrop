@@ -1,0 +1,4 @@
+{
+  "status": 409,
+  "body": "{\"code\":\"key_occupied\",\"error\":\"whitelist key already exists under id w\",\"existing_id\":\"w\"}"
+}

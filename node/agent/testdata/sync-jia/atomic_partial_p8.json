@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/YiFailures/Partial": {
+    "status": 200,
+    "body": "{\"added\":1,\"cidr_rules\":0,\"failed\":1,\"rejected\":[{\"id\":\"r2\",\"reason\":\"invalid src_ip: invalid\"}],\"rules\":1,\"success\":true}"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"name\":\"XDrop Agent\",\"sync_protocol\":7,\"version\":\"dev\"}"
+}

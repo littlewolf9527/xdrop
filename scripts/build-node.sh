@@ -1,52 +1,42 @@
 #!/usr/bin/env bash
-# XDrop Node — Build Script
+# Build both BPF ELF objects and the Linux node agent.
 # Usage: ./scripts/build-node.sh [bpf|agent|all]
-#
-#   bpf    Build BPF/XDP kernel program (requires clang)
-#   agent  Build Go agent binary
-#   all    Build both (default)
-#
-# Must be run on a Linux host with clang and Go installed.
-
 set -euo pipefail
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
-info()  { echo -e "${GREEN}[build-node]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[build-node]${NC} $*"; }
-die()   { echo -e "${RED}[build-node] ERROR:${NC} $*" >&2; exit 1; }
-
+info() { printf '[build-node] %s\n' "$*"; }
+die() { printf '[build-node] ERROR: %s\n' "$*" >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_DIR="$ROOT/node"
-BPF_DIR="$NODE_DIR/bpf"
-AGENT_DIR="$NODE_DIR/agent"
-AGENT_BIN="$NODE_DIR/xdrop-agent"
-BPF_MAIN_ELF="$BPF_DIR/xdrop_main.elf"
-BPF_GATE_ELF="$BPF_DIR/xdrop_gate.elf"
-
+[[ $(uname -s) == Linux ]] || die 'build the node on Linux'
 build_bpf() {
-    info "Compiling BPF programs (Phase 8 dual-ELF)..."
-    command -v clang &>/dev/null || die "clang not found. Install with: apt install clang"
-    make -C "$BPF_DIR" clean
-    make -C "$BPF_DIR"
-    [[ -f "$BPF_MAIN_ELF" ]] || die "BPF compile failed — $BPF_MAIN_ELF not found"
-    [[ -f "$BPF_GATE_ELF" ]] || die "BPF compile failed — $BPF_GATE_ELF not found"
-    info "BPF build OK → $BPF_MAIN_ELF + $BPF_GATE_ELF"
+    for tool in clang make python3; do command -v "$tool" >/dev/null || die "$tool not found"; done
+    info 'make -C node/bpf clean; make -C node/bpf all'
+    make -C "$NODE_DIR/bpf" clean
+    make -C "$NODE_DIR/bpf" all
+    for elf in xdrop_main.elf xdrop_gate.elf; do
+        [[ -s "$NODE_DIR/bpf/$elf" ]] || die "$elf missing"
+    done
 }
-
 build_agent() {
-    info "Compiling Go agent..."
-    command -v go &>/dev/null || die "go not found. Install from https://go.dev/dl/"
-    (cd "$AGENT_DIR" && go mod tidy && go build -buildvcs=false -trimpath -o "$AGENT_BIN" .)
-    [[ -f "$AGENT_BIN" ]] || die "Agent compile failed"
-    info "Agent build OK → $AGENT_BIN"
+    command -v go >/dev/null || die 'go not found'
+    # XDROP_VERSION wins; otherwise git describe, but only when ROOT is itself the checkout (a source archive has no .git).
+    local version=${XDROP_VERSION:-}
+    if [[ -z $version ]] && command -v git >/dev/null && [[ $(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null) == "$(cd "$ROOT" && pwd -P)" ]]; then
+        version=$(git -C "$ROOT" describe --tags --always --dirty)
+    fi
+    if [[ -z $version ]]; then
+        version=unknown
+        info 'WARNING: not a git checkout and XDROP_VERSION is unset; the agent reports version "unknown"'
+    fi
+    info "go build -mod=readonly -buildvcs=false -trimpath (version $version)"
+    (cd "$NODE_DIR/agent" && go build -mod=readonly -buildvcs=false -trimpath \
+        -ldflags "-X github.com/littlewolf9527/xdrop/node/agent/api.Version=$version" \
+        -o "$NODE_DIR/xdrop-agent" .)
+    [[ -x "$NODE_DIR/xdrop-agent" ]] || die 'agent executable missing'
 }
-
-CMD="${1:-all}"
-case "$CMD" in
-    bpf)   build_bpf ;;
+[[ $# -le 1 ]] || die "Usage: $0 [bpf|agent|all]"
+case "${1:-all}" in
+    bpf) build_bpf ;;
     agent) build_agent ;;
-    all)   build_bpf; build_agent ;;
-    *) die "Unknown command '$CMD'. Usage: $0 [bpf|agent|all]" ;;
+    all) build_bpf; build_agent ;;
+    *) die "Usage: $0 [bpf|agent|all]" ;;
 esac
-
-echo -e "\n${BOLD}${GREEN}✓ Node build complete${NC}"

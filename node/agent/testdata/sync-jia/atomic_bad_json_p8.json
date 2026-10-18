@@ -1,0 +1,6 @@
+{
+  "TestJiaHandlerGolden/YiFailures/Partial": {
+    "status": 400,
+    "body": "{\"error\":\"unexpected EOF\"}"
+  }
+}

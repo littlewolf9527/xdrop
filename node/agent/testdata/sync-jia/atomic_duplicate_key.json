@@ -1,0 +1,4 @@
+{
+  "status": 409,
+  "body": "{\"added\":1,\"code\":\"duplicate_key\",\"conflicts\":[{\"id\":\"r\"},{\"id\":\"r2\"}],\"error\":\"duplicate key between rule ID \\\"r\\\" and rule ID \\\"r2\\\"; batch not published\",\"failed\":1,\"withdrawal_pending\":false}"
+}
