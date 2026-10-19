@@ -102,6 +102,56 @@ var permissionOracle = map[string]string{
 }
 var codeOracle = map[string]int{"admin_required": 403, "last_admin": 409, "invalid_credentials": 401, "login_throttled": 429, "invalid_field": 400, "user_exists": 409, "user_not_found": 404, "last_user": 409, "credential_not_found": 404, "invalid_rule": 400, "empty_value": 400, "invalid_expires_in": 400, "mapped_ipv6": 400, "address_family_mismatch": 400, "bad_request": 400, "batch_too_large": 400, "unauthenticated": 401, "forbidden": 403, "not_found": 404, "node_not_found": 404, "route_not_found": 404, "method_not_allowed": 405, "rule_conflict": 409, "condition_capacity": 409, "cidr_overlap": 409, "table_full": 409, "gen_epoch_mismatch": 409, "internal": 500}
 
+var successOracle = map[string]string{
+	"POST /rules":                 "201 / 200",
+	"POST /whitelist":             "201 / 200",
+	"POST /users":                 "201",
+	"POST /credentials":           "201",
+	"POST /templates":             "201",
+	"POST /nodes":                 "201",
+	"POST /nodes/:name/sync":      "202",
+	"POST /nodes/:name/reconcile": "202",
+	"DELETE /rules/:id":           "204",
+	"DELETE /whitelist/:id":       "204",
+	"DELETE /nodes/:name":         "204",
+	"DELETE /users/:name":         "204",
+	"DELETE /credentials/:id":     "204",
+	"DELETE /templates/:id":       "204",
+	"POST /auth/logout":           "204",
+	"PUT /auth/me/password":       "204",
+	"PUT /auth/me/prefs":          "204",
+	"PUT /users/:name/password":   "204",
+	"PUT /users/:name/role":       "204",
+	"GET /events":                 "200",
+	"GET /traffic/history":        "200",
+	"GET /traffic/top":            "200",
+	"PATCH /nodes/:name":          "200",
+	"POST /nodes/:name/test":      "200",
+	"POST /nodes/test":            "200",
+	"GET /auth/me/prefs":          "200",
+	"GET /templates":              "200",
+	"PUT /templates/:id":          "200",
+	"GET /audit":                  "200",
+	"GET /audit/export":           "200",
+	"POST /auth/login":            "200",
+	"GET /auth/me":                "200",
+	"GET /users":                  "200",
+	"GET /credentials":            "200",
+	"GET /settings":               "200",
+	"PUT /settings":               "200",
+	"GET /capacity":               "200",
+	"GET /system":                 "200",
+	"GET /health":                 "200",
+	"POST /rules/batch":           "200",
+	"GET /rules":                  "200",
+	"GET /rules/:id":              "200",
+	"GET /rules/:id/delivery":     "200",
+	"PATCH /rules/:id":            "200",
+	"PUT /rules/:id/enabled":      "200",
+	"GET /whitelist":              "200",
+	"GET /nodes":                  "200",
+}
+
 func routeSet(e *gin.Engine) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range e.Routes() {
@@ -463,17 +513,39 @@ func testErrors(t *testing.T) {
 
 func testDocs(t *testing.T) {
 	want := routeSet(fresh(t).e)
-	for _, name := range []string{"API.md", "API.zh.md"} {
-		data, err := os.ReadFile(filepath.Join("..", name))
+	successKeys, permissionKeys := map[string]bool{}, map[string]bool{}
+	for key := range successOracle {
+		successKeys[key] = true
+	}
+	for key := range permissionOracle {
+		permissionKeys[key] = true
+	}
+	require(t, reflect.DeepEqual(successKeys, permissionKeys), "successOracle key set mismatch")
+	for _, doc := range []struct {
+		path, header string
+		cells        int
+		permissions  map[string]string
+	}{
+		{filepath.Join("..", "API.md"), "| 方法 | 路径 | 谁可调 | 成功码 |", 6, map[string]string{"免身份": "public", "仅 UI": "ui", "UI / 机器": "all", "admin": "admin", "仅管理员": "admin"}},
+		{filepath.Join("..", "API.zh.md"), "| 方法 | 路径 | 谁可调 | 成功码 |", 6, map[string]string{"免身份": "public", "仅 UI": "ui", "UI / 机器": "all", "admin": "admin", "仅管理员": "admin"}},
+		{filepath.Join("..", "..", "API.md"), "| Method | Path | Permission | Success | Request → response |", 7, map[string]string{"Public": "public", "UI": "ui", "UI / machine": "all", "Admin": "admin"}},
+		{filepath.Join("..", "..", "API.zh.md"), "| 方法 | 路径 | 权限 | 成功码 | 请求 → 响应 |", 7, map[string]string{"公开": "public", "UI": "ui", "UI / 机器": "all", "Admin": "admin"}},
+	} {
+		path := doc.path
+		name := filepath.Join("controller", "core", "api", path)
+		data, err := os.ReadFile(path)
 		require(t, err == nil, err)
 		routes, codes := map[string]bool{}, map[string]int{}
+		routeSections, codeSections := 0, 0
 		section := ""
 		for _, line := range strings.Split(string(data), "\n") {
-			if line == "| 方法 | 路径 | 谁可调 | 成功码 |" {
+			if line == doc.header {
+				routeSections++
 				section = "routes"
 				continue
 			}
 			if line == "| code | HTTP |" {
+				codeSections++
 				section = "codes"
 				continue
 			}
@@ -492,11 +564,16 @@ func testDocs(t *testing.T) {
 				cells[i] = strings.TrimSpace(strings.Trim(cells[i], " `"))
 			}
 			if section == "routes" {
-				require(t, len(cells) == 6 && cells[0] == "" && cells[5] == "", "unparsed route row", name, line)
+				require(t, len(cells) == doc.cells && cells[0] == "" && cells[doc.cells-1] == "", "unparsed route row", name, line)
 				path := strings.ReplaceAll(strings.ReplaceAll(cells[2], "{id}", ":id"), "{name}", ":name")
 				key := cells[1] + " " + path
 				require(t, !routes[key], "duplicate route", key)
 				routes[key] = true
+				oracleKey := strings.Replace(key, "/api/v1", "", 1)
+				permission, known := doc.permissions[cells[3]]
+				require(t, known, name, key, "unknown permission", cells[3])
+				require(t, permission == permissionOracle[oracleKey], name, key, "permission mismatch", cells[3])
+				require(t, cells[4] == successOracle[oracleKey], name, key, "success mismatch", cells[4], successOracle[oracleKey])
 			} else {
 				require(t, len(cells) == 4 && cells[0] == "" && cells[3] == "", "unparsed code row", line)
 				_, duplicate := codes[cells[1]]
@@ -506,7 +583,9 @@ func testDocs(t *testing.T) {
 				codes[cells[1]] = n
 			}
 		}
+		require(t, routeSections == 1 && codeSections == 1, name, "table section count", routeSections, codeSections)
 		require(t, len(routes) > 0 && reflect.DeepEqual(routes, want), name, "route table mismatch", routes, want)
 		require(t, len(codes) > 0 && reflect.DeepEqual(codes, codeOracle) && reflect.DeepEqual(codes, errorStatus), name, "code table mismatch", codes)
+		t.Logf("API-doc %s routes=%d codes=%d", path, len(routes), len(codes))
 	}
 }

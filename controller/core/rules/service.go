@@ -669,7 +669,7 @@ func (s *Service) CreateWhitelist(a Actor, in WhitelistInput) (result WLResult, 
 			result = WLResult{w, true}
 			return nil
 		}
-		if e := s.checkCapacityWith(s.ledger, Values{4: 1}); e != nil {
+		if e := s.checkCapacityWith(s.ledger, Values{WhitelistDimension: 1}); e != nil {
 			return e
 		}
 		id, err := newID("wl_")
@@ -693,7 +693,7 @@ func (s *Service) CreateWhitelist(a Actor, in WhitelistInput) (result WLResult, 
 		if err != nil {
 			return internal(err)
 		}
-		s.ledger.occupancy.Used[4]++
+		s.ledger.occupancy.Used[WhitelistDimension]++
 		result = WLResult{Whitelist: w}
 		change.Whitelist = true
 		return nil
@@ -720,7 +720,7 @@ func (s *Service) DeleteWhitelist(a Actor, id string) *Error {
 			return internal(err)
 		}
 		if c.Whitelist {
-			s.ledger.occupancy.Used[4]--
+			s.ledger.occupancy.Used[WhitelistDimension]--
 		}
 		return nil
 	})

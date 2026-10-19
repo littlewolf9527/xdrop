@@ -1,3 +1,4 @@
+import { conditionKeys, protocolOptions, conditionRanges } from '../src/rules'
 import { it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -374,4 +375,12 @@ it.each(['zh-CN','ja-JP','en-US'] as const)('R9-2 %s rate tooltip only appends i
     expect(tip.props('content')).toBe(messages[lang].rateHelp + (incomplete ? ' ' + messages[lang].rateIncomplete : ''))
     w.unmount(); wrappers.splice(wrappers.indexOf(w), 1)
   }
+})
+
+it('FE G1 rule drawer uses shared tables', () => {
+  const setup = (drawer().vm.$ as any).setupState
+  expect(setup.conditionKeys).toBe(conditionKeys); expect(setup.protocolOptions).toBe(protocolOptions); expect(setup.ranges).toBe(conditionRanges)
+})
+it('FE G1 rule protocol dropdown has the complete ordered options', () => {
+  expect(drawer().findAll('#protocol option').map(o => (o.element as HTMLOptionElement).value)).toEqual(['all','tcp','udp','icmp','icmpv6','igmp','gre','esp'])
 })

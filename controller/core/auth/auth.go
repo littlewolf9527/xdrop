@@ -25,9 +25,22 @@ import (
 const CookieName = "xdrop_session"
 const rotateOverlap = 24 * time.Hour
 
+const (
+	maxSessionHours             = 720
+	maxAuditRetentionDays       = 3650
+	maxHistoryRetentionDays     = 90
+	maxReconcileIntervalMinutes = 1440
+	maxDefaultLanguage          = 3
+)
+
 var validName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 var keyShape = regexp.MustCompile(`^xdk_([0-9a-f]{16})_([A-Za-z0-9_-]{43})$`)
 var comparePassword = bcrypt.CompareHashAndPassword
+
+// ValidName reports whether name is allowed for a new user, credential or node.
+func ValidName(name string) bool {
+	return validName.MatchString(name) && name != "." && name != ".."
+}
 
 type throttle struct {
 	failures int
@@ -257,7 +270,7 @@ func (s *Service) Users() ([]store.User, *rules.Error) {
 	return rows, internal(err)
 }
 func (s *Service) CreateUser(a rules.Actor, name, password, role string) *rules.Error {
-	if !validName.MatchString(name) {
+	if !ValidName(name) {
 		return invalid("username")
 	}
 	if role != "admin" && role != "operator" {
@@ -400,11 +413,11 @@ func (s *Service) UpdateSettings(a rules.Actor, in SettingsPatch) *rules.Error {
 			field         string
 			set           func(store.Queryer, int) error
 		}{
-			{in.SessionHours, &after.SessionHours, 720, "session_hours", store.SetSessionHours},
-			{in.AuditRetentionDays, &after.AuditRetentionDays, 3650, "audit_retention_days", store.SetAuditRetentionDays},
-			{in.HistoryRetentionDays, &after.HistoryRetentionDays, 90, "history_retention_days", store.SetHistoryRetentionDays},
-			{in.ReconcileIntervalMinutes, &after.ReconcileIntervalMinutes, 1440, "reconcile_interval_minutes", store.SetReconcileIntervalMinutes},
-			{language, &after.DefaultLanguage, 3, "default_language", store.SetDefaultLanguage},
+			{in.SessionHours, &after.SessionHours, maxSessionHours, "session_hours", store.SetSessionHours},
+			{in.AuditRetentionDays, &after.AuditRetentionDays, maxAuditRetentionDays, "audit_retention_days", store.SetAuditRetentionDays},
+			{in.HistoryRetentionDays, &after.HistoryRetentionDays, maxHistoryRetentionDays, "history_retention_days", store.SetHistoryRetentionDays},
+			{in.ReconcileIntervalMinutes, &after.ReconcileIntervalMinutes, maxReconcileIntervalMinutes, "reconcile_interval_minutes", store.SetReconcileIntervalMinutes},
+			{language, &after.DefaultLanguage, maxDefaultLanguage, "default_language", store.SetDefaultLanguage},
 		} {
 			if p.input != nil {
 				if *p.input < 1 || *p.input > p.max {
@@ -560,7 +573,7 @@ func (s *Service) CredentialActive(c store.Credential) bool {
 	return active(c, s.now().Format(store.TimeFormat))
 }
 func (s *Service) IssueCredential(a rules.Actor, name string) (c store.Credential, key string, retired []store.Credential, e *rules.Error) {
-	if !validName.MatchString(name) {
+	if !ValidName(name) {
 		return c, "", nil, invalid("name")
 	}
 	id := make([]byte, 8)

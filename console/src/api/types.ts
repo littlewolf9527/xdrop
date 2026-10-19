@@ -34,6 +34,7 @@ export interface SystemStats {
 }
 export interface Stats {
   system: SystemStats;
+  ipv6_deep_chain_dropped?: number;
 
 }
 export interface Node {

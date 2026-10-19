@@ -19,6 +19,7 @@ it.each([
   ['node fields required','请填写地址和节点密钥'],['base_url and api_key (1..4096 bytes) required','请填写地址和节点密钥'],
   ['api_key must contain 1..4096 bytes','节点密钥长度不对'],['node key unreadable; supply api_key','无法读取已存的节点密钥，请重新填写'],
   ['invalid node URL','地址不对：只支持 http:// 或 https:// 开头、不带账号和参数'],
+  ["name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'",'名称须为 1–64 个 ASCII 字母、数字、.、_、-，且不能是 . 或 ..'],
 ])('G3 exact node message %s', (message, text) => {
   i18n.global.locale.value='zh-CN'
   for(const code of ['invalid_field','bad_request']) expect(i18n.global.t(settingsError('nodes',error(code,undefined,message)))).toBe(text)
@@ -55,4 +56,8 @@ it('G6 settingsDelta contains only changed keys',()=>{
 it('G5 group state uses server active regardless of local clock',()=>{
   const row={id:'fixture',name:'lone',created_at:'2026-10-01T00:00:00Z',created_by:'',retire_at:'2000-01-01T00:00:00Z',revoked_at:null,revoked_by:null,active:true} satisfies CredentialDTO
   expect(groupCredentials([row])[0]?.status).toBe('retiring')
+})
+
+it('FE G3 K3 maps to the new node name key', () => {
+  expect(settingsError('nodes', error('invalid_field', undefined, "name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'"))).toBe('settingsUI.nodeNameInvalid')
 })

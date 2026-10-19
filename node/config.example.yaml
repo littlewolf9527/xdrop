@@ -33,6 +33,9 @@ bpf:
   # the aggregate rule limit: e.g. one RX queue, fixed IRQ affinity, no RPS.
   # X7：实际收包 CPU 集合必须固定且不多于除数；除数过小会放大总限速上限。
   rate_limit_divisor: 0
+  # IPv6 chains beyond 6 extension headers drop by default; restart after changes.
+  # Even when disabled, startup drops until the agent writes the setting.
+  ipv6_deep_chain_drop: true
 
 # Optional FF configuration: uncomment this block before auth when enabling it.
 # fast_forward:

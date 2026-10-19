@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,13 +95,30 @@ func TestMakeLPMv4Key_IPv6Rejected(t *testing.T) {
 	}
 }
 
-// TestMakeLPMv6Key_IPv4Accepted confirms the v6 helper accepts IPv4 inputs
-// (as IPv4-in-IPv6) — symmetry with goebpf's prior behaviour where a /32
-// IPv4 in the v6 helper was valid. If we ever tighten this, update the
-// expectation here.
-func TestMakeLPMv6Key_IPv4Accepted(t *testing.T) {
-	// net.ParseCIDR("10.0.0.0/8") returns an IPv4 mask; To16() lifts it.
-	if _, err := makeLPMv6Key("10.0.0.0/8"); err != nil {
-		t.Fatalf("makeLPMv6Key with IPv4 CIDR: %v", err)
+// TestMakeLPMv6Key_IPv4Rejected requires an IPv6 mask and address.
+func TestMakeLPMv6Key_IPv4Rejected(t *testing.T) {
+	if _, err := makeLPMv6Key("192.0.2.0/24"); err == nil {
+		t.Fatal("expected error when passing IPv4 CIDR to makeLPMv6Key")
 	}
+}
+
+func TestHCA14MappedCIDR(t *testing.T) {
+	const mapped = "::ffff:192.0.2.0/120"
+	t.Run("v4", func(t *testing.T) {
+		if _, err := makeLPMv4Key(mapped); err == nil || err.Error() != fmt.Sprintf("CIDR %q is not IPv4", mapped) {
+			t.Fatal("mapped v4 rejection", err)
+		}
+	})
+	t.Run("v6", func(t *testing.T) {
+		for _, prefix := range []string{mapped, "::ffff:192.0.2.0/64"} {
+			if _, err := makeLPMv6Key(prefix); err == nil || err.Error() != fmt.Sprintf("CIDR %q is not IPv6", prefix) {
+				t.Fatal("mapped v6 rejection", err)
+			}
+		}
+	})
+	t.Run("family", func(t *testing.T) {
+		if !isIPv6CIDR(mapped) {
+			t.Fatal("128-bit mask must select IPv6")
+		}
+	})
 }

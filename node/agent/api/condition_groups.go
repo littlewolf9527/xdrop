@@ -154,14 +154,6 @@ func (h *Handlers) currentGroupLocked(g groupIdentity) map[string]Rule {
 	return out
 }
 
-// Anonymous request members have a separate identity domain from stored/user
-// IDs. No string prefix is reserved by the API, including strings with NULs.
-type incrementalMemberIdentity struct {
-	ID           string
-	RequestIndex int
-	Anonymous    bool
-}
-
 func markConditionValue(r Rule, v RuleValue) RuleValue {
 	if conditionGroup([]Rule{r}) {
 		v.Pad2[0] = RuleHasConditions

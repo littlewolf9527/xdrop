@@ -1,6 +1,6 @@
 --- a/node/bpf/xdrop_main.c
 +++ b/node/bpf/xdrop_main.c
-@@ -1557,7 +1557,7 @@
+@@ -1520,7 +1520,7 @@
    // Default: pass/redirect
    stats_inc(STATS_PASSED_PACKETS);
    stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);

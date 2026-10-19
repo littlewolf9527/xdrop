@@ -3,9 +3,12 @@ package config
 import (
 	"fmt"
 	"log"
+	"os"
+	"reflect"
 	"strings"
 
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 // placeholderPrefixes enumerates known example-config sentinel prefixes.
@@ -60,13 +63,18 @@ type BPFConfig struct {
 	//   "disable" — skip pinning entirely, matches pre-migration behaviour.
 	Pinning string `mapstructure:"pinning"`
 	// XDPMode selects auto (default), native (no fallback), or generic.
-	XDPMode          string `mapstructure:"xdp_mode"`
-	RateLimitDivisor int    `mapstructure:"rate_limit_divisor"` // 0=system online CPUs; 1..4096=override
+	XDPMode           string `mapstructure:"xdp_mode"`
+	RateLimitDivisor  int    `mapstructure:"rate_limit_divisor"` // 0=system online CPUs; 1..4096=override
+	IPv6DeepChainDrop *bool  `mapstructure:"ipv6_deep_chain_drop"`
 }
 
 // AuthConfig authentication configuration
 type AuthConfig struct {
 	NodeAPIKey string `mapstructure:"node_api_key"` // verified when Controller sends requests to this Node
+	// deprecated: accepted and ignored; Load warns
+	LegacyControllerURL string `mapstructure:"controller_url"`
+	// deprecated: accepted and ignored; Load warns
+	LegacyControllerSyncKey string `mapstructure:"controller_sync_key"`
 }
 
 // InterfacePair interface pair configuration (fast forward mode)
@@ -105,6 +113,18 @@ func Load(configPath string) (*Config, error) {
 		} else {
 			return nil, err
 		}
+	} else if viper.ConfigFileUsed() != "" {
+		data, err := os.ReadFile(viper.ConfigFileUsed())
+		if err != nil {
+			return nil, err
+		}
+		var raw map[string]any
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return nil, err
+		}
+		if err := checkConfigKeys(raw, reflect.TypeOf(Config{}), ""); err != nil {
+			return nil, err
+		}
 	}
 
 	if viper.InConfig("auth.controller_url") || viper.InConfig("auth.controller_sync_key") {
@@ -122,6 +142,11 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("bpf.rate_limit_divisor must be an integer in 0..4096")
 	}
 
+	if value, present := viper.GetStringMap("bpf")["ipv6_deep_chain_drop"]; present {
+		if _, ok := value.(bool); !ok {
+			return nil, fmt.Errorf("bpf.ipv6_deep_chain_drop must be a boolean")
+		}
+	}
 	var cfg Config
 	if value, present := viper.GetStringMap("server")["hits_rate_limit"]; present && value == nil {
 		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
@@ -131,7 +156,7 @@ func Load(configPath string) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
 	}
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := viper.UnmarshalExact(&cfg); err != nil {
 		return nil, err
 	}
 
@@ -139,6 +164,63 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("server.hits_rate_limit must be an integer in 1..1000")
 	}
 	return &cfg, nil
+}
+
+// checkConfigKeys checks the original YAML, including keys Viper drops when
+// their values are null or empty maps. Value validation remains with Load.
+func checkConfigKeys(value any, typ reflect.Type, path string) error {
+	if typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.Struct {
+		items, ok := value.([]any)
+		if !ok {
+			// mapstructure weakly decodes a single map as a one-element slice.
+			items = []any{value}
+		}
+		for i, item := range items {
+			if err := checkConfigKeys(item, typ.Elem(), fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	keys, ok := value.(map[string]any)
+	if !ok {
+		mixed, ok := value.(map[any]any)
+		if !ok {
+			return nil
+		}
+		keys = make(map[string]any, len(mixed))
+		for key, child := range mixed {
+			keys[fmt.Sprint(key)] = child
+		}
+	}
+	for name, child := range keys {
+		name = strings.ToLower(name)
+		// Viper treats dots in YAML keys as path separators.
+		if head, tail, dotted := strings.Cut(name, "."); dotted {
+			name, child = head, map[string]any{tail: child}
+		}
+		childPath := name
+		if path != "" {
+			childPath = path + "." + name
+		}
+		var fieldType reflect.Type
+		if typ.Kind() == reflect.Struct {
+			for i := 0; i < typ.NumField(); i++ {
+				field := typ.Field(i)
+				if strings.ToLower(field.Tag.Get("mapstructure")) == name {
+					fieldType = field.Type
+					break
+				}
+			}
+		}
+		if fieldType == nil {
+			return fmt.Errorf("unknown config key %q", childPath)
+		}
+		if err := checkConfigKeys(child, fieldType, childPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MustLoad loads configuration, exits on failure
@@ -184,6 +266,9 @@ func (c *Config) Validate() error {
 	// Prevents fresh deployments from starting with known-to-be-default keys.
 	if strings.TrimSpace(c.Auth.NodeAPIKey) == "" {
 		return fmt.Errorf("auth.node_api_key is empty; generate a real key before starting")
+	}
+	if c.Auth.NodeAPIKey != strings.Trim(c.Auth.NodeAPIKey, " \t\r\n\v\f") {
+		return fmt.Errorf("auth.node_api_key has leading or trailing whitespace; HTTP clients cannot send it")
 	}
 	if looksLikePlaceholder(c.Auth.NodeAPIKey) {
 		return fmt.Errorf("auth.node_api_key still contains a placeholder value (%q); generate a real key before starting", c.Auth.NodeAPIKey)

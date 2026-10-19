@@ -142,11 +142,7 @@ func (m *Manager) reconcile(n *node, i int) {
 	result.Diff = diff
 	result.Result = "equal"
 	m.mu.Lock()
-	n.ruleStats = map[string]map[string]any{}
-	for id, r := range actual {
-		n.ruleStats[id] = r.Stats
-	}
-	n.status.RuleStatsCount = len(n.ruleStats)
+	n.status.RuleStatsCount = len(actual)
 	n.status.RuleStatsAt = time.Now()
 	s := &n.sides[0]
 	if len(all) == 0 {

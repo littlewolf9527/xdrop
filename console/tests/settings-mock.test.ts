@@ -48,7 +48,8 @@ it('G8 mock templates full replacement duplicate missing and capacity',async()=>
 })
 it('G8 mock nodes writes encoded paths unreadable key and three switchable test states',async()=>{
   const n={name:'edge 01#a',base_url:'http://192.0.2.100',api_key:'example-node-key-1'},path='/nodes/'+encodeURIComponent(n.name)
-  expect((await api('/nodes',n)).status).toBe(201);expect((await api('/nodes',n)).data).toMatchObject({code:'rule_conflict',message:'node already exists'})
+  expect((await api('/__mock/fixtures',{legacyNode:true})).status).toBe(204)
+  expect(await api('/nodes',n)).toMatchObject({status:400,data:{code:'invalid_field',message:K3}})
   expect((await api(path,{base_url:'http://192.0.2.101'},'PATCH')).data.base_url).toBe('http://192.0.2.101');expect((await api(path,{name:'renamed'},'PATCH')).data.field).toBe('name')
   expect((await api('/nodes/edge-04',{base_url:'http://192.0.2.102'},'PATCH')).data.message).toBe('node key unreadable; supply api_key')
   expect((await api('/nodes/edge-04/test',{},'POST')).data).toEqual({reachable:false,compatible:false,key_accepted:false,message:'node key unreadable'})
@@ -74,4 +75,23 @@ it('G8 V34 mock node URL accepts uppercase HTTP while retaining URL exclusions',
   for(const base_url of ['HTTP://admin@192.0.2.10','HTTP://192.0.2.10?x=1','HTTP://192.0.2.10#part','HTTP://']){
     const result=await api('/nodes',{name:'invalid-url',base_url,api_key:'example-node-key-1'});expect(result.status).toBe(400);expect(result.data.message).toBe('invalid node URL')
   }
+})
+
+const K3 = "name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'"
+it('FE G4 legal node duplicate retains conflict coverage', async () => {
+  const node = { name: 'edge-dup', base_url: 'http://192.0.2.100', api_key: 'example-node-key-1' }
+  expect((await api('/nodes', node)).status).toBe(201)
+  expect(await api('/nodes', node)).toMatchObject({ status: 409, data: { code: 'rule_conflict', message: 'node already exists' } })
+})
+it.each(['.','..'])('FE G4 rejects user name %s', async username => {
+  expect(await api('/users', { username, role: 'operator', password: 'example-password-1' })).toMatchObject({ status: 400, data: { code: 'invalid_field', field: 'username', message: 'invalid field' } })
+})
+it.each(['.','..'])('FE G4 rejects credential name %s', async name => {
+  expect(await api('/credentials', { name })).toMatchObject({ status: 400, data: { code: 'invalid_field', field: 'name', message: 'invalid field' } })
+})
+it.each(['edge 01#a','.','..','节点','a'.repeat(65)])('FE G4 node creation rejects K3 name %s', async name => {
+  expect(await api('/nodes', { name, base_url: 'http://192.0.2.100', api_key: 'example-node-key-1' })).toMatchObject({ status: 400, data: { code: 'invalid_field', message: K3 } })
+})
+it.each([['', 'name must not be empty'],['  ', 'name must not be empty'],['bad/name', "name must not contain '/'"]])('FE G4 node error priority %s', async (name, message) => {
+  expect(await api('/nodes', { name })).toMatchObject({ status: 400, data: { code: 'invalid_field', message } })
 })

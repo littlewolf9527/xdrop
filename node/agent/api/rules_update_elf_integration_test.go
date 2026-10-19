@@ -116,21 +116,6 @@ func b7Verdict(t *testing.T, p *ebpf.Program, want uint32) {
 	}
 }
 
-// Each stream has one owner; the concurrent stream is read only after done.
-type b7PacketCounts struct{ packets, drop, pass, other uint64 }
-
-func (c *b7PacketCounts) record(verdict uint32) {
-	c.packets++
-	switch verdict {
-	case 1:
-		c.drop++
-	case 2:
-		c.pass++
-	default:
-		c.other++
-	}
-}
-
 func TestB7ELFCounterContinuation(t *testing.T) {
 	for _, isCIDR := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cidr=%v", isCIDR), func(t *testing.T) {

@@ -49,11 +49,11 @@ func makeLPMv4Key(cidr string) (lpmV4Key, error) {
 	if err != nil {
 		return lpmV4Key{}, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
 	}
+	ones, bits := ipnet.Mask.Size()
 	ip4 := ipnet.IP.To4()
-	if ip4 == nil {
+	if bits != 32 || ip4 == nil {
 		return lpmV4Key{}, fmt.Errorf("CIDR %q is not IPv4", cidr)
 	}
-	ones, _ := ipnet.Mask.Size()
 	var k lpmV4Key
 	k.PrefixLen = uint32(ones)
 	copy(k.Data[:], ip4)
@@ -62,15 +62,15 @@ func makeLPMv4Key(cidr string) (lpmV4Key, error) {
 
 // makeLPMv6Key builds an IPv6 LPM trie key from a CIDR string.
 func makeLPMv6Key(cidr string) (lpmV6Key, error) {
-	_, ipnet, err := net.ParseCIDR(cidr)
+	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return lpmV6Key{}, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
 	}
+	ones, bits := ipnet.Mask.Size()
 	ip16 := ipnet.IP.To16()
-	if ip16 == nil {
+	if bits != 128 || ip.To4() != nil || ip16 == nil {
 		return lpmV6Key{}, fmt.Errorf("CIDR %q is not IPv6", cidr)
 	}
-	ones, _ := ipnet.Mask.Size()
 	var k lpmV6Key
 	k.PrefixLen = uint32(ones)
 	copy(k.Data[:], ip16)
@@ -319,5 +319,6 @@ func isIPv6CIDR(cidr string) bool {
 	if err != nil {
 		return false
 	}
-	return network.IP.To4() == nil
+	_, bits := network.Mask.Size()
+	return bits == 128
 }

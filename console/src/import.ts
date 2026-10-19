@@ -1,11 +1,11 @@
 import type { BatchResult, WriteError } from './api/types'
 import { ApiError } from './api/client'
-import { quote } from './rules'
+import { quote, numeric } from './rules'
+export { numeric }
 export const importKeys = ['src_ip', 'dst_ip', 'src_cidr', 'dst_cidr', 'src_port', 'dst_port', 'protocol', 'ttl', 'dscp', 'icmp_type', 'icmp_code', 'fragment', 'pkt_len', 'tcp_flags', 'match_anomaly', 'action', 'rate_limit', 'enabled', 'comment', 'expires_in'] as const
 export type RulePatch = Record<string, string | number | boolean>
 export type ImportStatus = 'pending' | 'lex' | 'new' | 'existing' | 'duplicate' | 'error' | 'rejected' | 'created' | 'renewed' | 'skipped' | 'duplicateSkipped' | 'unsent' | 'unknown'
 export interface ImportLine { no: number; raw: string; patch?: RulePatch; lex?: { key: string; kind: 'invalid' | 'target' }; status: ImportStatus; error?: ApiError }
-const numbers = ['src_port', 'dst_port', 'match_anomaly', 'rate_limit']
 export function parseImport(text: string): ImportLine[] {
   return text.split('\n').flatMap<ImportLine>((raw, i) => {
     raw = raw.trim()
@@ -39,7 +39,7 @@ export function parseImport(text: string): ImportLine[] {
         value = raw.slice(start, at)
         if (value.includes('"')) return bad()
       }
-      if (numbers.includes(key)) {
+      if (numeric.includes(key)) {
         if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value))) return bad()
         patch[key] = Number(value)
       } else if (key === 'enabled') {

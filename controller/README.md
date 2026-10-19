@@ -14,7 +14,7 @@ The executable entry is `cmd/xdrop-controller`, with implementation under `core/
 | `database` | Absolute SQLite file path |
 | `secret_key_file` | Absolute master-key file path |
 
-There are no defaults. Unknown fields, duplicate keys and multiple YAML documents are rejected. `nodes` is rejected because nodes are stored in the database; `reconcile_interval` is rejected because the interval is a setting. Keep the listener on loopback behind a same-host HTTPS reverse proxy for browser sessions.
+There are no defaults. Unknown fields, duplicate keys and multiple YAML documents are rejected. `nodes` is rejected because nodes are stored in the database; `reconcile_interval` is rejected because the interval is a setting. Keep the listener on loopback behind a same-host HTTPS reverse proxy for browser sessions, and rate-limit `POST /api/v1/auth/login` at that proxy (see GETTING_STARTED section 6).
 
 The key file must have mode 0600 and contain a base64-encoded 32-byte key. Node API keys are encrypted with AES-256-GCM and the node name as authenticated data; missing or invalid master material prevents startup. Individual unreadable stored node keys remain visible with `key_unreadable` and send no node requests.
 

@@ -11,18 +11,15 @@
 // The audit named only ruleToKey. Sweeping the callers turned up three more key
 // builders on the CIDR paths with the same shape; all four were fixed.
 //
-// 🔴 Coverage, stated precisely (corrected in review, 2026-09-14 — an earlier
-// version of this comment claimed all four were covered here):
+// 🔴 Coverage, stated precisely (re-checked 2026-10-19):
 //
-//	ruleToKey                 ✅ direct
-//	addCIDRRuleFromSync       ✅ direct
-//	AddRule → addCIDRRule     ✅ through the real HTTP entry (see below)
-//	DoAtomicSync CIDR branch  ⛔ NOT covered — needs real BPF maps, so it is
-//	                             unreachable on this platform. It has the same
-//	                             shape as the two covered CIDR sites and the
-//	                             static assertions in the facts gate, and
-//	                             nothing more. Do not read this file as
-//	                             behavioural proof for that path.
+//	ruleToKey                 ✅ direct (tests below)
+//	addCIDRRuleFromSync       — removed with the per-rule / batch entries (protocol 7)
+//	AddRule → addCIDRRule     — removed with the per-rule / batch entries (protocol 7)
+//	CIDR key builders today   ⛔ NOT covered by this file: prepareAtomicRule
+//	                             (condition_atomic.go) and classifyRuleKey
+//	                             (condition_groups.go). Do not read this file as
+//	                             behavioural proof for those paths.
 package api
 
 import (
@@ -76,7 +73,7 @@ func newProtoTestHandlers() *Handlers {
 	return &Handlers{cidrMgr: cidr.NewManager(srcV4, dstV4, srcV6, dstV6, newFakeTrie(), newFakeTrie(), newFakeTrie(), newFakeTrie())}
 }
 
-// Control for the test above: prove the instrument can read a non-empty list.
+// Instrument check: the CIDR manager list observes allocations (its original subject test was retired with protocol 7).
 // Without this, "nothing was allocated" would also be the reading if
 // ListSrcCIDRs could never return anything.
 func TestCIDRManagerListReflectsAllocation(t *testing.T) {

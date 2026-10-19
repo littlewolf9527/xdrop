@@ -262,6 +262,9 @@ func main() {
 		log.Fatalf("Failed to configure rate-limit divisor: %v", err)
 	}
 	handlers.SetRateLimitSnapshot(rateLimit)
+	if err := configureIPv6DeepChain(configA, configB, ipv6DeepChainPass(cfg.BPF)); err != nil {
+		log.Fatalf("Failed to configure IPv6 deep chain: %v", err)
+	}
 
 	// Setup graceful shutdown BEFORE XDP attach and ifmgr config, so Ctrl-C
 	// during startup still runs cleanup. The goroutine captures ifMgr,
@@ -629,6 +632,29 @@ func setupDevmap(devmap *ebpf.Map, inboundIdx, outboundIdx int) error {
 			return fmt.Errorf("delete devmap[%d]: %w", key, err)
 		}
 	}
+	return nil
+}
+
+// ipv6DeepChainPass: bpf.ipv6_deep_chain_drop missing or true drops; only an explicit false passes.
+func ipv6DeepChainPass(b config.BPFConfig) bool {
+	return b.IPv6DeepChainDrop != nil && !*b.IPv6DeepChainDrop
+}
+
+func configureIPv6DeepChain(configA, configB interface {
+	Update(interface{}, interface{}, ebpf.MapUpdateFlags) error
+}, pass bool) error {
+	value := uint64(0)
+	if pass {
+		value = 1
+	}
+	for _, m := range []interface {
+		Update(interface{}, interface{}, ebpf.MapUpdateFlags) error
+	}{configA, configB} {
+		if err := m.Update(uint32(api.ConfigIPv6DeepChainPass), value, ebpf.UpdateExist); err != nil {
+			return fmt.Errorf("failed to set IPv6 deep chain pass: %w", err)
+		}
+	}
+	log.Printf("bpf.ipv6_deep_chain_drop=%t (slot 12=%d)", !pass, value)
 	return nil
 }
 

@@ -115,7 +115,7 @@ class State(P6State):
 
     def stats_response(self):
         out = {key: self.maps['stats'][LE32(i)][0] for i, key in enumerate(COUNTERS)}
-        out.update(mapped_v6_dropped=self.maps['stats'][LE32(5)][0], cond_row_missing=0, tailcall_fail=0, rules_count=len(self.installed), whitelist_count=len(self.whitelist),
+        out.update(ipv6_deep_chain_dropped=self.maps['stats'].get(LE32(9), [0])[0], mapped_v6_dropped=self.maps['stats'][LE32(5)][0], cond_row_missing=0, tailcall_fail=0, rules_count=len(self.installed), whitelist_count=len(self.whitelist),
                    dropped_pps=0.0, passed_pps=0.0, total_pps=0.0, system={},
                    agent_state=dict(exact_rules=sum(not cidr(r) for r in self.installed), cidr_rules=sum(cidr(r) for r in self.installed),
                                     whitelist_entries=len(self.whitelist), active_slot=self.config_slot, rule_map_selector=self.slot))

@@ -1,53 +1,33 @@
-// tail_stash_layout_test.go — v2.6.1 B5 contract invariants (proposal §7.8.5 D1/D2/D6).
+// tail_stash_layout_test.go — config-slot, anomaly-bit and retired-dispatch locks.
 //
-// Exists to catch drift between the BPF C-side `struct tail_stash` and
-// Go-side expectations, and to lock the D2 slot allocation constants.
-// A breaking change to any of these values is a schema break that needs
-// coordinated C + Go + Controller changes + possibly a schema-drift
-// config map wipe.
+// struct tail_stash and the anomaly tail-call program are retired (TD-081);
+// TestFastForwardStashFields_SourceLock asserts they stay gone. The other
+// tests lock config slot indices and match_anomaly bit assignments.
 package api
 
 import (
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// TestTailSlotAnomalyVerify locks the slot used by main program's
-// bpf_tail_call invocation (proposal §7.8.5 D2). Changing this requires
-// simultaneous update to the C-side #define TAIL_SLOT_ANOMALY_VERIFY,
-// the Go loader main.go's `tailSlotAnomalyVerify := uint32(0)`, and the
-// Controller documentation of dispatch slot meaning.
-func TestTailSlotAnomalyVerify(t *testing.T) {
-	// This is intentionally a plain value assertion — if anyone changes
-	// the magic number, the test breaks loudly and forces them to update
-	// xdrop.h + main.go + ROADMAP in lockstep.
-	const wantSlotAnomalyVerify = 0
-	// Slot constants live in xdrop.h as #defines, not exported to Go. The
-	// Go loader has a local `tailSlotAnomalyVerify := uint32(0)` — this
-	// test just locks the literal.
-	if wantSlotAnomalyVerify != 0 {
-		t.Errorf("TAIL_SLOT_ANOMALY_VERIFY != 0 — update main.go + xdrop.h + ROADMAP D2 together")
-	}
-}
-
-// TestConfigAnomalyRuleCountIndex locks the config slot used to gate
-// main program's tail_call dispatch. Mismatch between Go-side
-// ConfigAnomalyRuleCount and C-side CONFIG_ANOMALY_RULE_COUNT means main
-// program reads the wrong slot and never dispatches (silent anomaly
-// failure).
+// TestConfigAnomalyRuleCountIndex locks the config slot indices the agent writes.
+// Slot 10 (ConfigAnomalyRuleCount) is retired and must not be reused; slots 11
+// and 12 must match xdrop.h CONFIG_RL_CPU_DIVISOR / CONFIG_MAP_ENTRIES (this
+// test does not read xdrop.h).
 func TestConfigAnomalyRuleCountIndex(t *testing.T) {
 	if ConfigAnomalyRuleCount != 10 {
-		t.Errorf("ConfigAnomalyRuleCount = %d, want 10 (must match xdrop.h CONFIG_ANOMALY_RULE_COUNT)",
+		t.Errorf("ConfigAnomalyRuleCount = %d, want 10 (retired slot: xdrop.h says \"Config slot 10 is retired\"; initDynamicConfig keeps it zero)",
 			ConfigAnomalyRuleCount)
 	}
 	if ConfigRLCPUDivisor != 11 {
 		t.Errorf("ConfigRLCPUDivisor = %d, want 11 (must match xdrop.h CONFIG_RL_CPU_DIVISOR)",
 			ConfigRLCPUDivisor)
 	}
-	if ConfigMapEntries != 12 {
-		t.Errorf("ConfigMapEntries = %d, want 12 (must match xdrop.h CONFIG_MAP_ENTRIES)",
+	if ConfigMapEntries != 13 {
+		t.Errorf("ConfigMapEntries = %d, want 13 (must match xdrop.h CONFIG_MAP_ENTRIES)",
 			ConfigMapEntries)
 	}
 	// Map capacity must be at least enough to hold the last slot index.
@@ -57,21 +37,45 @@ func TestConfigAnomalyRuleCountIndex(t *testing.T) {
 	}
 }
 
-// TestAnomalyBitsStable locks the bit assignments for match_anomaly so
-// that xSight fixture contracts + Controller normalizeDecoder + Node BPF
-// rule_value.match_anomaly agree on which bit means which decoder.
+// TestAnomalyBitsStable binds the Go anomaly bits and the node validator's accepted mask to xdrop.h ANOMALY_* defines.
 func TestAnomalyBitsStable(t *testing.T) {
+	xdropH := mustReadSource(t, "../../bpf/xdrop.h")
+	defines := regexp.MustCompile(`(?m)^#define[ \t]+ANOMALY_([A-Z0-9_]+)[ \t]+0x([0-9A-Fa-f]+)\b`)
+	bits := make(map[string]uint8)
+	for _, match := range defines.FindAllStringSubmatch(xdropH, -1) {
+		value, err := strconv.ParseUint(match[2], 16, 8)
+		if err != nil {
+			t.Fatalf("ANOMALY_%s: %v", match[1], err)
+		}
+		bits[match[1]] = uint8(value)
+	}
+	for _, name := range []string{"BAD_FRAGMENT", "INVALID"} {
+		if _, ok := bits[name]; !ok {
+			t.Fatalf("xdrop.h ANOMALY_%s define missing", name)
+		}
+	}
+	if bits["BAD_FRAGMENT"] != AnomalyBadFragment {
+		t.Errorf("ANOMALY_BAD_FRAGMENT = 0x%x, Go AnomalyBadFragment = 0x%x", bits["BAD_FRAGMENT"], AnomalyBadFragment)
+	}
+	if bits["INVALID"] != AnomalyInvalid {
+		t.Errorf("ANOMALY_INVALID = 0x%x, Go AnomalyInvalid = 0x%x", bits["INVALID"], AnomalyInvalid)
+	}
 	if AnomalyBadFragment != 0x01 {
 		t.Errorf("AnomalyBadFragment = 0x%x, want 0x01 — xSight decoder registry lock", AnomalyBadFragment)
 	}
 	if AnomalyInvalid != 0x02 {
 		t.Errorf("AnomalyInvalid = 0x%x, want 0x02 — xSight decoder registry lock", AnomalyInvalid)
 	}
-	// Combined-all mask. Future bits (0x04 ... 0x80) are reserved; when
-	// they land, add to the OR mask here and to the C-side defines.
-	const allKnown uint8 = AnomalyBadFragment | AnomalyInvalid
-	if allKnown != 0x03 {
-		t.Errorf("unexpected anomaly mask 0x%x — review xdrop.h ANOMALY_* defines + proposal §7.2", allKnown)
+	var mask uint8
+	for _, value := range bits {
+		mask |= value
+	}
+	for i := 0; i < 8; i++ {
+		bit := uint8(1 << i)
+		err := validateNodeAnomalyFields(bit, "drop", "", "198.51.100.1", "", "")
+		if (err == nil) != (bit&mask != 0) {
+			t.Errorf("anomaly bit=0x%02x mask=0x%02x err=%v", bit, mask, err)
+		}
 	}
 }
 

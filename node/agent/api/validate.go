@@ -4,6 +4,8 @@ package api
 import (
 	"fmt"
 	"strings"
+
+	"github.com/littlewolf9527/xdrop/node/agent/condexpr"
 )
 
 func htons(n uint16) uint16 {
@@ -201,34 +203,18 @@ func validateRule(srcIP, dstIP, protocol string, srcPort, dstPort, pktLenMin, pk
 	return nil
 }
 
-// portlessProtocolsNode mirrors Controller's portlessProtocols set. ICMP /
-// ICMPv6 / IGMP / GRE / ESP do not carry L4 ports.
-var portlessProtocolsNode = map[string]bool{
-	"icmp":   true,
-	"icmpv6": true,
-	"igmp":   true,
-	"gre":    true,
-	"esp":    true,
-}
-
-// validatePortProtocolCompatNode is the Node-side mirror of Controller's
-// validatePortProtocolCompat. Empty protocol and "all" are wildcard semantics
-// that may match TCP/UDP packets, so port stays valid; only the explicit
-// portless set is rejected when ports are non-zero.
-//
-// rev12 (codex round 11 P3): normalize via strings.ToLower so direct-Node
-// clients sending mixed/upper case (e.g. "GRE") still hit the guard.
-// Controller's validateProtocol enforces lowercase before sync, but Node
-// is meant to be a strong direct defense — this closes the gap where
-// `parseProtocolLenient("GRE")` would fall through to ProtoAll and bypass B-10.
+// validatePortProtocolCompatNode uses condexpr's port compatibility rules,
+// preserving the existing diagnostics and leaving unknown protocols to the
+// strict protocol parser.
 func validatePortProtocolCompatNode(protocol string, srcPort, dstPort uint16) error {
-	if !portlessProtocolsNode[strings.ToLower(protocol)] {
+	p := strings.ToLower(protocol)
+	if _, err := condexpr.NormalizeTuple(condexpr.Tuple{Protocol: p}); err != nil {
 		return nil
 	}
-	if srcPort == 0 && dstPort == 0 {
-		return nil
+	if _, err := condexpr.NormalizeTuple(condexpr.Tuple{Protocol: p, SrcPort: int(srcPort), DstPort: int(dstPort)}); err != nil {
+		return fmt.Errorf(
+			"protocol=%s does not carry ports (src_port/dst_port must be 0); got src_port=%d dst_port=%d",
+			protocol, srcPort, dstPort)
 	}
-	return fmt.Errorf(
-		"protocol=%s does not carry ports (src_port/dst_port must be 0); got src_port=%d dst_port=%d",
-		protocol, srcPort, dstPort)
+	return nil
 }

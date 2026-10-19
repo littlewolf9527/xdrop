@@ -2,7 +2,7 @@
 
 ## Transport and authentication
 
-The configured HTTP port defaults to 8080. Use JSON bodies and Content-Type: application/json. Only welcome and health are public. The eight protected routes require `X-API-Key: <node-api-key>` on every request. `auth.node_api_key` is required; empty values (including whitespace) or placeholders reject startup (`config.Config.Validate` in `node/agent/config/config.go`). If called directly with an empty configured key, `api.AuthMiddleware` in `node/agent/api/middleware.go` refuses protected requests with 503. Missing and wrong keys return 401 with error/message fields. Unknown routes return the router plain-text 404.
+The configured HTTP port defaults to 8080. Use JSON bodies and Content-Type: application/json. Unknown fields in request bodies return 400, with the field name in `error`. Only welcome and health are public. The eight protected routes require `X-API-Key: <node-api-key>` on every request. `auth.node_api_key` is required; empty values (including whitespace) or placeholders reject startup (`config.Config.Validate` in `node/agent/config/config.go`). If called directly with an empty configured key, `api.AuthMiddleware` in `node/agent/api/middleware.go` refuses protected requests with 503. Missing and wrong keys return 401 with error/message fields. Unknown routes return the router plain-text 404.
 
 Controller machine credentials and node API keys are different credentials. The node does not pull policy: the controller sends full rules and whitelist snapshots after startup. These are separate publications, not one transaction.
 
@@ -37,7 +37,7 @@ Health always returns HTTP 200. Before both full snapshots succeed it returns `{
 | action, rate_limit | drop or rate_limit; rate_limit requires positive uint32 packets/s |
 | tcp_flags, pkt_len_min, pkt_len_max | TCP flags; legacy uint16 inclusive length bounds, zero unspecified |
 | ttl, dscp, icmp_type, icmp_code, fragment, pkt_len | Optional condition expressions |
-| match_anomaly | uint8 any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment offset one |
+| match_anomaly | uint8 any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment offset one. For IPv6, bit 2 (invalid) checks only TCP immediately following the fixed IPv6 header (data offset < 5); TCP after extension headers is not checked. If an IPv6 packet cannot reach the transport layer within 6 extension headers, has an unreadable extension header, or is a non-first fragment, it is treated as having no transport layer: port and TCP flag conditions do not match, while address, prefix, packet-length, and anomaly rules remain effective. By default a chain still extending past 6 headers is dropped instead (bpf.ipv6_deep_chain_drop); it is treated this way only when that switch is off. |
 | comment, stats | Comment is not persisted/read back; stats contains match_count,drop_count,match_bytes,drop_bytes,drop_pps |
 
 At least one supported five-tuple dimension is needed. Reject mapped IPv6 spellings and mixed address families. Prefixes normalize to network addresses. Ports must agree with protocol. Conditions in different fields are ANDed; one canonical tuple is one group, with at most four physical candidates and two length spans per candidate. Anomaly conditions require bounded targets; IPv6 cannot use bits 1 or 8.
@@ -52,7 +52,7 @@ Whitelist returns `{entries,count}` without pagination; entries contain id and c
 
 ## Commit rule groups
 
-POST commit accepts `{groups:[{key,rules:[Rule,...]},...]}`. The canonical key has kind=exact/cidr, src_port,dst_port,protocol and present address/prefix fields. All members must have that key. Commit requires explicit IDs and cannot change an existing ID's logical identity. Empty rules deletes that group; undeclared groups remain. Moving a rule requires declaring old and new groups together.
+POST commit accepts `{groups:[{key,rules:[Rule,...]},...]}`. The canonical key has kind=exact/cidr, src_port,dst_port,protocol and present address/prefix fields. The key itself must also be valid for a rule (for example, only all / tcp / udp can carry ports); otherwise the entire batch returns 400 `validation_rejected` without writing any tables. All members must have that key. Commit requires explicit IDs and cannot change an existing ID's logical identity. Empty rules deletes that group; undeclared groups remain. Moving a rule requires declaring old and new groups together.
 
 Success is `{code:"committed",groups:[{index,result}],receipt:"confirmed"}`; result is created/replaced/deleted/unchanged. receipt=deferred means publication succeeded but reclamation is pending. A no-change response has code=unchanged and no receipt. Errors contain code,error,groups, with optional localized rule/key/capacity details. Read back and reconcile after ambiguous transport or publication failures.
 
@@ -65,6 +65,7 @@ POST sync/whitelist accepts `{entries:[{id,src_ip?,dst_ip?,src_port?,dst_port?,p
 ## Statistics and recent hits
 
 Stats returns packet counters total_packets,dropped_packets,passed_packets,whitelisted_packets,rate_limited_packets,mapped_v6_dropped; byte counters total_bytes,dropped_bytes,passed_bytes; diagnostics cond_row_missing,tailcall_fail; rules_count,whitelist_count; total_pps,dropped_pps,passed_pps; and system,agent_state,xdp_info,capacity. Independent reads are not one atomic snapshot. Bytes count XDP L2 frame length without FCS.
+`ipv6_deep_chain_dropped` counts IPv6 packets dropped because the extension-header chain is deeper than 6 (`bpf.ipv6_deep_chain_drop`, on by default); they are also counted in dropped_packets / dropped_bytes.
 
 Capacity reports blacklist,cidr_blacklist,cond,cidr_cond,whitelist,sv4_cidr_trie,dv4_cidr_trie,sv6_cidr_trie,dv6_cidr_trie,logical_state, each with limit/used. Usage is published in-memory state, not a fresh kernel dump. Pinned counters can survive agent restart, but policy does not; tailcall_fail starts over.
 
@@ -84,6 +85,7 @@ The candidate snapshot is cached for 2 seconds and concurrent scans coalesce. tr
 | Atomic | 400 | error (JSON binding) |
 | Atomic | 409 | condition_group_invalid, table_full, duplicate_logical_id, duplicate_id, duplicate_key, cidr_overlap |
 | Atomic | 500 | quiescence_failed or error without code |
-| Whitelist sync | 400 / 500 | error |
+| Whitelist sync | 400 / 500 | error; quiescence_failed (500) |
 
-Atomic failures also carry added/failed except JSON binding errors. Commit errors carry groups; localized group errors can identify rule_id,undeclared_key,rule_ids,table,excess. Node error shapes differ from the controller error object.
+After publication, receipt failure still returns 200; the old table is cleared by the next sync.
+Atomic failures also carry added/failed except JSON binding errors. Commit errors carry groups; localized group errors can identify rule_id,undeclared_key,rule_ids,table,excess. Node error shapes differ from the controller error object. condition_group_invalid only reports invalid group content found before any table write; kernel write or CIDR reservation failures in a conditional group return 500 without code, as for ordinary rules, and a rule or condition row rejected because the kernel table is full returns 409 table_full.

@@ -19,9 +19,10 @@ async function load() {
   let after: string | null = null
   const collected: WhitelistDTO[] = []
   try {
-    for (let page = 0; page < 50; page++) {
+    while (true) {
       const result: WhitelistPage = await request('/whitelist?limit=1000' + (after ? '&after=' + encodeURIComponent(after) : ''))
       if (!current()) return
+      if (result.next_after !== null && result.next_after === after) throw new Error('Whitelist cursor did not advance')
       collected.push(...result.items); after = result.next_after
       if (after === null) break
     }

@@ -9,7 +9,13 @@ const (
 	LogicalLimit          = 1000000
 	DefaultLogicalReserve = 1000
 	DimensionCount        = 10
+	WhitelistDimension    = 4
+	LogicalDimension      = 9
+	TrieDimensionStart    = 5
+	TrieDimensionCount    = 4
 )
+
+var trieBucketNames = [4]string{"sv4", "dv4", "sv6", "dv6"}
 
 func DimensionNames() [DimensionCount]string {
 	return [DimensionCount]string{"blacklist", "cidr_blacklist", "cond", "cidr_cond", "whitelist", "sv4_cidr_trie", "dv4_cidr_trie", "sv6_cidr_trie", "dv6_cidr_trie", "logical_state"}
@@ -42,7 +48,7 @@ func BuiltinLimits() Limits {
 	return l
 }
 func AdmissionLimit(dim, nodeLimit, reserve int) int {
-	if dim == DimensionCount-1 {
+	if dim == LogicalDimension {
 		return nodeLimit - reserve
 	}
 	return nodeLimit
@@ -54,7 +60,7 @@ func (s *Service) currentLimits() Limits {
 		return s.limits()
 	}
 	l := BuiltinLimits()
-	for i := 5; i < 9; i++ {
+	for i := TrieDimensionStart; i < TrieDimensionStart+TrieDimensionCount; i++ {
 		l.Values[i] = s.trieLimit
 	}
 	return l
@@ -74,8 +80,8 @@ func (s *Service) checkCapacityWith(l *ledger, delta Values) *Error {
 	for i, used := range l.occupancy.Used {
 		if delta[i] > 0 && used+delta[i] > AdmissionLimit(i, s.writeLimits.Values[i], s.reserve) {
 			name := DimensionNames()[i]
-			if i >= 5 && i < 9 {
-				name = []string{"sv4", "dv4", "sv6", "dv6"}[i-5]
+			if i >= TrieDimensionStart && i < TrieDimensionStart+TrieDimensionCount {
+				name = trieBucketNames[i-TrieDimensionStart]
 			}
 			return &Error{Code: "table_full", Table: name, Message: "capacity exceeded"}
 		}

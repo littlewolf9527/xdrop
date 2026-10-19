@@ -111,7 +111,7 @@ func (l *ledger) changeCount(r *store.Rule, sign, count int) {
 	if g.members == 0 {
 		delete(l.groups, r.GroupKey)
 	}
-	l.occupancy.Used[9] += sign
+	l.occupancy.Used[LogicalDimension] += sign
 	for direction, raw := range []string{r.SrcCIDR, r.DstCIDR} {
 		if raw == "" {
 			continue
@@ -120,13 +120,13 @@ func (l *ledger) changeCount(r *store.Rule, sign, count int) {
 		p := l.trees[i][raw]
 		if len(p.ids) == 0 {
 			p.network, _ = netip.ParsePrefix(raw)
-			l.occupancy.Used[i+5]++
+			l.occupancy.Used[i+TrieDimensionStart]++
 		}
 		p.ids = changeID(p.ids, r.ID, sign)
 		l.trees[i][raw] = p
 		if len(p.ids) == 0 {
 			delete(l.trees[i], raw)
-			l.occupancy.Used[i+5]--
+			l.occupancy.Used[i+TrieDimensionStart]--
 		}
 	}
 }
@@ -160,7 +160,7 @@ func ledgerMaps(rows []store.Rule, counts []int, whitelistCount int) *ledger {
 	for i := range l.trees {
 		l.trees[i] = make(map[string]ledgerPrefix, min(sizes[i], TrieLimit))
 	}
-	l.occupancy.Used[4] = whitelistCount
+	l.occupancy.Used[WhitelistDimension] = whitelistCount
 	for i := range rows {
 		if counts[i] >= 0 {
 			l.changeCount(&rows[i], 1, counts[i])
@@ -213,7 +213,7 @@ func (l *ledger) delta(old, next store.Rule) Values {
 		d[g.kind] += after - before
 		d[g.kind+2] += ac - bc
 		groups[r.GroupKey] = g
-		d[9] += sign
+		d[LogicalDimension] += sign
 		for direction, raw := range []string{r.SrcCIDR, r.DstCIDR} {
 			if raw == "" {
 				continue
@@ -224,11 +224,11 @@ func (l *ledger) delta(old, next store.Rule) Values {
 				n = len(l.trees[k][raw].ids)
 			}
 			if n == 0 {
-				d[k+5]++
+				d[k+TrieDimensionStart]++
 			}
 			n += sign
 			if n == 0 {
-				d[k+5]--
+				d[k+TrieDimensionStart]--
 			}
 			prefixes[k][raw] = n
 		}

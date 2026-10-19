@@ -9,7 +9,8 @@ export const errorCodes = [
   'last_user', 'last_admin', 'login_throttled', 'internal',
 ] as const
 export function envelope(e: unknown): WriteError | undefined { return e instanceof ApiError ? e.envelope : undefined }
-const conditionNames = ['ttl', 'dscp', 'pkt_len', 'icmp_type', 'icmp_code', 'fragment', 'tcp_flags', 'match_anomaly']
+import { conditionKeys as conditionNames } from './rules'
+export { conditionNames }
 const ruleMessages: [string, RegExp][] = [
   ['ip', /^(?:invalid IP address|invalid IP "(?:\\.|[^"\\])*")$/],
   ['cidr', /^invalid CIDR "(?:\\.|[^"\\])*"$/],
@@ -47,7 +48,7 @@ const ruleMessages: [string, RegExp][] = [
 ]
 function conditionField(message: string) {
   const key = /^(\w+)(?:: | requires protocol )/.exec(message)?.[1] || ''
-  return conditionNames.includes(key) ? key : ''
+  return conditionNames.some(k => k === key) ? key : ''
 }
 function unquote(text: string) {
   const simple: Record<string, string> = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"' }
@@ -70,8 +71,8 @@ function unquote(text: string) {
 export function ruleMessage(message: string, field: string) {
   if (field === 'cidr') return { id: 'cidr', key: field, value: '', protos: '', max: '' }
   const unwrapped = message.replace(/^rule [^:]+: /, ''), prefix = /^(\w+): ([\s\S]*)$/.exec(unwrapped)
-  const key = prefix && conditionNames.includes(prefix[1]!) ? prefix[1]! : message.startsWith('legacy packet length') ? 'pkt_len' : field
-  const inner = prefix && conditionNames.includes(prefix[1]!) ? prefix[2]! : unwrapped
+  const key = prefix && conditionNames.some(k => k === prefix[1]!) ? prefix[1]! : message.startsWith('legacy packet length') ? 'pkt_len' : field
+  const inner = prefix && conditionNames.some(k => k === prefix[1]!) ? prefix[2]! : unwrapped
   for (const [id, regex] of ruleMessages) {
     const match = regex.exec(inner)
     if (!match) continue
@@ -86,7 +87,7 @@ function ruleErrorText(value: WriteError) {
   const address = ['ip', 'cidr', 'tuple', 'src_ip', 'dst_ip', 'src_cidr', 'dst_cidr'].includes(actual)
   const label = ['src_ip', 'src_cidr'].includes(actual) ? 'src_address' : ['dst_ip', 'dst_cidr'].includes(actual) ? 'dst_address' :
     address ? 'target' : actual === 'port' ? 'ports' : actual === 'expires_in' ? 'expiry' : actual
-  const key = conditionNames.includes(label) ? label : label === 'rate_limit' ? 'pps' :
+  const key = conditionNames.some(k => k === label) ? label : label === 'rate_limit' ? 'pps' :
     ['src_address', 'dst_address', 'target', 'ports', 'expiry', 'protocol', 'src_port', 'dst_port', 'conditions', 'action', 'comment', 'enabled'].includes(label) ? t(label) : t('rules')
   const hint = address ? 'address' : Object.hasOwn(messages['zh-CN'].ruleHints, actual) ? actual : ''
   return t('ruleErrors.fallback', { key }) + (hint ? ' ' + t('ruleHints.' + hint) : '')

@@ -73,23 +73,22 @@ func (m *Manager) Apply(slot int, before, want TrieEntries) error {
 	defer m.mu.Unlock()
 	known := m.known[slot]
 	m.known[slot] = false
-	desired := want
 	for i, table := range m.tries[slot] {
 		if table == nil {
 			return fmt.Errorf("trie copy %d table %d unavailable", slot, i)
 		}
-		have := before[i]
+		have, writes := before[i], want[i]
 		if known {
-			have, want[i] = make(map[string]uint32), make(map[string]uint32)
+			have, writes = make(map[string]uint32), make(map[string]uint32)
 			// Scope only K copies; U still reconciles the complete desired set.
 			for key, id := range before[i] {
-				if id != desired[i][key] {
+				if id != want[i][key] {
 					have[key] = id
 				}
 			}
-			for key, id := range desired[i] {
+			for key, id := range want[i] {
 				if id != before[i][key] {
-					want[i][key] = id
+					writes[key] = id
 				}
 			}
 		} else {
@@ -112,13 +111,13 @@ func (m *Manager) Apply(slot int, before, want TrieEntries) error {
 			}
 		}
 		for key := range have {
-			if _, keep := want[i][key]; !keep {
+			if _, keep := writes[key]; !keep {
 				if err := table.Delete([]byte(key)); err != nil {
 					return err
 				}
 			}
 		}
-		for key, id := range want[i] {
+		for key, id := range writes {
 			if have[key] != id {
 				if err := table.Put([]byte(key), id); err != nil {
 					return err

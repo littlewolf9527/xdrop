@@ -221,6 +221,11 @@ func b1Cases() []b1Case {
 		ext := []byte{58, 0, 0, 0, 0, 0, 0, 0, 8, 7}
 		binary.BigEndian.PutUint16(ext[2:4], off<<3)
 		c = b1Base(true, 44, ext)
+		if off == 0 {
+			c.attrs[6] = ext[8]
+			c.attrs[7] = ext[9]
+			c.attrs[9] = 1
+		}
 		c.name = fmt.Sprintf("v6/icmp-fragment/%d", off)
 		cases = append(cases, c)
 	}

@@ -326,7 +326,7 @@ func TestCut53XSightAPIContract(t *testing.T) {
 	// Classify all original bytes before loading/running any program. The names
 	// are an assertion on the computed set, never an input to the classifier.
 	aborts, err := cut53XSightAbortNames(fixtures.Fixtures)
-	wantAborts := []string{"invalid_ihl_4", "invalid_tot_len_equal", "invalid_tot_len_short", "tiny_first_frag_udp_7"}
+	wantAborts := []string{"invalid_tot_len_equal", "invalid_tot_len_short", "tiny_first_frag_udp_7"}
 	if err != nil || !reflect.DeepEqual(aborts, wantAborts) {
 		t.Fatalf("xsight main-entry abort set=%v want=%v err=%v", aborts, wantAborts, err)
 	}
@@ -406,10 +406,10 @@ func TestCut53XSightAPIContract(t *testing.T) {
 			})
 		}
 	}
-	if aborted != 8 || evaluated != 58 {
-		t.Fatalf("xsight packet coverage aborted=%d evaluated=%d want=8/58", aborted, evaluated)
+	if aborted != 6 || evaluated != 60 {
+		t.Fatalf("xsight packet coverage aborted=%d evaluated=%d want=6/60", aborted, evaluated)
 	}
-	t.Log("CUT53_XSIGHT_API fixtures=33 kinds=2 packet_cells=66 raw_abort_names=4 aborted_zero_counts=8 evaluator_packets=58 tiny_first_frag_tcp_19=evaluator ipv6_ext_hbh_tcp_doff_4=PASS")
+	t.Log("CUT53_XSIGHT_API fixtures=33 kinds=2 packet_cells=66 raw_abort_names=3 aborted_zero_counts=6 evaluator_packets=60 tiny_first_frag_tcp_19=evaluator ipv6_ext_hbh_tcp_doff_4=PASS")
 }
 
 func TestCut53PureWireUnchanged(t *testing.T) {

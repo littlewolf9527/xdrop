@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"syscall"
 
 	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,7 @@ func (h *Handlers) AtomicSync(c *gin.Context) {
 	var req struct {
 		Rules []Rule `json:"rules"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindStrictJSON(c, &req); err != nil {
 		h.ruleJSON(c, http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -36,6 +37,10 @@ func (h *Handlers) AtomicSync(c *gin.Context) {
 		var full *logicalTableFullError
 		if errors.As(err, &full) {
 			h.ruleJSON(c, http.StatusConflict, gin.H{"code": "table_full", "error": full.Error(), "added": result.Added, "failed": result.Failed})
+			return
+		}
+		if errors.Is(err, errAtomicTableFull) {
+			h.ruleJSON(c, http.StatusConflict, gin.H{"code": "table_full", "error": err.Error(), "added": result.Added, "failed": result.Failed})
 			return
 		}
 		var logical *atomicDuplicateLogicalIDError
@@ -136,6 +141,15 @@ func (e *atomicDuplicateIDError) Error() string {
 var cidrBeforeAtomicPublishTestHook func(*Handlers)
 var atomicMemoTestHook func(**atomicMemo)
 
+var errAtomicTableFull = errors.New("table_full")
+
+func atomicRowWriteError(err error) error {
+	if errors.Is(err, syscall.E2BIG) {
+		return fmt.Errorf("%w: %w", errAtomicTableFull, err)
+	}
+	return err
+}
+
 // DoAtomicSync is the core atomic sync logic — called by the HTTP full-snapshot handler.
 // It acquires syncMu and publishMu internally.
 func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
@@ -184,7 +198,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 	// R0 must precede any reuse, including Step 3a's opposite config slot.
 	if !h.quiescenceConfirmed {
 		if err := h.awaitQuiescence(); err != nil {
-			return AtomicSyncResult{}, fmt.Errorf("%w: %v", errQuiescence, err)
+			return AtomicSyncResult{Failed: 1}, fmt.Errorf("%w: %v", errQuiescence, err)
 		}
 	}
 	beforePrefixes := h.cidrMgr.Snapshot([2][]string{})
@@ -312,12 +326,6 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			value.Action, value.RateLimit = g.Row.Action[0], g.Row.Rate[0]
 			value.LogicalID = g.Row.RuleID[0]
 		}
-		failure := func(err error) error {
-			if conditional {
-				return conditionGroupFailure(g, rules, err.Error())
-			}
-			return err
-		}
 		if first.IsCIDR {
 			// Preserve a borrow for every logical member, including shared IDs.
 			var reserved []atomicPreparedRule
@@ -334,7 +342,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 					srcID, err = h.cidrMgr.ReserveSrcID(r.SrcCIDR)
 					if err != nil {
 						undoReserved()
-						return abort(failure(fmt.Errorf("allocate src CIDR for rule %s: %w", r.ID, err)))
+						return abort(fmt.Errorf("allocate src CIDR for rule %s: %w", r.ID, err))
 					}
 				}
 				if r.DstCIDR != "" {
@@ -343,7 +351,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 					if err != nil {
 						release(r.SrcCIDR, "")
 						undoReserved()
-						return abort(failure(fmt.Errorf("allocate dst CIDR for rule %s: %w", r.ID, err)))
+						return abort(fmt.Errorf("allocate dst CIDR for rule %s: %w", r.ID, err))
 					}
 				}
 				prepared.CIDR.SrcID, prepared.CIDR.DstID = srcID, dstID
@@ -354,7 +362,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 				identity, err := h.classifyRuleKey(prepared.Rule, memo)
 				if prepared.CIDR != ck || err != nil || (conditional && identity != g.Key) {
 					undoReserved()
-					return abort(failure(fmt.Errorf("CIDR group identity changed after reservation")))
+					return abort(fmt.Errorf("CIDR group identity changed after reservation"))
 				}
 			}
 			if previous, exists := cidrPositions[ck]; exists {
@@ -364,13 +372,13 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			if conditional {
 				if err := atomicWriteRow(h.mirrorTable(shadowSlot, mirrorCIDRCondition), have[mirrorCIDRCondition], wantRows[mirrorCIDRCondition], cidrRuleKeyToBytes(ck), conditionValueToBytes(g.Row), ebpf.UpdateNoExist); err != nil {
 					undoReserved()
-					return abort(failure(fmt.Errorf("write shadow CIDR condition: %w", err)))
+					return abort(atomicRowWriteError(fmt.Errorf("write shadow CIDR condition: %w", err)))
 				}
 				h.observeAtomicStage("2-cidr-condition")
 			}
 			if err := atomicWriteRow(cidrShadow, have[mirrorCIDR], wantRows[mirrorCIDR], cidrRuleKeyToBytes(ck), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
 				undoReserved()
-				return abort(failure(fmt.Errorf("write shadow CIDR rule %s: %w", original.ID, err)))
+				return abort(atomicRowWriteError(fmt.Errorf("write shadow CIDR rule %s: %w", original.ID, err)))
 			}
 			if conditional {
 				h.observeAtomicStage("2-cidr-rule")
@@ -389,7 +397,7 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			key := first.Exact
 			for _, prepared := range members {
 				if prepared.Exact != key {
-					return abort(failure(fmt.Errorf("exact group identity changed after normalization")))
+					return abort(fmt.Errorf("exact group identity changed after normalization"))
 				}
 			}
 			if previous, exists := exactPositions[key]; exists {
@@ -397,12 +405,12 @@ func (h *Handlers) DoAtomicSync(rules []Rule) (AtomicSyncResult, error) {
 			}
 			if conditional {
 				if err := atomicWriteRow(h.mirrorTable(shadowSlot, mirrorCondition), have[mirrorCondition], wantRows[mirrorCondition], ruleKeyToBytes(key), conditionValueToBytes(g.Row), ebpf.UpdateNoExist); err != nil {
-					return abort(failure(fmt.Errorf("write shadow exact condition: %w", err)))
+					return abort(atomicRowWriteError(fmt.Errorf("write shadow exact condition: %w", err)))
 				}
 				h.observeAtomicStage("2-exact-condition")
 			}
 			if err := atomicWriteRow(shadow, have[mirrorExact], wantRows[mirrorExact], ruleKeyToBytes(key), ruleValueToBytes(value), ebpf.UpdateNoExist); err != nil {
-				return abort(failure(fmt.Errorf("write shadow exact rule %s: %w", original.ID, err)))
+				return abort(atomicRowWriteError(fmt.Errorf("write shadow exact rule %s: %w", original.ID, err)))
 			}
 			if conditional {
 				h.observeAtomicStage("2-exact-rule")
@@ -630,6 +638,11 @@ func (h *Handlers) DoWhitelistAtomicSync(entries []SyncWhitelistEntry) error {
 	}
 
 	// --- Phase 2: Clear shadow whitelist map ---
+	if !h.quiescenceConfirmed {
+		if err := h.awaitQuiescence(); err != nil {
+			return fmt.Errorf("%w: %v", errQuiescence, err)
+		}
+	}
 	shadow := h.shadowWhitelist()
 	if err := clearMap(shadow); err != nil {
 		return fmt.Errorf("failed to clear shadow whitelist: %w", err)
@@ -642,12 +655,32 @@ func (h *Handlers) DoWhitelistAtomicSync(entries []SyncWhitelistEntry) error {
 
 	for _, item := range items {
 		keyBytes := ruleKeyToBytes(item.key)
-		if err := shadow.Update(keyBytes, []byte{1}, ebpf.UpdateNoExist); err != nil {
+		if err := whitelistMapIO(shadow).Update(keyBytes, []byte{1}, ebpf.UpdateNoExist); err != nil {
 			return fmt.Errorf("shadow whitelist insert failed for %s: %w", item.entry.ID, err)
 		}
 		newWlEntries[item.entry.ID] = item.key
 		newWlKeyIndex[item.key] = item.entry.ID
 		newWlComboRefCount[item.combo]++
+	}
+
+	// Verify every expected key/value and reject unexpected extra rows before publication.
+	for _, item := range items {
+		var value [1]byte
+		if err := whitelistMapIO(shadow).Lookup(ruleKeyToBytes(item.key), &value); err != nil || value[0] != 1 {
+			return fmt.Errorf("shadow whitelist verification failed for %s: value=%d err=%v", item.entry.ID, value[0], err)
+		}
+	}
+	iter := whitelistMapIO(shadow).Iterate()
+	key, value := make([]byte, 40), make([]byte, 1)
+	count := 0
+	for iter.Next(&key, &value) {
+		count++
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("shadow whitelist verification iterate: %w", err)
+	}
+	if count != len(items) {
+		return fmt.Errorf("shadow whitelist verification count: got %d want %d", count, len(items))
 	}
 
 	// --- Phase 4: Flip selector and publish config ---
@@ -674,6 +707,10 @@ func (h *Handlers) DoWhitelistAtomicSync(entries []SyncWhitelistEntry) error {
 	log.Printf("[DoWhitelistAtomicSync] Synced %d whitelist entries, wlSlot=%d", len(items), h.activeWLSlot)
 
 	// --- Phase 6: Cleanup old shadow (now = old active) — best-effort ---
+	if err := h.awaitQuiescence(); err != nil {
+		log.Printf("[DoWhitelistAtomicSync R5c] %v; reclamation deferred until next full sync", err)
+		return nil
+	}
 	if err := clearMap(h.shadowWhitelist()); err != nil {
 		log.Printf("[DoWhitelistAtomicSync] WARN: old shadow whitelist cleanup failed: %v", err)
 	}
@@ -693,7 +730,7 @@ func (h *Handlers) SyncWhitelistHandler(c *gin.Context) {
 	var req struct {
 		Entries []SyncWhitelistEntry `json:"entries"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindStrictJSON(c, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -701,6 +738,8 @@ func (h *Handlers) SyncWhitelistHandler(c *gin.Context) {
 	if err := h.DoWhitelistAtomicSync(req.Entries); err != nil {
 		if _, ok := err.(*wlSyncValidationError); ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else if errors.Is(err, errQuiescence) {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "quiescence_failed", "error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}

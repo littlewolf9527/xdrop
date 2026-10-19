@@ -63,6 +63,8 @@ def generate(root, output):
     preamble += '#define stats_inc(x) ((void)0)\n#define should_filter(x) 1\n#define bpf_redirect_map(map, index, flags) XDP_REDIRECT\n'
     if 'stats_add(' in source:
         preamble += '#define stats_add(slot, value) ((void)0)\n'
+    if 'is_ipv6_deep_chain_pass_enabled(' in body:
+        preamble += '#define is_ipv6_deep_chain_pass_enabled() 0\n'
     output.mkdir(parents=True, exist_ok=True)
     for name in ('attrs', 'cidr_attrs', 'anomaly'):
         variable = 'attrs' if name == 'anomaly' else name

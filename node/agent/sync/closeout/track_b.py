@@ -58,7 +58,7 @@ def config_from_example(example, values):
 
 def stats_delta(stats, before):
     # Main-owned pinned counters survive restart; keep every other response field.
-    return dict(stats, **{k: stats[k]-before[k] for k in (*COUNTERS, 'cond_row_missing', 'mapped_v6_dropped')})
+    return dict(stats, **{k: stats[k]-before[k] for k in (*COUNTERS, 'cond_row_missing', 'mapped_v6_dropped', 'ipv6_deep_chain_dropped')})
 
 
 def cpu_delta(cpu, before):

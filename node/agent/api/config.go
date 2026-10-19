@@ -125,15 +125,36 @@ func (h *Handlers) shadowCidrBlacklist() *ebpf.Map {
 	return h.cidrBlacklist
 }
 
+type whitelistIterator interface {
+	Next(interface{}, interface{}) bool
+	Err() error
+}
+type whitelistTable interface {
+	configPublishMap
+	Delete(interface{}) error
+	Iterate() whitelistIterator
+}
+type nativeWhitelistTable struct{ m *ebpf.Map }
+
+func (m nativeWhitelistTable) Update(k, v interface{}, f ebpf.MapUpdateFlags) error {
+	return m.m.Update(k, v, f)
+}
+func (m nativeWhitelistTable) Lookup(k, v interface{}) error { return m.m.Lookup(k, v) }
+func (m nativeWhitelistTable) Delete(k interface{}) error    { return m.m.Delete(k) }
+func (m nativeWhitelistTable) Iterate() whitelistIterator    { return m.m.Iterate() }
+
+var whitelistMapIO = func(m *ebpf.Map) whitelistTable { return nativeWhitelistTable{m} }
+
 // clearMap removes all entries from a BPF hash map using cilium/ebpf's
 // iterator. BPF hash maps have no bulk clear; we must iterate + delete.
 // Returns a non-nil error containing the count of per-entry delete failures
 // (the first failing error is wrapped). All keys are attempted regardless of
 // individual failures so the map is left as empty as possible.
 func clearMap(m *ebpf.Map) error {
+	table := whitelistMapIO(m)
 	// Collect all keys first to avoid iterator invalidation on Delete.
 	var keys [][]byte
-	iter := m.Iterate()
+	iter := table.Iterate()
 	keySize := int(m.KeySize())
 	key := make([]byte, keySize)
 	var valueScratch []byte
@@ -150,15 +171,13 @@ func clearMap(m *ebpf.Map) error {
 		keys = append(keys, keyCopy)
 	}
 	if err := iter.Err(); err != nil {
-		// Iteration errors are reported but do not prevent deletion of
-		// whatever keys we did manage to enumerate.
-		log.Printf("[clearMap] iterator error (continuing with %d collected keys): %v", len(keys), err)
+		return fmt.Errorf("clearMap: iterate: %w", err)
 	}
 
 	var firstErr error
 	failed := 0
 	for _, k := range keys {
-		if err := m.Delete(k); err != nil {
+		if err := table.Delete(k); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}

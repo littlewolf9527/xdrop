@@ -14,7 +14,7 @@
 | `database` | SQLite 文件绝对路径 |
 | `secret_key_file` | 主密钥文件绝对路径 |
 
-配置没有默认值。未知字段、重复键和多份 YAML 文档都会被拒绝。节点已存数据库，因此拒绝 `nodes`；周期已移至设置，因此拒绝 `reconcile_interval`。浏览器会话应通过同机 HTTPS 反向代理访问回环监听。
+配置没有默认值。未知字段、重复键和多份 YAML 文档都会被拒绝。节点已存数据库，因此拒绝 `nodes`；周期已移至设置，因此拒绝 `reconcile_interval`。浏览器会话应通过同机 HTTPS 反向代理访问回环监听，并在该代理上限制 `POST /api/v1/auth/login` 的频率（见 GETTING_STARTED 第 6 节）。
 
 主密钥文件权限必须为 0600，内容是 base64 编码的 32 字节密钥。节点 API 密钥使用 AES-256-GCM 加密，以节点名称作为附加认证数据；主密钥缺失或无效时拒绝启动。单个节点密钥无法解密时仍显示 `key_unreadable`，且不向该节点发送请求。
 

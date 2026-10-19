@@ -140,7 +140,7 @@ func TestNSBytes(t *testing.T) {
 					}
 					after := nsCoarse(t)
 					counts := b1LogicalCounts(t, main, 701)
-					var stats [9]uint64
+					var stats [10]uint64
 					for i := range stats {
 						stats[i] = td035Sum(t, main.Maps["stats"], uint32(i))
 					}
@@ -183,7 +183,7 @@ func TestNSBytes(t *testing.T) {
 				td035Put(t, main.Maps["config_a"], uint32(3), uint64(1<<16))
 				td035Put(t, main.Maps["whitelist"], b1Key(false, 6, true), uint8(1))
 			}
-			var before [9]uint64
+			var before [10]uint64
 			if mode == "ff-nonfilter" {
 				td035Put(t, main.Maps["config_a"], uint32(4), uint64(1))
 				td035Put(t, main.Maps["config_a"], uint32(5), uint64(tx.Index))
@@ -200,7 +200,7 @@ func TestNSBytes(t *testing.T) {
 				nsPrerequisite(t, unix.Sendto(fd, packet, 0, &unix.SockaddrLinklayer{Ifindex: tx.Index}))
 			}
 			time.Sleep(20 * time.Millisecond)
-			var s [9]uint64
+			var s [10]uint64
 			for i := range s {
 				s[i] = td035Sum(t, main.Maps["stats"], uint32(i)) - before[i]
 			}

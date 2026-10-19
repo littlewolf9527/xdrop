@@ -162,8 +162,7 @@ struct rule_value {
   __u8 pad2[4];         // pad2[0] bit 0: RULE_HAS_CONDITIONS; other bits reserved.
 } __attribute__((packed));
 
-// B1: only this bit selects the same-generation condition row. Production
-// serialization keeps it zero until knife five; the rule map ABI stays 32 B.
+// B1: only this bit selects the same-generation condition row. Production serialization sets it for rules that carry conditions; the rule map ABI stays 32 B.
 #define RULE_HAS_CONDITIONS 0x01
 #define COND_NO_WINNER 0xFF
 
@@ -224,9 +223,7 @@ _Static_assert(sizeof(struct ip_addr) == 16,
                "ip_addr must stay 16 bytes (IPv6-sized; IPv4 is mapped into it)");
 
 _Static_assert(sizeof(struct rule_key) == 40,
-               "rule_key must stay 40 bytes — it is the key of blacklist/blacklist_b/"
-               "whitelist/whitelist_b/rl_states/verifier_prune_map (facts.md F-001). "
-               "Changing it changes every one of those maps' key_size at once.");
+               "rule_key must stay 40 bytes — it is the key of several BPF maps (counted by the facts.md F-001 command). Changing it changes every one of those maps' key_size at once.");
 _Static_assert(__builtin_offsetof(struct rule_key, src_port) == 32, "rule_key.src_port moved");
 _Static_assert(__builtin_offsetof(struct rule_key, dst_port) == 34, "rule_key.dst_port moved");
 _Static_assert(__builtin_offsetof(struct rule_key, protocol) == 36, "rule_key.protocol moved");
@@ -255,6 +252,7 @@ _Static_assert(__builtin_offsetof(struct rule_value, pkt_len_max) == 26, "rule_v
 #define STATS_WHITELISTED 3
 #define STATS_RATE_LIMITED 4
 #define STATS_MAPPED_V6_DROPPED 5
+#define STATS_IPV6_DEEP_CHAIN_DROPPED 9
 #define STATS_TOTAL_BYTES 6
 #define STATS_DROPPED_BYTES 7
 #define STATS_PASSED_BYTES 8
@@ -353,15 +351,11 @@ _Static_assert(__builtin_offsetof(struct logical_rule_counters, drop) == 8,
 
 // ── Phase 0 · 布局契约（续）───────────────────────────────────────────────
 _Static_assert(sizeof(struct cidr_rule_key) == 16,
-               "cidr_rule_key must stay 16 bytes (facts.md F-045) — key of cidr_blacklist/"
-               "cidr_blist_b/cidr_rl_states (F-002). Note it is a DIFFERENT identity from "
-               "rule_key: src_id/dst_id are node-local integer IDs, not IP addresses.");
+               "cidr_rule_key must stay 16 bytes (facts.md F-045) — it is the key of the CIDR rule and CIDR condition maps (facts.md F-002 command). Note it is a DIFFERENT identity from rule_key: src_id/dst_id are node-local integer IDs, not IP addresses.");
 _Static_assert(__builtin_offsetof(struct cidr_rule_key, protocol) == 12, "cidr_rule_key.protocol moved");
 
 _Static_assert(sizeof(struct rate_limit_state) == 16,
-               "rate_limit_state must stay 16 bytes — value of rl_states/cidr_rl_states. "
-               "Phase 1 will re-key these maps per candidate slot (facts.md F-014); "
-               "the VALUE layout should stay put unless that plan says otherwise.");
+               "rate_limit_state must stay 16 bytes — it is the value of the per-logical-ID token-bucket map id_rl_states; changing it changes that map's value_size.");
 
 // Rate limit configuration
 #define RATE_LIMIT_BURST_MULTIPLIER 2 // Allow burst = rate * 2
@@ -382,9 +376,10 @@ _Static_assert(sizeof(struct rate_limit_state) == 16,
 
 // Auto-selected divisor for PERCPU_HASH rate-limit buckets.
 #define CONFIG_RL_CPU_DIVISOR 11
+#define CONFIG_IPV6_DEEP_CHAIN_PASS 12
 
 // Double-buffer config map entries
-#define CONFIG_MAP_ENTRIES 12
+#define CONFIG_MAP_ENTRIES 13
 
 // tail_call prog_array slot assignments.
 // max_entries=16, reserved slot layout:

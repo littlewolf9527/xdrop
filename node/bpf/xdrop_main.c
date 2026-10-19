@@ -168,7 +168,7 @@ BPF_MAP_DEF(stats) = {
     .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u64),
-    .max_entries = 9,
+    .max_entries = 10,
 };
 BPF_MAP_ADD(stats);
 
@@ -874,6 +874,13 @@ static INLINE int is_fast_forward_enabled(void) {
   return enabled && *enabled == 1;
 }
 
+static INLINE int is_ipv6_deep_chain_pass_enabled(void) {
+  __u64 slot = read_active_slot();
+  __u32 idx = CONFIG_IPV6_DEEP_CHAIN_PASS;
+  __u64 *enabled = config_lookup(slot, idx);
+  return enabled && *enabled == 1;
+}
+
 // Helper: get filter interface index (0 = filter on all interfaces)
 static INLINE __u32 get_filter_ifindex(void) {
   __u64 slot = read_active_slot();
@@ -895,11 +902,11 @@ static INLINE int should_filter(__u32 ingress_ifindex) {
 
 // Helper: Get next header and offset for IPv6 extension headers
 // Returns the final protocol number, updates data pointer to L4 header
-// nonfirst also marks an unreadable extension header: L4 is unavailable.
+// nonfirst means L4 unavailable: non-first fragment, unreadable extension, or exhausted depth.
 static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
-                                      void **l4_data, bool *fragment_seen, bool *nonfirst) {
+                                      void **l4_data, bool *nonfirst, bool *deep) {
+  *deep = false;
   *nonfirst = false;
-  *fragment_seen = false;
 // Walk through extension headers (limited iterations for BPF verifier)
 #pragma unroll
   for (int i = 0; i < IPV6_EXT_MAX_DEPTH; i++) {
@@ -936,7 +943,6 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
     }
     case 44: // Fragment
     {
-      *fragment_seen = true; // ICMP validity still uses Fragment-header presence.
       // Fragment header: 8 bytes fixed
       if (data + 8 > data_end) {
         *l4_data = data;
@@ -973,9 +979,6 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
       nexthdr = next;
       break;
     }
-    case 59: // No Next Header
-      *l4_data = data;
-      return 0;
     default:
       // Unknown extension header or final protocol
       *l4_data = data;
@@ -983,6 +986,9 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
     }
   }
 
+  if (nexthdr == 0 || nexthdr == 43 || nexthdr == 60 ||
+      nexthdr == 44 || nexthdr == 51)
+    *nonfirst = *deep = true;
   *l4_data = data;
   return nexthdr;
 }
@@ -1077,6 +1083,7 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     dscp = ip->tos >> 2;
     __u16 frag = bpf_ntohs(ip->frag_off);
     nonfirst = (frag & 0x1fff) != 0;
+    if (ip->ihl < 5) nonfirst = true;
     frag_class = ((frag & 0x4000) >> 12) | ((frag & 0x2000) >> 12) |
                  ((frag & 0x1fff) != 0);
     icmp_allowed = ip->ihl >= 5 && ip->protocol == PROTO_ICMP && !(frag & 0x1fff);
@@ -1095,7 +1102,7 @@ int xdp_firewall_main(struct xdp_md *ctx) {
     if (ip->protocol == PROTO_TCP && (frag & 0x1fff) == 1)
       pkt_anomaly |= ANOMALY_TCP_OFFSET_ONE;
 
-    // Keep the existing L4 parse and early-return decisions, including IHL<5.
+    // IHL<5 means no L4; an L4 start past the frame end still returns ABORTED.
     l4_data = l3_data + (ip->ihl * 4);
     if (l4_data > data_end) {
       return XDP_ABORTED;
@@ -1130,21 +1137,16 @@ int xdp_firewall_main(struct xdp_md *ctx) {
 
     // Parse extension headers to find transport protocol
     void *ext_data = l3_data + sizeof(*ip6);
-    bool fragment_seen = false;
+    bool deep;
     key.protocol =
-        parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data,
-                          &fragment_seen, &nonfirst);
-    icmp_allowed = key.protocol == PROTO_ICMPV6 && !fragment_seen;
-
-    if (l4_data == NULL || l4_data > data_end) {
-      // Could not find transport header - pass/redirect
-      stats_inc(STATS_PASSED_PACKETS);
-      stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
-      if (fast_forward) {
-        return bpf_redirect_map(&devmap, ingress_ifindex, 0);
-      }
-      return XDP_PASS;
+        parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data, &nonfirst, &deep);
+    if (deep && !is_ipv6_deep_chain_pass_enabled()) {
+      stats_inc(STATS_IPV6_DEEP_CHAIN_DROPPED);
+      stats_inc(STATS_DROPPED_PACKETS);
+      stats_add(STATS_DROPPED_BYTES, ctx->data_end - ctx->data);
+      return XDP_DROP;
     }
+    icmp_allowed = key.protocol == PROTO_ICMPV6 && !nonfirst;
 
   } else {
     // Not IPv4 or IPv6 - pass/redirect (should not reach here in fast_forward)

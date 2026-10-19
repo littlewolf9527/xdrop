@@ -78,7 +78,7 @@ Delivery requires gen and the process epoch returned by create. States are `pend
 
 Conditions `ttl,dscp,icmp_type,icmp_code,pkt_len` use comma-separated unsigned decimal values or inclusive ranges, optionally prefixed by `!`. Domains are respectively 0..255, 0..63, 0..255, 0..255, 0..65535. Fragment expressions use nofrag, first, middle, last, frag and nonfirst with an IPv4 anchor. ICMP fields require ICMP/ICMPv6. Condition groups admit at most four physical candidates; expansion can consume more than one candidate.
 
-match_anomaly is an any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment at offset one. Only these four bits are accepted; bits 1 and 8 reject IPv6, and a bounded target is required.
+match_anomaly is an any-bit mask: 1 bad fragment, 2 invalid, 4 length mismatch, 8 IPv4 TCP fragment at offset one. Only these four bits are accepted; bits 1 and 8 reject IPv6, and a bounded target is required. For IPv6, bit 2 (invalid) checks only TCP immediately following the fixed IPv6 header (data offset < 5); TCP after extension headers is not checked. If an IPv6 packet cannot reach the transport layer within 6 extension headers, has an unreadable extension header, or is a non-first fragment, it is treated as having no transport layer: port and TCP flag conditions do not match, while address, prefix, packet-length, and anomaly rules remain effective.
 
 Rules and whitelist pages return `{items,next_after}`. limit defaults to 100, range 1..1000. Rules use a nonnegative logical_id cursor and ascending logical_id order; whitelist uses a string ID cursor. Exhaustion returns null. Rules also accept q (ID, IP or prefix), state=drop/rate_limit/disabled, and counts=1. Counts ignore state/pagination but honor q.
 
@@ -86,7 +86,7 @@ Whitelist input is `src_ip,dst_ip,src_port,dst_port,protocol,comment`; the resul
 
 ## Nodes and operational data
 
-Node creation requires a unique nonempty name without `/`, an http/https base_url with host and no user information/query/fragment, and api_key of 1..4096 bytes. PATCH requires URL and/or key; names do not change. Keys are write-only. Updating replaces the live client and schedules full synchronization; deleting stops its workers without clearing remote policy. Unsaved and stored tests return reachability, protocol compatibility, key acceptance and a scrubbed message; redirects are not followed.
+Node creation requires a unique name that follows the user-name rule below, an http/https base_url with host and no user information/query/fragment, and api_key of 1..4096 bytes. PATCH requires URL and/or key; names do not change, and update/delete do not recheck the name rule. Keys are write-only. Updating replaces the live client and schedules full synchronization; deleting stops its workers without clearing remote policy. Unsaved and stored tests return reachability, protocol compatibility, key acceptance and a scrubbed message; redirects are not followed.
 
 Node list entries expose `name,base_url,key_unreadable,online,incompatible,rules,whitelist,health,health_at,stats,stats_at,rates,overload`. Each side reports `state,reason,since,confirmed_gen,confirmable,rejected`. Use `/capacity` for admission dimensions/limits and `/system` for controller metrics, node counters and reconciliation results.
 
@@ -94,7 +94,7 @@ Manual sync/reconcile replies only acknowledge scheduling. Automatic reconciliat
 
 ## Users, credentials, settings and templates
 
-User/credential names use 1..64 ASCII letters, digits, dot, underscore or hyphen; passwords are 10..72 bytes. Roles are admin/operator. Removing or demoting the last administrator is rejected. User responses contain username, role, created_at, created_by and password_changed_at.
+User/credential/node names use 1..64 ASCII letters, digits, dot, underscore or hyphen, and cannot be `.` or `..` (checked on creation only); passwords are 10..72 bytes. Roles are admin/operator. Removing or demoting the last administrator is rejected. User responses contain username, role, created_at, created_by and password_changed_at.
 
 A newly issued machine key appears only once. Reissuing the same credential name creates a new key and retires active earlier keys after at most 24 hours; the claim identity remains the name. Revocation does not delete claims. Lists contain metadata rather than key plaintext.
 
@@ -120,7 +120,7 @@ Audit events contain id,at,actor,source,action,target,before,after. Listing acce
 
 ## Errors
 
-Errors use `{"code":"invalid_rule","message":"...","field":"dst_port"}`. Optional context is field, rule_id, rule_ids or table; batch item errors use the same shape. Internal failures return only `internal error`. Login throttling includes Retry-After.
+Errors use `{"code":"invalid_rule","message":"...","field":"dst_port"}`. Optional context is field, rule_id, rule_ids or table; batch item errors use the same shape. Internal failures return only `internal error`. Login throttling includes Retry-After. rule_conflict is also returned for a duplicate node name on POST /nodes and for a duplicate template name on POST /templates or PUT /templates/{id}.
 
 | code | HTTP |
 |---|---|
@@ -136,6 +136,7 @@ Errors use `{"code":"invalid_rule","message":"...","field":"dst_port"}`. Optiona
 | invalid_rule | 400 |
 | empty_value | 400 |
 | invalid_expires_in | 400 |
+| mapped_ipv6 | 400 |
 | address_family_mismatch | 400 |
 | bad_request | 400 |
 | batch_too_large | 400 |

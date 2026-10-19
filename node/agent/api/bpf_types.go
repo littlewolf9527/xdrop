@@ -43,12 +43,18 @@ const (
 	// Phase 8: whitelist dual-buffer selector (was reserved ConfigCIDRBitmapValid)
 	ConfigWLMapSelector   = 8
 	ConfigRuleMapSelector = 9 // 0=A, 1=B (dual rule map Phase 4.2)
-	// v2.6.1 Phase 4 B5: counts rules with MatchAnomaly != 0 across
-	// exact + CIDR blacklist. Non-zero gates main program's tail_call
-	// dispatch into xdp_anomaly_verify. MUST match xdrop.h CONFIG_ANOMALY_RULE_COUNT.
-	ConfigAnomalyRuleCount = 10
-	ConfigRLCPUDivisor     = 11
-	ConfigMapEntries       = 12
+	// Slot 10 is retired (xdrop.h: "Config slot 10 is retired"); initDynamicConfig keeps it zero. Do not reuse it.
+	ConfigAnomalyRuleCount  = 10
+	ConfigRLCPUDivisor      = 11
+	ConfigIPv6DeepChainPass = 12
+	// Slot writers: handlers.go/initDynamicConfig zeros 0-3 and 6-11 (10 retired).
+	// 0/2/6/7/9: commit.go/writeCommitConfig and sync.go/DoAtomicSync.
+	// 1/3/8: config.go/publishConfigUpdateForWLSync.
+	// 4/5: main.go/configureFastForward and clearFastForwardSlots.
+	// 11: main.go/configureRateLimitDivisor; 12: main.go/configureIPv6DeepChain;
+	// all slots are also copied by the commit.go, config.go and sync.go
+	// publishing functions named above.
+	ConfigMapEntries = 13
 )
 
 // IPAddr represents a 128-bit IP address (IPv4-mapped or native IPv6)
@@ -83,6 +89,13 @@ type RuleValue struct {
 
 // B1 condition rows are enabled by the low bit of Pad2[0].
 const RuleHasConditions uint8 = 0x01
+
+const (
+	conditionActionOffset = 804
+	conditionRateOffset   = 808
+	conditionRuleIDOffset = 824
+	ruleFlagsOffset       = 28
+)
 
 type ConditionSpan struct {
 	Lo uint16
@@ -225,7 +238,7 @@ type Handlers struct {
 
 	logicalOwners                           map[uint32]string // rulesMu: logical ID -> rule ID
 	logicalReclaimSeq                       uint64            // rulesMu: completed reclamations
-	logicalReclaimedAt                      map[uint32]uint64 // rulesMu: last reclamation per ID
+	logicalReclaimedAt                      map[uint32]uint64 // rulesMu: reclamations since the current hits snapshot began; cleared when a snapshot starts
 	pendingLogicalIDs                       map[uint32]bool   // publishMu: not yet safely reclaimed
 	logicalRetireThreshold                  int               // zero selects the production default 1024
 	logicalStateCapacity                    int               // zero derives the actual logical map capacity

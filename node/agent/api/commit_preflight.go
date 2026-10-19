@@ -102,6 +102,9 @@ func (h *Handlers) canonicalCommitKey(raw json.RawMessage) (groupIdentity, error
 	if !reflect.DeepEqual(got, want) {
 		return groupIdentity{}, fmt.Errorf("key must use its canonical form")
 	}
+	if _, err := h.prepareAtomicRule(Rule{SrcIP: canonical.SrcIP, DstIP: canonical.DstIP, SrcCIDR: canonical.SrcCIDR, DstCIDR: canonical.DstCIDR, SrcPort: canonical.SrcPort, DstPort: canonical.DstPort, Protocol: canonical.Protocol, LogicalID: 1}); err != nil {
+		return groupIdentity{}, err
+	}
 	return canonical, nil
 }
 
@@ -124,32 +127,35 @@ func commitEncodingError(index int, err error) *commitError {
 	return commitReject(index, http.StatusBadRequest, mutationInvalid, err.Error())
 }
 
-func (h *Handlers) commitPhysicalKey(g groupIdentity) ([]byte, bool) {
+func (h *Handlers) commitPhysicalKey(g groupIdentity) ([]byte, bool, error) {
 	if g.Kind == "exact" {
-		return ruleKeyToBytes(g.exactKey), true
+		return ruleKeyToBytes(g.exactKey), true, nil
 	}
 	if h.cidrMgr == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	var src, dst uint32
 	var ok bool
 	if g.SrcCIDR != "" {
 		src, ok = h.cidrMgr.GetSrcID(g.SrcCIDR)
 		if !ok {
-			return nil, false
+			return nil, false, nil
 		}
 	}
 	if g.DstCIDR != "" {
 		dst, ok = h.cidrMgr.GetDstID(g.DstCIDR)
 		if !ok {
-			return nil, false
+			return nil, false, nil
 		}
 	}
 	// Protocol has already passed classifyRuleKey's strict parser.
-	p, _ := h.prepareAtomicRule(Rule{SrcCIDR: g.SrcCIDR, DstCIDR: g.DstCIDR, SrcPort: g.SrcPort, DstPort: g.DstPort, Protocol: g.Protocol, LogicalID: 1})
+	p, err := h.prepareAtomicRule(Rule{SrcCIDR: g.SrcCIDR, DstCIDR: g.DstCIDR, SrcPort: g.SrcPort, DstPort: g.DstPort, Protocol: g.Protocol, LogicalID: 1})
+	if err != nil {
+		return nil, false, err
+	}
 	k := p.CIDR
 	k.SrcID, k.DstID = src, dst
-	return cidrRuleKeyToBytes(k), true
+	return cidrRuleKeyToBytes(k), true, nil
 }
 
 func readCommitRow(m ruleMirrorMap, key []byte, known bool) ([]byte, error) {
@@ -247,9 +253,9 @@ func (h *Handlers) preflightCommit(groups []CommitGroup) (*commitPlan, *commitEr
 				}
 				// The deterministic first candidate supplies the unused row action.
 				value.Pad2[0] = RuleHasConditions
-				value.Action = g.Condition[804]
-				value.RateLimit = commitUint32(g.Condition[808:812])
-				value.LogicalID = commitUint32(g.Condition[824:828])
+				value.Action = g.Condition[conditionActionOffset]
+				value.RateLimit = commitUint32(g.Condition[conditionRateOffset : conditionRateOffset+4])
+				value.LogicalID = commitUint32(g.Condition[conditionRuleIDOffset : conditionRuleIDOffset+4])
 			}
 			g.Value = ruleValueToBytes(value)
 		}
@@ -274,7 +280,11 @@ func (h *Handlers) preflightCommit(groups []CommitGroup) (*commitPlan, *commitEr
 		}
 	}
 	for _, g := range p.Groups {
-		g.Physical, g.Known = h.commitPhysicalKey(g.Key)
+		var err error
+		g.Physical, g.Known, err = h.commitPhysicalKey(g.Key)
+		if err != nil {
+			return nil, commitReject(g.Index, 400, mutationInvalid, err.Error())
+		}
 		kind, cond := mirrorExact, mirrorCondition
 		if g.Key.Kind == "cidr" {
 			kind, cond = mirrorCIDR, mirrorCIDRCondition
@@ -314,7 +324,10 @@ func (h *Handlers) preflightCommit(groups []CommitGroup) (*commitPlan, *commitEr
 		combo := getComboType(g.Key.exactKey)
 		if g.Key.Kind == "cidr" {
 			refs = &p.CIDRCombos
-			probe, _ := h.prepareAtomicRule(Rule{SrcCIDR: g.Key.SrcCIDR, DstCIDR: g.Key.DstCIDR, SrcPort: g.Key.SrcPort, DstPort: g.Key.DstPort, Protocol: g.Key.Protocol, LogicalID: 1})
+			probe, err := h.prepareAtomicRule(Rule{SrcCIDR: g.Key.SrcCIDR, DstCIDR: g.Key.DstCIDR, SrcPort: g.Key.SrcPort, DstPort: g.Key.DstPort, Protocol: g.Key.Protocol, LogicalID: 1})
+			if err != nil {
+				return nil, commitReject(g.Index, 400, mutationInvalid, err.Error())
+			}
 			combo = getCIDRComboType(probe.CIDR)
 		}
 		if combo >= 0 && combo < 64 {

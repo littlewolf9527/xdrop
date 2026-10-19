@@ -269,8 +269,13 @@ func reconcileTests(t *testing.T) {
 		base := len(r.m.Events())
 		time.Sleep(5 * time.Second)
 		need(t, r.m.Status()[0].Rules.State == "failed" && r.m.Status()[0].Rules.Reason == "drift_persistent", "atomic 200 cleared persistent state")
-		reads, writes := len(r.f.records(nc.RulesRoute)), len(r.f.records(nc.AtomicRoute))
-		need(t, reads >= 5 && reads <= 8 && writes == reads+1, "correction cadence", reads, writes)
+		// The loop keeps running: a sample can land between a cycle's read and its correction write (TD-118).
+		var reads, writes int
+		eventually(t, func() bool {
+			reads, writes = len(r.f.records(nc.RulesRoute)), len(r.f.records(nc.AtomicRoute))
+			return writes == reads+1
+		})
+		need(t, reads >= 5 && reads <= 8, "correction cadence", reads, writes)
 		need(t, codesEvents(r.m, "rules", "drift_persistent") == 1, "repeated persistent events")
 		for _, e := range r.m.Events()[base:] {
 			need(t, e.Side != "rules" || e.To != "normal", "spurious normal during persistent drift", e)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/cilium/ebpf"
+	"github.com/littlewolf9527/xdrop/node/agent/api"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,21 +54,17 @@ func TestB1LogicalStartupClear(t *testing.T) {
 			if got := b1KeyCount(t, m); got != 7 {
 				t.Fatalf("startup clear precondition rows=%d want=7", got)
 			}
-			// main.main invokes this same production function after ClearDataMaps.
-			deleted, err := ClearMapKeys(m)
-			if err != nil {
+			// main.main reaches this function through api.PreparePinnedStartup.
+			if err := api.StrictClearAndRecount(m); err != nil {
 				t.Fatal(err)
 			}
 			if remaining := b1KeyCount(t, m); remaining != 0 {
-				t.Fatalf("B1_STARTUP_CLEAR map=%s remaining=%d want=0 deleted=%d", name, remaining, deleted)
+				t.Fatalf("B1_STARTUP_CLEAR map=%s remaining=%d want=0", name, remaining)
 			}
-			if deleted != 7 {
-				t.Fatalf("startup clear deleted=%d want=7", deleted)
+			if err := api.StrictClearAndRecount(m); err != nil {
+				t.Fatalf("empty clear err=%v", err)
 			}
-			if deleted, err = ClearMapKeys(m); err != nil || deleted != 0 {
-				t.Fatalf("empty clear deleted=%d err=%v", deleted, err)
-			}
-			t.Logf("B1_STARTUP_CLEAR map=%s CPUs=%d populated=7 deleted=7 remaining=0 empty_retry=0", name, values.Len())
+			t.Logf("B1_STARTUP_CLEAR map=%s CPUs=%d populated=7 remaining=0", name, values.Len())
 		})
 	}
 }
@@ -82,14 +79,14 @@ func TestB1LogicalClearErrors(t *testing.T) {
 		if err := m.Close(); err != nil {
 			t.Fatal(err)
 		}
-		deleted, err := ClearMapKeys(m)
+		err = api.StrictClearAndRecount(m)
 		if err == nil {
 			t.Fatal("B1_CLEAR_ERROR iteration error swallowed: got nil want non-nil")
 		}
-		if deleted != 0 || !strings.Contains(err.Error(), "iterate keys") {
-			t.Fatalf("iteration error deleted=%d err=%v", deleted, err)
+		if !strings.Contains(err.Error(), "enumerate") {
+			t.Fatalf("iteration error err=%v", err)
 		}
-		t.Logf("B1_CLEAR_ERROR iteration deleted=%d err=%v", deleted, err)
+		t.Logf("B1_CLEAR_ERROR iteration err=%v", err)
 	})
 	t.Run("deletion-frozen-map", func(t *testing.T) {
 		m, err := ebpf.NewMap(spec.Maps["id_rl_states"])
@@ -103,13 +100,13 @@ func TestB1LogicalClearErrors(t *testing.T) {
 		if err := m.Freeze(); err != nil {
 			t.Fatal(err)
 		}
-		deleted, err := ClearMapKeys(m)
-		if err == nil || !errors.Is(err, unix.EPERM) || !strings.Contains(err.Error(), "delete key") || deleted != 0 {
-			t.Fatalf("B1_CLEAR_ERROR deletion deleted=%d err=%v want=0/EPERM", deleted, err)
+		err = api.StrictClearAndRecount(m)
+		if err == nil || !errors.Is(err, unix.EPERM) || !strings.Contains(err.Error(), "delete") {
+			t.Fatalf("B1_CLEAR_ERROR deletion err=%v want=EPERM", err)
 		}
 		if got := b1KeyCount(t, m); got != 1 {
 			t.Fatalf("failed deletion rows=%d want=1", got)
 		}
-		t.Logf("B1_CLEAR_ERROR deletion deleted=%d err=%v remaining=1", deleted, err)
+		t.Logf("B1_CLEAR_ERROR deletion err=%v remaining=1", err)
 	})
 }

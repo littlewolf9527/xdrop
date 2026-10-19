@@ -1,6 +1,6 @@
 --- a/node/bpf/xdrop_main.c
 +++ b/node/bpf/xdrop_main.c
-@@ -1497,7 +1497,7 @@
+@@ -1479,7 +1479,7 @@
            stats_inc(STATS_PASSED_PACKETS);
            stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
            if (fast_forward) {
@@ -9,7 +9,7 @@
            }
            return XDP_PASS;
          }
-@@ -1507,7 +1507,7 @@
+@@ -1489,7 +1489,7 @@
            stats_inc(STATS_PASSED_PACKETS);
            stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
            if (fast_forward) {
@@ -18,7 +18,7 @@
            }
            return XDP_PASS;
          }
-@@ -1516,7 +1516,7 @@
+@@ -1498,7 +1498,7 @@
            stats_inc(STATS_PASSED_PACKETS);
            stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
            if (fast_forward) {

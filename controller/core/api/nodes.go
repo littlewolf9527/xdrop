@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/littlewolf9527/xdrop/controller/core/auth"
 	nc "github.com/littlewolf9527/xdrop/controller/core/nodeclient"
 	"github.com/littlewolf9527/xdrop/controller/core/orch"
 	"github.com/littlewolf9527/xdrop/controller/core/rules"
@@ -81,6 +82,9 @@ func (s *NodeService) Change(who rules.Actor, operation, name string, in NodePat
 	}
 	if strings.Contains(name, "/") {
 		return spec, nodeError("invalid_field", "name must not contain '/'")
+	}
+	if operation == "create" && !auth.ValidName(name) {
+		return spec, nodeError("invalid_field", "name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'")
 	}
 	if operation != "create" && operation != "update" && operation != "delete" {
 		return spec, nodeError("bad_request", "invalid node operation")

@@ -9,16 +9,6 @@ import (
 	"testing"
 )
 
-// Like dingWritableGolden, this is a finite register. Historical p3-p5 fixtures
-// remain readable but cannot be overwritten by cut53P3Golden.
-var cut56WritableGolden = map[string]bool{
-	"atomic_address_family_p9": true,
-	"commit_address_family_p9": true,
-	"anomaly_full_p8":          true,
-	"anomaly_commit_p8":        true,
-	"anomaly_rejected_p8":      true,
-}
-
 const cut56BoundedError = "anomaly rule requires a bounded target (src/dst IP must not be empty/wildcard, CIDR must not be /0)"
 const cut56IPv6Error = "bad_fragment not supported for IPv6 target"
 const cut56ZeroRateError = "rate_limit must be > 0 for rate_limit action"

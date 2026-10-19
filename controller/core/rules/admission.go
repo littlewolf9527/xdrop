@@ -20,7 +20,7 @@ type prefixEntry struct {
 func constraints(rows []store.Rule, limit int) []*Error {
 	l, errs := buildLedger(rows, 0)
 	limits := BuiltinLimits().Values
-	for i := 5; i < 9; i++ {
+	for i := TrieDimensionStart; i < TrieDimensionStart+TrieDimensionCount; i++ {
 		limits[i] = limit
 	}
 	return append(errs, ledgerConstraints(l, limits)...)
@@ -53,15 +53,15 @@ func ledgerConstraints(l *ledger, limits Values) []*Error {
 				ids = append(ids, id)
 			}
 		}
-		bucket := []string{"sv4", "dv4", "sv6", "dv6"}[i]
+		bucket := trieBucketNames[i]
 		errs = append(errs, overlaps(entries, bucket)...)
-		if l.occupancy.Used[i+5] > limits[i+5] {
+		if l.occupancy.Used[i+TrieDimensionStart] > limits[i+TrieDimensionStart] {
 			sort.Strings(ids)
 			errs = append(errs, &Error{Code: "table_full", Table: bucket, RuleIDs: ids, Message: "prefix tree capacity exceeded"})
 		}
 	}
 	for i, used := range l.occupancy.Used {
-		if (i < 5 || i == 9) && used > limits[i] {
+		if (i < TrieDimensionStart || i == LogicalDimension) && used > limits[i] {
 			errs = append(errs, &Error{Code: "table_full", Table: DimensionNames()[i], Message: "capacity exceeded"})
 		}
 	}
@@ -182,7 +182,7 @@ func (s *Service) admitWith(l *ledger, candidate, old store.Rule) *Error {
 			}
 		}
 		if witness != "" {
-			return &Error{Code: "cidr_overlap", RuleIDs: []string{witness, candidate.ID}, Message: "nested prefixes in " + []string{"sv4", "dv4", "sv6", "dv6"}[k]}
+			return &Error{Code: "cidr_overlap", RuleIDs: []string{witness, candidate.ID}, Message: "nested prefixes in " + trieBucketNames[k]}
 		}
 	}
 	return s.checkCapacityWith(l, l.delta(old, candidate))

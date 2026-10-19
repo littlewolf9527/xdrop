@@ -438,7 +438,7 @@ func (a *API) capacity(c *gin.Context) {
 		}
 	}
 	out.Candidates.Limit, out.Candidates.FullKeys, out.Candidates.NearKeys = condexpr.MaxCandidates, o.FullKeys, o.NearKeys
-	out.Rules.Enabled, out.Rules.Total = o.Used[9], o.Total
+	out.Rules.Enabled, out.Rules.Total = o.Used[rules.LogicalDimension], o.Total
 	for _, n := range limits.Overloaded {
 		d := OverloadedNodeDTO{Name: n.Name, Dims: []CapacityUsedDTO{}}
 		for _, v := range n.Dims {
@@ -457,7 +457,7 @@ func (a *API) system(c *gin.Context) {
 	out := SystemDTO{Nodes: []SystemNodeDTO{}}
 	out.Controller.StartedAt = stamp(a.systemOptions.StartedAt)
 	out.Controller.UptimeSeconds = max(0, time.Since(a.systemOptions.StartedAt).Seconds())
-	out.Controller.RulesEnabled, out.Controller.RulesTotal, out.Controller.Whitelist = o.Used[9], o.Total, o.Used[4]
+	out.Controller.RulesEnabled, out.Controller.RulesTotal, out.Controller.Whitelist = o.Used[rules.LogicalDimension], o.Total, o.Used[rules.WhitelistDimension]
 	if a.systemOptions.Database != "" {
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			if info, err := os.Stat(a.systemOptions.Database + suffix); err == nil {

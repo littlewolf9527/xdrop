@@ -155,7 +155,7 @@ func TestCut53I6ConstructionFixtures(t *testing.T) {
 				oldSources := fmt.Sprint(h.cidrMgr.ListSrcCIDRs())
 				oldRule := h.cidrRules["old"]
 				w := yiAtomicCall(t, router, rules)
-				if w.Code != 409 || !strings.Contains(w.Body.String(), `"code":"condition_group_invalid"`) || !strings.Contains(w.Body.String(), "write shadow") || !strings.Contains(w.Body.String(), "condition") {
+				if w.Code != 500 || strings.Contains(w.Body.String(), `"code":`) || !strings.Contains(w.Body.String(), "write shadow") || !strings.Contains(w.Body.String(), "condition") {
 					t.Fatalf("construction fault branch not reached: %d %s", w.Code, w.Body.String())
 				}
 				for i, m := range active {

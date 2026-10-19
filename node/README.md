@@ -29,6 +29,7 @@ Copy `node/config.example.yaml` to `node/config.yaml` and edit it before startin
 | `bpf.pinning` | auto (default), require or disable |
 | `bpf.xdp_mode` | auto (default), native or generic |
 | `bpf.rate_limit_divisor` | Startup CPU divisor, described below |
+| `bpf.ipv6_deep_chain_drop` | Boolean, default true; drop chains beyond 6 IPv6 extension headers; restart after changes. Startup drops until the agent writes the setting, even when false. |
 | `auth.node_api_key` | Required X-API-Key; empty values (including whitespace) or placeholders reject startup |
 | `fast_forward.enabled`, `fast_forward.pairs` | Optional FF mode, default disabled; exactly one pair when enabled |
 
@@ -69,4 +70,4 @@ The controller pushes state; the node does not pull it. Register the node URL an
 
 Keep a matching agent/ELF set for rollback; replacing only one ELF is not a complete build. Stop before replacing files and check node health plus delivery after restart. Map schema changes can recreate pinned maps; pinning is not a policy backup. Validate each node before upgrading the next.
 
-`auth.node_api_key` is required. Empty values (including whitespace) or placeholders reject startup; generate a real key before starting. Source: [`config.Config.Validate`](agent/config/config.go).
+Unknown configuration keys reject startup and report the key name; deprecated `auth.controller_url` / `auth.controller_sync_key` are accepted with a warning. `auth.node_api_key` is required. Empty values (including whitespace), leading or trailing whitespace, or placeholders reject startup; generate a real key before starting. Source: [`config.Config.Validate`](agent/config/config.go).

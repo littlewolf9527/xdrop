@@ -183,11 +183,6 @@ func (m *InterfaceManager) RestoreAll() error {
 	return errors.Join(errs...)
 }
 
-// GetOriginalState returns the original state of an interface (for debugging)
-func (m *InterfaceManager) GetOriginalState(name string) *InterfaceState {
-	return m.originalStates[name]
-}
-
 // Helper: set interface UP
 func (m *InterfaceManager) setInterfaceUp(name string) error {
 	return exec.Command("ip", "link", "set", name, "up").Run()

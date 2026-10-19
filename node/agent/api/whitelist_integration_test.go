@@ -102,8 +102,14 @@ func newWLTestHandlers(t *testing.T) *Handlers {
 	cfgA := newCfgArray(t, "wlut_cfga")
 	cfgB := newCfgArray(t, "wlut_cfgb")
 	actCfg := newActiveCfg(t)
+	receipt, err := newKernelQuiescer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { receipt.Close() })
 
 	h := &Handlers{
+		quiescer:     receipt,
 		whitelist:    wl,
 		whitelistB:   wlB,
 		configA:      cfgA,
@@ -153,14 +159,6 @@ func countMapEntries(t *testing.T, m *ebpf.Map) int {
 		t.Fatalf("map iterate: %v", err)
 	}
 	return count
-}
-
-// mapHasKey returns true if the BPF map contains the given RuleKey.
-func mapHasKey(t *testing.T, m *ebpf.Map, key RuleKey) bool {
-	t.Helper()
-	var val []byte
-	err := m.Lookup(ruleKeyToBytes(key), &val)
-	return err == nil
 }
 
 // ---- T14c: exhaustive bitmap bit set/clear via refcount ----

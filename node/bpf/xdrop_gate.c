@@ -25,7 +25,7 @@ BPF_MAP_DEF(stats) = {
     .map_type = BPF_MAP_TYPE_PERCPU_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u64),
-    .max_entries = 9,
+    .max_entries = 10,
 };
 BPF_MAP_ADD(stats);
 
@@ -172,26 +172,54 @@ static INLINE void ipv6_copy(struct ip_addr *dst, const __u8 *src) {
   for (int i = 0; i < 16; i++) { dst->addr[i] = src[i]; }
 }
 
-// IPv6 extension header walker (shared with xdrop_main.c).
-// nonfirst also marks an unreadable extension header: L4 is unavailable.
-static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr, void **l4_data, bool *nonfirst) {
+// Byte-identical to xdrop_main.c:parse_ipv6_nexthdr; enforced by TestIPv6ParserTextParity.
+// nonfirst means L4 unavailable: non-first fragment, unreadable extension, or exhausted depth.
+static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr,
+                                      void **l4_data, bool *nonfirst, bool *deep) {
+  *deep = false;
   *nonfirst = false;
-  #pragma unroll
+// Walk through extension headers (limited iterations for BPF verifier)
+#pragma unroll
   for (int i = 0; i < IPV6_EXT_MAX_DEPTH; i++) {
-    if (nexthdr == PROTO_TCP || nexthdr == PROTO_UDP || nexthdr == PROTO_ICMPV6) {
+    // Check for known transport protocols
+    if (nexthdr == PROTO_TCP || nexthdr == PROTO_UDP ||
+        nexthdr == PROTO_ICMPV6) {
       *l4_data = data;
       return nexthdr;
     }
+
+    // Handle extension headers by type
     switch (nexthdr) {
-    case 0: case 43: case 60: {
-      if (data + 2 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
-      __u8 *hdr = data; __u8 next = hdr[0]; __u8 len = hdr[1];
-      data += (len + 1) * 8;
-      if (data > data_end) { *l4_data = hdr; *nonfirst = true; return nexthdr; }
-      nexthdr = next; break;
+    case 0:  // Hop-by-Hop Options
+    case 43: // Routing
+    case 60: // Destination Options
+    {
+      // Extension header format: next_header(1), length(1), data(variable)
+      if (data + 2 > data_end) {
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
+      }
+      __u8 *hdr = data;
+      __u8 next = hdr[0];
+      __u8 len = hdr[1];
+      data += (len + 1) * 8; // Length in 8-byte units
+      if (data > data_end) {
+        *l4_data = hdr;
+        *nonfirst = true;
+        return nexthdr;
+      }
+      nexthdr = next;
+      break;
     }
-    case 44: {
-      if (data + 8 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
+    case 44: // Fragment
+    {
+      // Fragment header: 8 bytes fixed
+      if (data + 8 > data_end) {
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
+      }
       __u8 *hdr = data;
       __u16 field = bpf_ntohs(*(__u16 *)(hdr + 2));
       nexthdr = hdr[0];
@@ -203,16 +231,35 @@ static INLINE __u8 parse_ipv6_nexthdr(void *data, void *data_end, __u8 nexthdr, 
       }
       break;
     }
-    case 51: {
-      if (data + 2 > data_end) { *l4_data = data; *nonfirst = true; return nexthdr; }
-      __u8 *hdr = data; __u8 next = hdr[0]; __u8 len = hdr[1];
-      data += (len + 2) * 4;
-      if (data > data_end) { *l4_data = hdr; *nonfirst = true; return nexthdr; }
-      nexthdr = next; break;
+    case 51: // AH (Authentication Header)
+    {
+      if (data + 2 > data_end) {
+        *l4_data = data;
+        *nonfirst = true;
+        return nexthdr;
+      }
+      __u8 *hdr = data;
+      __u8 next = hdr[0];
+      __u8 len = hdr[1];
+      data += (len + 2) * 4; // AH length in 4-byte units
+      if (data > data_end) {
+        *l4_data = hdr;
+        *nonfirst = true;
+        return nexthdr;
+      }
+      nexthdr = next;
+      break;
     }
-    default: *l4_data = data; return nexthdr;
+    default:
+      // Unknown extension header or final protocol
+      *l4_data = data;
+      return nexthdr;
     }
   }
+
+  if (nexthdr == 0 || nexthdr == 43 || nexthdr == 60 ||
+      nexthdr == 44 || nexthdr == 51)
+    *nonfirst = *deep = true;
   *l4_data = data;
   return nexthdr;
 }
@@ -335,6 +382,7 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     ipv4_to_mapped(&key.dst_ip, ip->daddr);
     key.protocol = ip->protocol;
     nonfirst = (bpf_ntohs(ip->frag_off) & 0x1fff) != 0;
+    if (ip->ihl < 5) nonfirst = true;
     l4_data = l3_data + (ip->ihl * 4);
     if (l4_data > data_end) { return XDP_ABORTED; }
   } else if (eth_proto == ETH_P_IPV6_BE) {
@@ -343,15 +391,8 @@ int xdp_whitelist_gate(struct xdp_md *ctx) {
     ipv6_copy(&key.src_ip, ip6->saddr);
     ipv6_copy(&key.dst_ip, ip6->daddr);
     void *ext_data = l3_data + sizeof(*ip6);
-    key.protocol = parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data, &nonfirst);
-    if (l4_data == NULL || l4_data > data_end) {
-      bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
-      tailcall_fail_inc();
-      stats_inc(STATS_PASSED_PACKETS);
-      stats_add(STATS_PASSED_BYTES, ctx->data_end - ctx->data);
-      if (fast_forward) { return bpf_redirect_map(&devmap, ingress_ifindex, 0); }
-      return XDP_PASS;
-    }
+    bool deep;
+    key.protocol = parse_ipv6_nexthdr(ext_data, data_end, ip6->nexthdr, &l4_data, &nonfirst, &deep);
   } else {
     bpf_tail_call(ctx, &prog_tail_map, TAIL_SLOT_FIREWALL_MAIN);
     tailcall_fail_inc();

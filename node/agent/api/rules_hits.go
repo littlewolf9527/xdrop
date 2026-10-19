@@ -127,9 +127,10 @@ func (h *Handlers) hitsJSON(since uint64) ([]byte, error) {
 	}
 	// The window starts at scan entry, including scanning and sorting time.
 	if s.started.IsZero() || s.wall().Sub(s.started) >= 2*time.Second {
-		h.rulesMu.RLock()
+		h.rulesMu.Lock()
 		s.reclaimSeq = h.logicalReclaimSeq
-		h.rulesMu.RUnlock()
+		clear(h.logicalReclaimedAt)
+		h.rulesMu.Unlock()
 		s.started = s.wall()
 		s.err = nil
 		s.encoded = nil

@@ -34,17 +34,6 @@ func cut4StoredID(h *Handlers, cidr bool) uint32 {
 	}
 	return h.rules["r"].LogicalID
 }
-func cut4SetStoredID(h *Handlers, cidr bool, id uint32) {
-	if cidr {
-		s := h.cidrRules["r"]
-		s.LogicalID = id
-		h.cidrRules["r"] = s
-	} else {
-		s := h.rules["r"]
-		s.LogicalID = id
-		h.rules["r"] = s
-	}
-}
 
 func TestB1Cut4AListCounters(t *testing.T) {
 	for _, isCIDR := range []bool{false, true} {

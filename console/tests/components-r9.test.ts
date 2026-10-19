@@ -52,6 +52,32 @@ it('V-r9j actual NodeTable suppresses cached offline rates and online null rates
   wrapper.unmount()
 })
 
+it('V-td149 NodeTable deep chain column: cumulative count, muted zero, dash when offline or unreported', () => {
+  const side = { state: 'normal', reason: '', confirmed_gen: 1, confirmable: true, rejected: [] }
+  const node: Node = { name: 'edge-01', online: true, base_url: "http://192.0.2.1", key_unreadable: false, incompatible: false, rules: side, whitelist: side,
+    health_at: '', health: { rules_synced: true, whitelist_synced: true },
+    rates: { dropped_packets: 900, passed_packets: 47, dropped_bytes: 9000, passed_bytes: 4700 },
+    stats: { system: { cpu_percent: 1, mem_percent: 2 }, ipv6_deep_chain_dropped: 1284 } }
+  const nodes = [node, { ...node, name: 'edge-02', stats: { system: { cpu_percent: 1, mem_percent: 2 }, ipv6_deep_chain_dropped: 0 } },
+    { ...node, name: 'edge-03', online: false }, { ...node, name: 'edge-04', stats: { system: { cpu_percent: 1, mem_percent: 2 } } },
+    { ...node, name: 'edge-05', stats: null }]
+  const wrapper = mount(NodeTable, { props: { nodes }, global: global() })
+  const cells = wrapper.findAll('td.deep-chain')
+  expect(cells.map(cell => cell.text())).toEqual(['1,284', '0', '—', '—', '—'])
+  expect(cells.map(cell => cell.classes().filter(c => c === 'warn' || c === 'muted'))).toEqual([['warn'], ['muted'], [], [], []])
+  expect(wrapper.findAll('thead th').map(th => th.text()).slice(2, 4)).toEqual(['丢弃', '深链?'])
+  // Every row has one cell per header, and the deep chain cell sits under its header, not under 转发.
+  const headers = wrapper.findAll('thead th').length
+  for (const row of wrapper.findAll('tbody tr')) {
+    const cells = row.findAll('td')
+    expect(cells).toHaveLength(headers)
+    expect(cells[3]!.classes()).toContain('deep-chain')
+  }
+  const first = wrapper.findAll('tbody tr')[0]!.findAll('td')
+  expect([first[3]!.text(), first[4]!.find('span').text()]).toEqual(['1,284', '47 pps'])
+  wrapper.unmount()
+})
+
 it('V-r11g cached rule description remains complete escaped text', () => {
   const target = '<img data-probe="cached-rule" onerror="void 0">'
   state.top.rules = [{ rule_id: 'cached-rule', target: '192.0.2.1', dropped_pps: 1, dropped_bytes_ps: 2, share: 1 }]

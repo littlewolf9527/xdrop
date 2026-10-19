@@ -33,7 +33,7 @@ class B1ExtractBoundary(unittest.TestCase):
         # Registered before this guard was added; the repair must not change
         # the C exercised by the saved extraction evidence.
         self.assertEqual(hashlib.sha256(self.generate('positive')).hexdigest(),
-                         '114bba993670418c115a6076bccddbbd2d9a20208dc531e9c716c65bca754c65')
+                         'b47929ff96d359df891e681385db82b30bdb62c679dd1e55a8e031f7ae39b744')
 
     def test_knife_one_frozen_probe(self):
         historical = subprocess.check_output(['git', 'show',

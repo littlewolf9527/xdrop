@@ -166,6 +166,12 @@ export const contracts: ContractEntry[] = [
   },
   {
     "root": "nodes",
+    "endpoint": "GET /api/v1/nodes",
+    "path": "nodes[].stats.ipv6_deep_chain_dropped",
+    "nullable": true
+  },
+  {
+    "root": "nodes",
     "endpoint": "GET /api/v1/events",
     "path": "nodes[].name",
     "event": "nodes"
@@ -301,6 +307,13 @@ export const contracts: ContractEntry[] = [
     "root": "nodes",
     "endpoint": "GET /api/v1/events",
     "path": "nodes[].stats.system.mem_percent",
+    "nullable": true,
+    "event": "nodes"
+  },
+  {
+    "root": "nodes",
+    "endpoint": "GET /api/v1/events",
+    "path": "nodes[].stats.ipv6_deep_chain_dropped",
     "nullable": true,
     "event": "nodes"
   },

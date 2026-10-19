@@ -28,6 +28,8 @@ const {
 })
 const rate = (n: Node, key: 'dropped_packets' | 'passed_packets' | 'dropped_bytes' | 'passed_bytes') => !n.online || !n.rates ? '—' :
   metric(key.endsWith('bytes') ? bits(n.rates[key]) : n.rates[key], key.endsWith('bytes') ? 'bps' : 'pps')
+// Cumulative since node start, not a rate; nodes older than TD-149 do not report it.
+const deep = (n: Node): number | null => n.online && typeof n.stats?.ipv6_deep_chain_dropped === 'number' ? n.stats.ipv6_deep_chain_dropped : null
 async function action(name: string, operation: 'sync' | 'reconcile') {
   const session = captureSession()
   busy[name] = true
@@ -73,6 +75,16 @@ defineExpose({
           >{{ t('drop') }}</th>
           <th
             class="r"
+          >{{ t('deepChain') }}<ElTooltip
+              :content="t('deepChainHelp')"
+            >
+              <span
+                class="tip"
+                tabindex="0"
+              >?</span>
+            </ElTooltip></th>
+          <th
+            class="r"
           >{{ t('forward') }}</th>
           <th>CPU</th>
           <th>{{ t('memory') }}</th>
@@ -107,6 +119,10 @@ defineExpose({
               class="c-drop b"
             >{{ rate(node, 'dropped_bytes') }}</span>
           </td>
+          <td
+            class="r num deep-chain"
+            :class="deep(node) === null ? '' : deep(node) ? 'warn' : 'muted'"
+          >{{ deep(node) === null ? '—' : new Intl.NumberFormat('en-US').format(deep(node)!) }}</td>
           <td
             class="r num rate-pair"
           >

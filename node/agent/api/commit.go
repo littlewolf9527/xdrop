@@ -17,7 +17,7 @@ func (h *Handlers) CommitRules(c *gin.Context) {
 	var req struct {
 		Groups []CommitGroup `json:"groups"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindStrictJSON(c, &req); err != nil {
 		h.ruleJSON(c, http.StatusBadRequest, gin.H{"code": mutationInvalid, "error": err.Error(), "groups": []CommitGroupResult{}})
 		return
 	}
@@ -182,7 +182,7 @@ func (h *Handlers) applyCommitRows(slot int, rows commitRows) error {
 	for _, kind := range []int{mirrorExact, mirrorCIDR} {
 		for _, key := range sortedMirrorKeys(rows[kind]) {
 			value := rows[kind][key]
-			if value != nil && value[28]&RuleHasConditions == 0 && rows[kind+2][key] == nil {
+			if value != nil && value[ruleFlagsOffset]&RuleHasConditions == 0 && rows[kind+2][key] == nil {
 				if err := remove(kind, key); err != nil {
 					return err
 				}
@@ -251,7 +251,7 @@ func (h *Handlers) writeCommitConfig(p *commitPlan) error {
 
 // S+P already held; only memory index replacement holds R. No helper called
 // here acquires R or P recursively. Preserve unrelated rows and orphan owners.
-func (h *Handlers) installCommitMemory(p *commitPlan) {
+func (h *Handlers) installCommitMemory(p *commitPlan) []string {
 	h.rulesMu.Lock()
 	defer h.rulesMu.Unlock()
 	if h.rules == nil {
@@ -309,6 +309,20 @@ func (h *Handlers) installCommitMemory(p *commitPlan) {
 		}
 	}
 	h.comboRefCount, h.cidrComboRefCount = p.Combos, p.CIDRCombos
+	var removed []string
+	for _, g := range p.Groups {
+		if !g.Changed {
+			continue
+		}
+		for id := range g.Old {
+			_, exact := h.rules[id]
+			_, cidr := h.cidrRules[id]
+			if !exact && !cidr {
+				removed = append(removed, id)
+			}
+		}
+	}
+	return removed
 }
 
 func (h *Handlers) reclaimCommitLogicalLocked() {
@@ -406,7 +420,13 @@ func (h *Handlers) DoCommitRules(groups []CommitGroup) (CommitResult, *commitErr
 	h.activeRuleSlot.Store(1 - h.activeRuleSlot.Load())
 	h.ruleRowCounts, h.ruleRowCountsKnown = p.Rows, true
 	h.oweCommitRows(rows)
-	h.installCommitMemory(p)
+	removed := h.installCommitMemory(p)
+	h.rulePPSMu.Lock()
+	for _, id := range removed {
+		delete(h.lastRuleDropCount, id)
+		delete(h.lastRuleStatsTime, id)
+	}
+	h.rulePPSMu.Unlock()
 	h.publishRuleState(len(h.rules), len(h.cidrRules))
 	h.publishCommitCapacity(p.Rows, wantPrefixes, logicalUsed)
 	h.observeCommit("c-7")

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -62,6 +63,10 @@ type LastError struct {
 type Rejected struct {
 	Key, Fingerprint, Code, Error, ID string
 	RuleIDs                           []string
+}
+type idRejection struct {
+	Rejected
+	group string
 }
 type SideStatus struct {
 	State, Reason       string
@@ -133,14 +138,13 @@ type node struct {
 	drainGen       uint64
 	sides          [2]side
 	blocked        map[string]Rejected
-	ids            map[string]Rejected
+	ids            map[string]idRejection
 	probeAt        time.Time
 	nextReconcile  [2]time.Time
 	healthFailures int
 	connected      bool
 	previous       map[string]uint64
 	growing        map[string]bool
-	ruleStats      map[string]map[string]any
 }
 type Manager struct {
 	traffic     trafficRing
@@ -189,7 +193,7 @@ func New(specs []NodeSpec, opts Options) *Manager {
 }
 func (m *Manager) newNode(spec NodeSpec) *node {
 	c, err := nc.New(spec, m.opts.Client)
-	n := &node{status: NodeStatus{Name: spec.Name}, client: c, clientErr: err, wake: make(chan struct{}, 1), dirty: map[string]bool{}, blocked: map[string]Rejected{}, ids: map[string]Rejected{}, growing: map[string]bool{}, done: make(chan struct{})}
+	n := &node{status: NodeStatus{Name: spec.Name}, client: c, clientErr: err, wake: make(chan struct{}, 1), dirty: map[string]bool{}, blocked: map[string]Rejected{}, ids: map[string]idRejection{}, growing: map[string]bool{}, done: make(chan struct{})}
 	n.traffic = newTrafficRing(m.now())
 	for i := 0; i < 2; i++ {
 		n.sides[i] = side{status: SideStatus{State: "pending", Reason: "startup", Since: time.Now()}, full: true}
@@ -365,6 +369,7 @@ func (m *Manager) Start(svc *rules.Service) {
 			case <-ticks:
 				now := m.now()
 				if err := svc.ExpireDue(now); err != nil {
+					log.Printf("expiry sweep failed: %v", err)
 					m.mu.Lock()
 					m.record(nil, Event{At: now, Side: "expiry", Reason: "local_read_failed"})
 					m.mu.Unlock()
@@ -391,6 +396,12 @@ func (m *Manager) Events() []Event {
 	return append([]Event{}, m.events...)
 }
 func (m *Manager) Status() []NodeStatus {
+	var copyErr error
+	defer func() {
+		if copyErr != nil {
+			log.Printf("node status copy failed: %v", copyErr)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := []NodeStatus{}
@@ -404,7 +415,7 @@ func (m *Manager) Status() []NodeStatus {
 			s.Rules.Rejected = append(s.Rules.Rejected, r)
 		}
 		for _, r := range n.ids {
-			s.Rules.Rejected = append(s.Rules.Rejected, r)
+			s.Rules.Rejected = append(s.Rules.Rejected, r.Rejected)
 		}
 		sort.Slice(s.Rules.Rejected, func(i, j int) bool {
 			return s.Rules.Rejected[i].Key+s.Rules.Rejected[i].ID < s.Rules.Rejected[j].Key+s.Rules.Rejected[j].ID
@@ -412,11 +423,18 @@ func (m *Manager) Status() []NodeStatus {
 		out = append(out, s)
 	}
 	// Copies nested maps, slices and expression pointers before returning ownership.
-	b, _ := json.Marshal(out)
+	b, err := json.Marshal(out)
+	if err != nil {
+		copyErr = err
+		return out
+	}
 	var clone []NodeStatus
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.UseNumber()
-	_ = d.Decode(&clone)
+	if err := d.Decode(&clone); err != nil {
+		copyErr = err
+		return out
+	}
 	return clone
 }
 func (m *Manager) ForceSync(name string) {

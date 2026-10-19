@@ -505,6 +505,7 @@ func c4aSnapshot(t *testing.T, db *store.DB) [][]string {
 func c4aMatrix(t *testing.T, corpus *c4aCorpus) {
 	seen := map[string]bool{}
 	adminDenied := map[string]int{}
+	successChecked := 0
 	for route, permission := range permissionOracle {
 		for _, identity := range []string{"none", "session", "operator", "expired", "key", "revoked", "retired"} {
 			func() {
@@ -629,6 +630,14 @@ func c4aMatrix(t *testing.T, corpus *c4aCorpus) {
 				if path == "/events" {
 					input, send = "", f.c5dCall
 				}
+				if identity == "session" {
+					allowed := false
+					for _, code := range strings.Split(successOracle[route], " / ") {
+						allowed = allowed || fmt.Sprint(status) == code
+					}
+					require(t, allowed, "success oracle mismatch", route, status)
+					successChecked++
+				}
 				response := send(t, method, path, id, input, status)
 				if valid && permission == "admin" && identity != "session" {
 					require(t, decoded[Error](t, response).Code == "admin_required", "admin route code", route, identity)
@@ -651,6 +660,8 @@ func c4aMatrix(t *testing.T, corpus *c4aCorpus) {
 	require(t, adminDenied["operator"] == 17 && adminDenied["key"] == 17, "admin deny execution count")
 	t.Logf("admin_denied operator=%d key=%d expected=17_each", adminDenied["operator"], adminDenied["key"])
 	t.Logf("matrix_routes=%d identities=7 executed=%d expected=%d", len(permissionOracle), len(seen), len(permissionOracle)*7)
+	require(t, successChecked == len(permissionOracle), "success oracle execution count", successChecked)
+	t.Logf("success_oracle_checked=%d", successChecked)
 }
 func c4aLoginRace(t *testing.T, corpus *c4aCorpus) {
 	for _, mode := range []string{"control", "password", "delete", "recreate"} {

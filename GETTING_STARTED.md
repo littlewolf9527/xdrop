@@ -71,17 +71,31 @@ Health returns `{"status":"ok"}`; the static entry returns HTTP 200. This health
 The session cookie is always `Secure`, so a browser does not stay signed in over plain HTTP. Put an HTTPS reverse proxy in front of the loopback listener:
 
 - Run the proxy on the controller host. The controller trusts `X-Forwarded-For` only from loopback, so audit records show the real client address only when the proxy connects from `127.0.0.1` or `::1`.
+- Rate-limit sign-in at the proxy. The controller delays repeated failures for each user name and never locks an account, but it does not limit attempts per client, including attempts with user names that do not exist. The nginx example below allows 10 sign-in requests per minute per client address, with a burst of 5.
 - Forward everything under `/`: the console, `/api/v1/` and the event stream `/api/v1/events`. The controller turns off proxy buffering for the event stream (`X-Accel-Buffering: no`) and sends a keepalive every 15 seconds, so default proxy timeouts are enough.
 
 nginx (replace the server name and certificate paths; the upstream is the `CTL_LISTEN` address from section 3):
 
 ```nginx
+# limit_req_zone belongs in the http context; files in /etc/nginx/conf.d/ are already inside it.
+limit_req_zone $binary_remote_addr zone=xdrop_login:10m rate=10r/m;
+
 server {
     listen 443 ssl;
     server_name xdrop.example.com;
 
     ssl_certificate     /etc/ssl/xdrop/fullchain.pem;
     ssl_certificate_key /etc/ssl/xdrop/privkey.pem;
+
+    location = /api/v1/auth/login {
+        limit_req zone=xdrop_login burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -93,7 +107,7 @@ server {
 }
 ```
 
-Caddy (obtains and renews a certificate automatically when the name resolves to this host and ports 80/443 are reachable; otherwise add `tls <cert-file> <key-file>` inside the block):
+Caddy (obtains and renews a certificate automatically when the name resolves to this host and ports 80/443 are reachable; otherwise add `tls <cert-file> <key-file>` inside the block). The standard Caddy build has no request rate limiter, so limit `POST /api/v1/auth/login` with a rate-limit module or a firewall rule, or use nginx:
 
 ```
 xdrop.example.com {

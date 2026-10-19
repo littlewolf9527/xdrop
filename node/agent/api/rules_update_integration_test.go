@@ -94,21 +94,3 @@ func readCfg(t *testing.T, m *ebpf.Map, n uint32) uint64 {
 	binary.LittleEndian.PutUint32(k, n)
 	return binary.LittleEndian.Uint64(b7Read(t, m, k))
 }
-
-func b7BucketExists(t *testing.T, m *ebpf.Map, key interface{}) bool {
-	t.Helper()
-	cpus, e := ebpf.PossibleCPU()
-	if e != nil {
-		t.Fatal(e)
-	}
-	v := make([][16]byte, cpus)
-	e = m.Lookup(key, &v)
-	if e == nil {
-		return true
-	}
-	if isMapEntryMissing(e) {
-		return false
-	}
-	t.Fatal(e)
-	return false
-}

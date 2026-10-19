@@ -96,7 +96,10 @@ case "$1" in
     logs) [[ -f "$LOG_FILE" ]] || die 'log file missing'; exec tail -f "$LOG_FILE" ;;
     *)
         mkdir -p "$RUN_DIR"
-        mkdir "$RUN_DIR/manager.lock" 2>/dev/null || die 'another management operation holds the lock'
+        if ! mkdir "$RUN_DIR/manager.lock" 2>/dev/null; then
+            [[ -d "$RUN_DIR/manager.lock" ]] || die "cannot create lock $RUN_DIR/manager.lock"
+            die "lock $RUN_DIR/manager.lock exists: another management operation is running, or one was killed before releasing it; if none is running, remove it with: rmdir -- $(printf '%q' "$RUN_DIR/manager.lock")"
+        fi
         trap 'rmdir "$RUN_DIR/manager.lock"' EXIT
         case "$1" in
             start) start_service ;;

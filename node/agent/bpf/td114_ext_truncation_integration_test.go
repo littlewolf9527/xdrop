@@ -123,8 +123,8 @@ func td114Cells() []td114Cell {
 		}
 		c.want = td035Observation{Ret: srcXDPPass, Rules: []td035Counters{}}
 		c.want.Stats[0], c.want.Stats[2] = 1, 1
-		drop := rule == "R1" || rule == "R2" || rule == "R6" || gate == "W2" || (s.control == "udp" && rule == "R3")
-		if gate == "W1" {
+		drop := rule == "R1" || rule == "R2" || rule == "R6" || rule == "R7" || gate == "W2" || (s.control == "udp" && rule == "R3")
+		if gate == "W1" || gate == "W3" {
 			c.want.Stats[3] = 1
 		} else if drop {
 			c.want.Ret = srcXDPDrop
@@ -132,7 +132,7 @@ func td114Cells() []td114Cell {
 		}
 		if rule != "R0" {
 			count := td035Counters{Name: rule}
-			if drop && gate != "W1" {
+			if drop && gate != "W1" && gate != "W3" {
 				count.Match, count.Drop = 1, 1
 			}
 			c.want.Rules = append(c.want.Rules, count)
@@ -142,6 +142,9 @@ func td114Cells() []td114Cell {
 		}
 		if s.control != "" {
 			c.class = "control"
+		}
+		if rule == "R7" || rule == "R8" || gate == "W3" {
+			c.class = "proto"
 		}
 		cells = append(cells, c)
 	}
@@ -164,13 +167,46 @@ func td114Cells() []td114Cell {
 		add(td114Shape{control: "udp", head: 60, position: 1}, rule, "G0")
 	}
 	add(td114Shape{control: "depth", head: 60, position: 1}, "R1", "G0")
+	for _, s := range shapes {
+		for _, gate := range []string{"G0", "G1"} {
+			if s.head != 0 {
+				add(s, "R7", gate)
+			}
+			add(s, "R8", gate)
+		}
+		if s.head != 0 {
+			add(s, "R1", "W3")
+		}
+	}
 	return cells
+}
+
+func td114Neighbor(s td114Shape) byte {
+	if s.position == 2 && s.head != 60 {
+		return 60 // complete DstOpts before the unreadable header
+	}
+	return 17 // next-header byte in the existing S1/S2/S3 payload
+}
+
+func td149LegacyPass(t *testing.T, main *ebpf.Collection) {
+	t.Helper()
+	c, s := main.Maps["config_a"].MaxEntries(), main.Maps["stats"].MaxEntries()
+	if main.Maps["config_b"].MaxEntries() != c || !(c == 12 && s == 9 || c == 13 && s == 10) {
+		t.Fatalf("TD149 legacy schema config=%d stats=%d", c, s)
+	}
+	if c == 13 {
+		td035Put(t, main.Maps["config_a"], uint32(api.ConfigIPv6DeepChainPass), uint64(1))
+	}
+	t.Logf("TD149_LEGACY config=%d stats=%d write_slot12=%t", c, s, c == 13)
 }
 
 func td114RunCell(t *testing.T, main, gate *ebpf.Collection, c td114Cell, index int) {
 	t.Helper()
 	cfg := [12]uint64{}
 	cfg[api.ConfigRLCPUDivisor] = 1
+	if c.shape.control == "depth" {
+		td149LegacyPass(t, main)
+	}
 	var key []byte
 	var ruleValue api.RuleValue
 	mapName := "blacklist"
@@ -195,6 +231,12 @@ func td114RunCell(t *testing.T, main, gate *ebpf.Collection, c td114Cell, index 
 			key, cfg[api.ConfigRuleBitmap] = td114Exact(td114Src, netip.Addr{}, 0, 53), 1<<11
 		case "R4":
 			key, cfg[api.ConfigRuleBitmap] = td114Exact(td114Src, netip.Addr{}, 6, 0), 1<<9
+		case "R7", "R8":
+			proto := c.shape.head
+			if c.rule == "R8" {
+				proto = td114Neighbor(c.shape)
+			}
+			key, cfg[api.ConfigRuleBitmap] = td114Exact(td114Src, netip.Addr{}, proto, 0), 1<<9
 		case "R5":
 			key, cfg[api.ConfigRuleBitmap] = td114Exact(td114Src, netip.Addr{}, 0, 0), 1<<8
 			intent := api.Rule{ID: "td114-r5", LogicalID: ruleValue.LogicalID, SrcIP: td114Src.String(), Protocol: "tcp", Action: "drop", TcpFlags: "!SYN"}
@@ -232,9 +274,16 @@ func td114RunCell(t *testing.T, main, gate *ebpf.Collection, c td114Cell, index 
 		if c.gate == "W2" {
 			whitePort = 53
 		}
-		whiteKey := td114Exact(whiteSrc, netip.Addr{}, 0, whitePort)
+		whiteProto := byte(0)
+		if c.gate == "W3" {
+			whiteProto = c.shape.head
+		}
+		whiteKey := td114Exact(whiteSrc, netip.Addr{}, whiteProto, whitePort)
 		cfg[api.ConfigWhitelistCount] = 1
 		cfg[api.ConfigWLBitmap] = 1 << 8
+		if c.gate == "W3" {
+			cfg[api.ConfigWLBitmap] = 1 << 9
+		}
 		if whitePort != 0 {
 			cfg[api.ConfigWLBitmap] = 1 << 11
 		}
@@ -296,10 +345,15 @@ func TestTD114Matrix(t *testing.T) {
 	td035Put(t, main.Maps["prog_tail_map"], uint32(1), main.Programs["xdp_firewall_main"])
 	td035Put(t, main.Maps["active_config"], uint32(0), uint64(0))
 	cells := td114Cells()
-	if len(cells) != 259 {
-		t.Fatalf("TD114 cells=%d want=259", len(cells))
+	if len(cells) != 337 {
+		t.Fatalf("TD114 cells=%d want=337", len(cells))
 	}
+	seen := make(map[string]bool, len(cells))
 	for i, c := range cells {
+		if seen[c.name] {
+			t.Fatalf("TD114 duplicate cell name=%s", c.name)
+		}
+		seen[c.name] = true
 		t.Run(c.name, func(t *testing.T) { td114RunCell(t, main, gate, c, i) })
 	}
 }

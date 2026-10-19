@@ -2,6 +2,7 @@ package orch
 
 import (
 	"encoding/json"
+	"log"
 	"sort"
 	"time"
 
@@ -52,6 +53,13 @@ func (m *Manager) success(n *node, i int, gen uint64, full bool) {
 }
 func (m *Manager) probe(n *node, i int) bool {
 	result, e := n.client.Probe(n.ctx)
+	var name string
+	mismatch := false
+	defer func() {
+		if mismatch {
+			log.Printf("node incompatible; node=%q reason=protocol_mismatch", name)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if result == nc.OK {
@@ -59,6 +67,7 @@ func (m *Manager) probe(n *node, i int) bool {
 	}
 	if result == nc.Incompatible {
 		if !n.status.Incompatible {
+			name, mismatch = n.status.Name, true
 			m.record(n, Event{time.Now(), n.status.Name, "incompatible", "false", "true", "protocol_mismatch"})
 		}
 		n.status.Incompatible = true
@@ -70,6 +79,13 @@ func (m *Manager) probe(n *node, i int) bool {
 }
 func (m *Manager) recoverVersion(n *node) {
 	result, _ := n.client.Probe(n.ctx)
+	var name string
+	recovered := false
+	defer func() {
+		if recovered {
+			log.Printf("node compatible; node=%q reason=version_recovered", name)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n.probeAt = time.Now().Add(m.opts.CheckInterval)
@@ -77,6 +93,7 @@ func (m *Manager) recoverVersion(n *node) {
 		return
 	}
 	n.status.Incompatible = false
+	name, recovered = n.status.Name, true
 	m.record(n, Event{time.Now(), n.status.Name, "incompatible", "true", "false", "version_recovered"})
 	for i := 0; i < 2; i++ {
 		n.sides[i].full = true
@@ -139,6 +156,11 @@ func (m *Manager) worker(n *node) {
 		}
 		m.mu.Lock()
 		online, incompatible := n.status.Online, n.status.Incompatible
+		if !online || incompatible {
+			// Offline or incompatible nodes recover through a full sync; only the worker clears queued deltas.
+			n.dirty = map[string]bool{}
+			n.pending = nil
+		}
 		probeDue := !time.Now().Before(n.probeAt)
 		m.mu.Unlock()
 		if incompatible && probeDue && n.client != nil {
@@ -297,6 +319,26 @@ func (m *Manager) atomic(n *node) {
 		return
 	}
 	r, e := n.client.Atomic(n.ctx, body)
+	details := make([]struct {
+		group   string
+		removed bool
+	}, len(r.Rejected))
+	if e == nil {
+		for i, rejected := range r.Rejected {
+			if !ids[rejected.ID] {
+				continue
+			}
+			row, err := m.svc.Get(rejected.ID)
+			if err == nil {
+				details[i].removed = !row.Enabled
+				if row.Enabled {
+					details[i].group = row.GroupKey
+				}
+			} else if err.Code == "not_found" {
+				details[i].removed = true
+			}
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if e != nil {
@@ -313,9 +355,11 @@ func (m *Manager) atomic(n *node) {
 		return
 	}
 	n.blocked = map[string]Rejected{}
-	n.ids = map[string]Rejected{}
-	for _, r := range r.Rejected {
-		n.ids[r.ID] = Rejected{ID: r.ID, Error: r.Reason}
+	n.ids = map[string]idRejection{}
+	for i, r := range r.Rejected {
+		if !details[i].removed {
+			n.ids[r.ID] = idRejection{Rejected: Rejected{ID: r.ID, Error: r.Reason}, group: details[i].group}
+		}
 	}
 	retained := n.moves[:0]
 	for _, move := range n.moves {
@@ -490,6 +534,14 @@ func (m *Manager) commit(n *node) {
 				delete(n.blocked, key)
 				for _, rule := range groups[key].Rules {
 					delete(n.ids, rule.ID)
+				}
+			}
+			for id, rejection := range n.ids {
+				if rejection.group != "" {
+					i := sort.SearchStrings(ordered, rejection.group)
+					if i < len(ordered) && ordered[i] == rejection.group {
+						delete(n.ids, id)
+					}
 				}
 			}
 			retained := n.moves[:0]

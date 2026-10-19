@@ -16,11 +16,6 @@ import (
 	"testing"
 )
 
-// snakeCasePayload mimics the JSON that Controller.ToNodeWhitelist() produces.
-type snakeCasePayload struct {
-	Entries []map[string]interface{} `json:"entries"`
-}
-
 func unmarshalEntries(t *testing.T, entries []map[string]interface{}) []SyncWhitelistEntry {
 	t.Helper()
 	body, err := json.Marshal(map[string]interface{}{"entries": entries})

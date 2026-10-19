@@ -36,52 +36,6 @@ import (
 	"github.com/littlewolf9527/xdrop/node/agent/api"
 )
 
-// Stashed ingress_ifindex we will write into tail_stash so that
-// bpf_redirect_map(&devmap, ingress_ifindex, 0) in anomaly_verify finds a
-// mapped entry. Arbitrary non-zero ifindex that we also populate in devmap.
-const ffTestIngressIfindex = uint32(4)
-const ffTestEgressIfindex = uint32(5)
-
-// tailStashWire mirrors xdrop.h `struct tail_stash` byte-for-byte. Any
-// change to the C struct layout MUST be reflected here or the test writes
-// garbage into the map and produces confusing failures.
-//
-//	struct tail_stash {
-//	  __u32 stage;               // offset 0
-//	  __u8  action;              // offset 4
-//	  __u8  match_anomaly;       // offset 5
-//	  __u16 pkt_len;             // offset 6
-//	  __u32 rate_limit;          // offset 8
-//	  __u32 payload_pattern_id;  // offset 12
-//	  __u8  tcp_flags;           // offset 16
-//	  __u8  eth_proto_is_v6;     // offset 17
-//	  __u8  is_ff;               // offset 18  ← FF regression field
-//	  __u8  l4_valid;       // offset 19
-//	  __u32 ingress_ifindex;     // offset 20  ← FF regression field
-//	  struct rule_key key;       // offset 24, 40 bytes
-//	  __u8  reserved[28];        // offset 64
-//	} __attribute__((aligned(8)));
-//
-// C size: 92 explicitly declared bytes + 4 tail pad (aligned(8)) = 96 bytes.
-// BPF map value_size is 96 so the Go encoder must produce exactly 96 bytes,
-// hence the explicit TailPad below (binary.Write doesn't insert any padding).
-type tailStashWire struct {
-	Stage            uint32
-	Action           uint8
-	MatchAnomaly     uint8
-	PktLen           uint16
-	RateLimit        uint32
-	PayloadPatternID uint32
-	TcpFlags         uint8
-	EthProtoIsV6     uint8
-	IsFF             uint8
-	L4Valid          uint8
-	IngressIfindex   uint32
-	Key              [40]byte
-	Reserved         [28]byte
-	TailPad          [4]byte // compiler-inserted for __attribute__((aligned(8)))
-}
-
 // The former anomaly FF witness now enters main directly. The three cases
 // exercise empty rules, a clean packet, and an anomaly predicate miss.
 func TestAnomalyVerifyFFRedirect(t *testing.T) {

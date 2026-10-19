@@ -40,6 +40,7 @@ export function useSettingsRequests<T>(path: string, initial: T, errorKey: (e: u
 const nodeMessages: Record<string, string> = {
   'name must not be empty': 'nodeNameEmpty',
   "name must not contain '/'": 'nodeNameSlash',
+  "name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'": 'nodeNameInvalid',
   'node fields required': 'nodeFields',
   'base_url and api_key (1..4096 bytes) required': 'nodeFields',
   'api_key must contain 1..4096 bytes': 'nodeKeyLength',

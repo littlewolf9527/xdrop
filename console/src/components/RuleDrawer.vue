@@ -6,7 +6,7 @@ import { QuestionFilled } from '@element-plus/icons-vue'
 import { type RuleDTO, type BatchResult, isOpenSelectTarget } from '../api/types'
 import { ApiError } from '../api/client'
 import { request, captureSession, state } from '../state'
-import { ruleForm, ruleBody, conditionKeys } from '../rules'
+import { ruleForm, ruleBody, conditionKeys, protocolOptions, conditionRanges as ranges } from '../rules'
 import { errorField } from '../errors'
 import RuleError from './RuleError.vue'
 const props = defineProps<{ rule?: RuleDTO }>(), emit = defineEmits<{ close: []; saved: []; search: [id: string] }>()
@@ -16,7 +16,6 @@ const trigger = document.activeElement as HTMLElement | null
 let alive = true, validated: ReturnType<typeof ruleBody> | undefined
 const body = computed(() => ruleBody(form, props.rule ? initial : undefined, props.rule))
 const location = computed(() => errorField(error.value))
-const ranges: Record<string, string> = { ttl: '0–255', dscp: '0–63', pkt_len: '0–65535', icmp_type: '0–255', icmp_code: '0–255', match_anomaly: '1–15' }
 watch(form, () => { validated = undefined; existing.value = false }, { flush: 'sync' })
 function close() { emit('close') }
 function search(id: string) { emit('search', id); close() }
@@ -67,7 +66,7 @@ async function submit() {
       <fieldset :disabled="busy"><legend>{{ t('ports') }}</legend>
         <RuleError v-if="error && location === 'ports'" :error="error" @search="search" />
         <div class="field" data-field="protocol"><div class="rule-label"><label for="protocol">{{ t('protocol') }}</label><ElTooltip :content="t('ruleHints.protocol')" :trigger="['hover', 'click']" popper-class="rule-help-popover"><button type="button" class="rule-help" :aria-label="t('protocol') + ' ' + t('explanation')"><QuestionFilled aria-hidden="true" /></button></ElTooltip></div>
-          <select id="protocol" v-model="form.protocol"><option v-for="p in ['all','tcp','udp','icmp','icmpv6','igmp','gre','esp']" :key="p">{{ p }}</option></select>
+          <select id="protocol" v-model="form.protocol"><option v-for="p in protocolOptions" :key="p">{{ p }}</option></select>
           <RuleError v-if="error && location === 'protocol'" :error="error" @search="search" />
         </div>
         <div v-for="name in ['src_port','dst_port']" :key="name" class="field" :data-field="name"><label :for="name">{{ t(name) }}</label><input :id="name" v-model="form[name]" placeholder="1–65535" inputmode="numeric">

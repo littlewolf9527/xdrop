@@ -6,6 +6,7 @@ import { QuestionFilled } from '@element-plus/icons-vue'
 import { request, captureSession, state } from '../state'
 import { type WhitelistDTO, isOpenSelectTarget } from '../api/types'
 import { whitelistError } from '../errors'
+import { protocolOptions } from '../rules'
 const emit = defineEmits<{ close: []; saved: [] }>(), { t } = useI18n()
 const form = reactive({ src_ip: '', dst_ip: '', src_port: '', dst_port: '', protocol: 'all', comment: '' })
 const busy = ref(false), existing = ref(false), error = ref<unknown>(null), first = ref<HTMLInputElement>()
@@ -48,7 +49,7 @@ async function submit() {
         <p v-if="error && ['ip','tuple'].includes(failure.field)" class="error-text" role="alert">{{ failure.text }}</p>
       </fieldset>
       <fieldset :disabled="busy" data-field="port">
-        <div class="field" data-field="protocol"><label for="wl-protocol">{{ t('protocol') }}</label><select id="wl-protocol" v-model="form.protocol"><option v-for="p in ['all','tcp','udp','icmp','icmpv6','igmp','gre','esp']" :key="p">{{ p }}</option></select><p v-if="error && failure.field === 'protocol'" class="error-text" role="alert">{{ failure.text }}</p></div>
+        <div class="field" data-field="protocol"><label for="wl-protocol">{{ t('protocol') }}</label><select id="wl-protocol" v-model="form.protocol"><option v-for="p in protocolOptions" :key="p">{{ p }}</option></select><p v-if="error && failure.field === 'protocol'" class="error-text" role="alert">{{ failure.text }}</p></div>
         <div v-for="name in ['src_port','dst_port'] as const" :key="name" class="field" :data-field="name"><label :for="'wl-' + name">{{ t(name) }}</label><input :id="'wl-' + name" v-model="form[name]" placeholder="0-65535" inputmode="numeric"></div>
         <p v-if="error && failure.field === 'port'" class="error-text" role="alert">{{ failure.text }}</p>
       </fieldset>

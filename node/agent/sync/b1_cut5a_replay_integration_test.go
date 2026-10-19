@@ -6,18 +6,14 @@ package sync
 // exported HTTP handlers and ELF map names exist at cd89372. Optional fixture
 // hooks use reflection so this same driver also compiles on the older tree.
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +22,6 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/gin-gonic/gin"
 	"github.com/littlewolf9527/xdrop/node/agent/api"
-	"github.com/littlewolf9527/xdrop/node/agent/bpf"
 	"github.com/littlewolf9527/xdrop/node/agent/cidr"
 	"golang.org/x/sys/unix"
 )
@@ -38,11 +33,6 @@ type cut5ReplayStep struct {
 	HitsP3, HitsP4, HitsP6                 []bool
 	Body                                   json.RawMessage
 	Packets                                []string
-}
-type cut5ReplayScene struct {
-	Name      string
-	Authority string
-	Steps     []cut5ReplayStep
 }
 type cut5ReplayFixture struct {
 	h      *api.Handlers
@@ -131,145 +121,7 @@ func cut5ReplayOpen(t *testing.T) *cut5ReplayFixture {
 	return &cut5ReplayFixture{h, c, wl, r}
 }
 
-func cut5ReplayNormalize(v interface{}) interface{} {
-	switch x := v.(type) {
-	case map[string]interface{}:
-		for _, key := range []string{"stats", "drop_pps", "timestamp", "last_updated", "created_at", "updated_at"} {
-			delete(x, key)
-		}
-		for key, value := range x {
-			x[key] = cut5ReplayNormalize(value)
-		}
-		return x
-	case []interface{}:
-		for i := range x {
-			x[i] = cut5ReplayNormalize(x[i])
-		}
-		if len(x) > 0 {
-			if m, ok := x[0].(map[string]interface{}); ok && m["id"] != nil {
-				sort.SliceStable(x, func(i, j int) bool {
-					return fmt.Sprint(x[i].(map[string]interface{})["id"]) < fmt.Sprint(x[j].(map[string]interface{})["id"])
-				})
-			}
-		}
-		return x
-	}
-	return v
-}
-
-func cut5ReplayHTTP(t *testing.T, f *cut5ReplayFixture, method, path string, body []byte) (int, interface{}) {
-	t.Helper()
-	w := httptest.NewRecorder()
-	f.router.ServeHTTP(w, httptest.NewRequest(method, path, bytes.NewReader(body)))
-	var value interface{}
-	dec := json.NewDecoder(bytes.NewReader(w.Body.Bytes()))
-	dec.UseNumber()
-	if err := dec.Decode(&value); err != nil {
-		t.Fatalf("response %d is not JSON: %s", w.Code, w.Body.String())
-	}
-	return w.Code, cut5ReplayNormalize(value)
-}
-
 func cut5ReplayLogicalProtocol(protocol int) bool { return protocol >= 4 }
-
-func cut5ReplayEffectiveExpect(step cut5ReplayStep, protocol int) string {
-	if protocol >= 6 && step.ExpectP6 != "" {
-		return step.ExpectP6
-	}
-	if protocol == 2 && step.ExpectP2 != "" {
-		return step.ExpectP2
-	}
-	if cut5ReplayLogicalProtocol(protocol) && step.ExpectP4 != "" {
-		return step.ExpectP4
-	}
-	if protocol >= 3 && step.ExpectP3 != "" {
-		return step.ExpectP3
-	}
-	return step.Expect
-}
-
-// Independent expectations prevent two equally rejected requests from passing
-// the cross-tree equality gate. The caller resolves each HTTP step's intent.
-func cut5ReplayCheckResponse(step cut5ReplayStep, status int, body interface{}) error {
-	m, ok := body.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("response is not an object: %v", body)
-	}
-	switch step.Expect {
-	case "committed", "unchanged", "deferred":
-		expected := step.Expect
-		if expected == "deferred" {
-			expected = "committed"
-		}
-		if status != 200 || m["code"] != expected {
-			return fmt.Errorf("commit response: %d %v", status, body)
-		}
-		if step.Expect == "unchanged" {
-			if _, exists := m["receipt"]; exists {
-				return fmt.Errorf("unchanged has receipt")
-			}
-		} else {
-			receipt := "confirmed"
-			if step.Expect == "deferred" {
-				receipt = "deferred"
-			}
-			if m["receipt"] != receipt {
-				return fmt.Errorf("commit receipt: %v", body)
-			}
-		}
-	case "commit_failed", "quiescence_failed", "withdrawal_pending":
-		if status != 500 || m["code"] != step.Expect {
-			return fmt.Errorf("commit failure: %d %v", status, body)
-		}
-	case "welcome":
-		if status != 200 || m["sync_protocol"] != json.Number(fmt.Sprint(api.SyncProtocol)) {
-			return fmt.Errorf("welcome version witness failed: %d %v", status, body)
-		}
-	case "condition_group_required", "condition_group_invalid", "duplicate_key", "table_full", "group_undeclared", "duplicate_id", "cidr_overlap", "condition_capacity":
-		if status != 409 || m["code"] != step.Expect {
-			return fmt.Errorf("expected 409 %s: got %d %v", step.Expect, status, body)
-		}
-	case "partial_rejection":
-		if status != 200 || m["success"] != true || m["failed"] == json.Number("0") {
-			return fmt.Errorf("expected explicit partial rejection: %d %v", status, body)
-		}
-	case "invalid":
-		if status != 400 || m["code"] != "validation_rejected" {
-			return fmt.Errorf("expected 400 invalid: %d %v", status, body)
-		}
-	case "missing":
-		if status != 404 || m["code"] != "rule_not_found" {
-			return fmt.Errorf("expected 404 missing: %d %v", status, body)
-		}
-	case "publish_failure":
-		if status != 500 {
-			return fmt.Errorf("expected publish failure: %d %v", status, body)
-		}
-	case "success":
-		if status < 200 || status >= 300 {
-			return fmt.Errorf("successful write must be 2xx: got=%d body=%v", status, body)
-		}
-		if m["success"] != true {
-			return fmt.Errorf("successful write did not report success: %v", body)
-		}
-		if failed, exists := m["failed"]; exists && failed != json.Number("0") {
-			return fmt.Errorf("successful write has failed items: %v", body)
-		}
-	case "content_different":
-		if status != http.StatusConflict || m["code"] != "content_different" {
-			return fmt.Errorf("content replay must reach content_different: status=%d body=%v", status, body)
-		}
-	case "logical_id_replay", "duplicate_logical_id":
-		// These are the explicit I3/I1 cross-version differences. The finite
-		// allowed.json table still requires each exact old/new field value.
-		if status != http.StatusOK && status != http.StatusConflict {
-			return fmt.Errorf("logical ID witness rejected before identity check: status=%d body=%v", status, body)
-		}
-	default:
-		return fmt.Errorf("HTTP step lacks a known expectation: %q", step.Expect)
-	}
-	return nil
-}
 
 func cut5ReplayCheckPureUpdate(prefix string, step cut5ReplayStep, installed interface{}) (bool, error) {
 	if !strings.HasSuffix(prefix, "/pure_exact/update") && !strings.HasSuffix(prefix, "/pure_cidr/update") {
@@ -399,47 +251,6 @@ func cut5ReplayMaps(t *testing.T, f *cut5ReplayFixture) map[string]interface{} {
 		out[name] = rows
 	}
 	return out
-}
-
-func cut5ReplayFrame(name string) []byte {
-	p := make([]byte, 54)
-	binary.BigEndian.PutUint16(p[12:], 0x0800)
-	p[14] = 0x45
-	binary.BigEndian.PutUint16(p[16:], 40)
-	p[22] = 64
-	p[23] = 6
-	copy(p[26:30], []byte{192, 0, 2, 1})
-	copy(p[30:34], []byte{198, 51, 100, 1})
-	binary.BigEndian.PutUint16(p[34:], 1234)
-	binary.BigEndian.PutUint16(p[36:], 80)
-	p[46] = 0x50
-	p[47] = 2
-	switch name {
-	case "miss":
-		copy(p[26:30], []byte{203, 0, 113, 1})
-	case "ack":
-		p[47] = 16
-	case "length400":
-		p = append(p, make([]byte, 360)...)
-		binary.BigEndian.PutUint16(p[16:], 400)
-	case "bad_fragment":
-		binary.BigEndian.PutUint16(p[20:], 0x2000)
-	case "invalid_tcp":
-		p[46] = 0x40
-	case "icmp_zero":
-		p[23], p[34], p[35] = 1, 0, 0
-	case "length_mismatch":
-		binary.BigEndian.PutUint16(p[16:], 60)
-	case "length_mismatch_ack":
-		binary.BigEndian.PutUint16(p[16:], 60)
-		p[47] = 16
-	case "offset_one":
-		binary.BigEndian.PutUint16(p[20:], 1)
-	case "syn", "rate":
-	default:
-		panic("unknown scripted packet " + name)
-	}
-	return p
 }
 
 func cut5ReplayCounters(t *testing.T, f *cut5ReplayFixture) map[string]uint64 {
@@ -684,91 +495,8 @@ func cut5ReplayStartupClearFailure(t *testing.T, f *cut5ReplayFixture) bool {
 		}
 		return false
 	}
-	// HEAD 7e405a7 main logs the ordinary clear error and continues startup.
-	_ = bpf.ClearDataMaps(f.coll, []string{"blacklist", "blacklist_b", "whitelist", "cidr_blacklist", "cidr_blist_b", "cond_a", "cond_b", "cidr_cond_a", "cidr_cond_b", "rl_states", "cidr_rl_states", "sv4_cidr_trie", "dv4_cidr_trie", "sv6_cidr_trie", "dv6_cidr_trie"})
-	for _, name := range []string{"id_counts", "id_rl_states"} {
-		if _, err := bpf.ClearMapKeys(f.coll.Maps[name]); err != nil {
-			t.Fatal(err)
-		}
-	}
-	_ = bpf.ClearDataMaps(&ebpf.Collection{Maps: map[string]*ebpf.Map{"whitelist_b": f.wl}}, []string{"whitelist_b"})
+	t.Fatal("Handlers.ReplayPinnedStartupForCut53 missing: the legacy-clearer fallback for historical trees was retired together with bpf.ClearDataMaps")
 	return false
-}
-
-// Absolute monotonic timestamps are deliberately not compared across processes.
-// Their per-CPU update relation is recorded around every actual packet instead.
-func cut5ReplayTimes(t *testing.T, f *cut5ReplayFixture) map[string][]uint64 {
-	t.Helper()
-	out := map[string][]uint64{}
-	cpus, err := ebpf.PossibleCPU()
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := []string{"id_rl_states"}
-	if !cut5ReplayLogicalProtocol(api.SyncProtocol) {
-		names = append(names, "rl_states", "cidr_rl_states")
-	}
-	for _, name := range names {
-		m := f.coll.Maps[name]
-		it := m.Iterate()
-		key := make([]byte, m.KeySize())
-		values := make([][16]byte, cpus)
-		for it.Next(&key, &values) {
-			stamps := make([]uint64, cpus)
-			for i := range values {
-				stamps[i] = binary.LittleEndian.Uint64(values[i][8:])
-			}
-			out[name+"/"+hex.EncodeToString(key)] = stamps
-		}
-		if err := it.Err(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return out
-}
-
-func cut5ReplayTimeChanges(before, after map[string][]uint64) map[string][]bool {
-	out := map[string][]bool{}
-	for key, stamps := range after {
-		changed := make([]bool, len(stamps))
-		for i, stamp := range stamps {
-			changed[i] = len(before[key]) <= i || before[key][i] != stamp
-		}
-		out[key] = changed
-	}
-	return out
-}
-
-func cut5ReplayMutateVerdict(t *testing.T, f *cut5ReplayFixture) {
-	var slot uint64
-	if err := f.coll.Maps["active_config"].Lookup(uint32(0), &slot); err != nil {
-		t.Fatal(err)
-	}
-	config := "config_a"
-	if slot == 1 {
-		config = "config_b"
-	}
-	var selector uint64
-	if err := f.coll.Maps[config].Lookup(uint32(api.ConfigRuleMapSelector), &selector); err != nil {
-		t.Fatal(err)
-	}
-	name := "blacklist"
-	if selector == 1 {
-		name = "blacklist_b"
-	}
-	m := f.coll.Maps[name]
-	key := make([]byte, 40)
-	if err := m.NextKey(nil, &key); err != nil {
-		t.Fatal(err)
-	}
-	v := make([]byte, 32)
-	if err := m.Lookup(key, &v); err != nil {
-		t.Fatal(err)
-	}
-	v[0] = api.ActionPass
-	if err := m.Update(key, v, ebpf.UpdateExist); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func cut5ReplayRateInitial(t *testing.T, f *cut5ReplayFixture) {
@@ -837,14 +565,4 @@ func cut5ReplayRateInitial(t *testing.T, f *cut5ReplayFixture) {
 			t.Fatal(err)
 		}
 	}
-}
-
-type cut5RewriteTransport struct{ target *url.URL }
-
-func (t cut5RewriteTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	c := r.Clone(r.Context())
-	u := *r.URL
-	u.Scheme, u.Host = t.target.Scheme, t.target.Host
-	c.URL = &u
-	return http.DefaultTransport.RoundTrip(c)
 }

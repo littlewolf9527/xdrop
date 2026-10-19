@@ -2,6 +2,7 @@ package orch
 
 import (
 	"github.com/littlewolf9527/xdrop/controller/core/store"
+	"log"
 	"sort"
 	"time"
 )
@@ -87,6 +88,9 @@ func (m *Manager) flushHistory(now time.Time) {
 	hour := m.historyHour
 	m.mu.Unlock()
 	capped, err := m.opts.History.WriteTraffic(rows, hour, now, m.opts.historyLimits, m.opts.historyTx)
+	if err != nil {
+		log.Printf("traffic history write failed: %v", err)
+	}
 	m.mu.Lock()
 	if err == nil {
 		for _, r := range rings {

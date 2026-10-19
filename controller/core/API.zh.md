@@ -1,6 +1,6 @@
 # 控制器 API · c5b-1
 
-本文件是新合同（G1）。旧 controller/API.md 随旧控制器冻结，留到删旧码刀退役。API 路径位于 /api/v1，除事件流与审计导出外采用 JSON。规则与白名单写接口入库即回，不等节点（G3）。xSight 跨仓适配后续另立项，本刀只交合同（G9）。
+本文件是新合同（G1）。controller/API.zh.md 是 README 链接的对外摘要，描述的是同一套 v3 接口；TestCtlCut3API/API-doc 对拍中英两种语言、两份文档的路由表（含权限、成功码两列）与错误码表。API 路径位于 /api/v1，除事件流与审计导出外采用 JSON。规则与白名单写接口入库即回，不等节点（G3）。xSight 跨仓适配后续另立项，本刀只交合同（G9）。
 
 用户以密码和服务端会话认证；机器使用具名凭证。用户有 admin（管理员）与 operator（运维）两种角色；“仅 UI”含两者，“仅管理员”只接受 admin 会话，否则 403 admin_required。schema v4 将 v3 既有用户全部升为 admin；CLI user add 也建 admin。只有健康与登录公开。
 
@@ -183,7 +183,7 @@ GET /rules/{id}/delivery 必须带回执 gen 与 epoch。epoch 不符一律 409 
 
 命令：`xdrop-controller -config /absolute/path/xdrop-controller.example.yaml`。必填 listen（host:port）、database（绝对路径）、secret_key_file（绝对路径）。未知键、重复键、多文档及空/不可读配置文件均拒绝。主密钥文件权限必须为 0600，内容为恰好 32 字节随机数的 base64；失败点名 secret_key_file，不输出内容。任何形态的 nodes 键均拒绝，固定消息为 `nodes moved to database; use the web UI or "node add"`。
 
-节点名必须非空、唯一，且不含 `/`。
+节点名必须唯一。所有节点操作都以原有报错拒绝空名与含 `/` 的名称；创建另须遵守下方用户名规则，更新与删除接受已存名称。
 
 启动序：加载配置 → 开库 → Prepare（列全违规并拒启动）→ 读主密钥 → 读库并解密节点 → 读设置 → 构造 manager/service → Prime 复用 Prepare 账本并接上 Limits → 启动 manager → API → HTTP。SIGINT/SIGTERM：关闭事件 hub 与全部流 → HTTP Shutdown 最多 10s 排空 → manager Stop 并等待 → db.Close；错误记日志并继续清理。Shutdown 和 Close 均无错才退出 0；中途失败逆序清理。Shutdown 超时是异常退出，不证明排空或单文件。
 
@@ -227,7 +227,7 @@ batch_too_large（400）在超过 500 项时整请求拒收且一条不写；调
 
 机器头为 `Authorization: Bearer <key>`；钥匙格式 `xdk_<id>_<secret>`，id 为 16 位小写 hex，secret 为 43 字符无填充 base64url。每次请求从读池查库验票或钥匙。方案名不分大小写，钥匙区分大小写；恰一个 Authorization 头。HTTP 解析会去除头值首尾空白；值内须为 `Bearer` + 恰一个空格 + 钥匙，钥匙内不许有空白。头出现（包括空值）与会话 cookie 同带、多个 Authorization 或同名会话 cookie 均返回 401。缺失、过期、吊销或退役身份也返回 401；机器访问仅 UI 路由返回 403。命中但未登记权限的路由返回 403，处理器不执行；启动自检缺权限即失败。已认证请求的未知路由 / 错方法仍为 404 / 405。
 
-用户名与钥匙名均匹配 `^[A-Za-z0-9._-]{1,64}$`；密码为 10…72 字节，采用 bcrypt DefaultCost，不截断。登录连续失败后，下一次须等待 1、2、4、8、16、32、60、60…秒；未到时刻或同用户名已有验证进行中，返回 login_throttled（429）及向上取整的 Retry-After 秒数。成功清零；延迟不持久化。错误密码与不存在用户返回逐字节相同的 invalid_credentials（401）。
+用户名、钥匙名与节点名均匹配 `^[A-Za-z0-9._-]{1,64}$`，且不能是 `.` 或 `..`（浏览器会折叠这种路径段），只在创建时校验；密码为 10…72 字节，采用 bcrypt DefaultCost，不截断。登录连续失败后，下一次须等待 1、2、4、8、16、32、60、60…秒；未到时刻或同用户名已有验证进行中，返回 login_throttled（429）及向上取整的 Retry-After 秒数。成功清零；延迟不持久化。错误密码与不存在用户返回逐字节相同的 invalid_credentials（401）。
 
 PUT /auth/me/password 两种 UI 角色均可用，输入 `{current_password,password}`；未知字段回 400，旧密码错误与登录共享节流与失败审计；成功回 204、清 cookie，即吊销该用户全部会话。
 
@@ -276,7 +276,7 @@ Hits 拉取器遵循下文流量数据合同，浏览器只读控制器缓存。
 
 ## 节点入库（schema v5）
 
-五条节点管理路由均为 admin 档（UI 管理员）；运维与机器凭证返回 403 admin_required。POST /nodes 接收 `{name,base_url,api_key}`；名字非空、唯一、不含 `/`，重名返回 409 rule_conflict。URL 仅 http/https，必须有 host，不能带 user、query、fragment。api_key 长度为 1…4096 字节；非法输入返回 400 invalid_field。密钥只提交一次、永不回显。
+五条节点管理路由均为 admin 档（UI 管理员）；运维与机器凭证返回 403 admin_required。POST /nodes 接收 `{name,base_url,api_key}`；名字唯一；所有操作拒绝空名与含 `/` 的名字，创建另须遵守用户名规则，重名返回 409 rule_conflict。URL 仅 http/https，必须有 host，不能带 user、query、fragment。api_key 长度为 1…4096 字节；非法输入返回 400 invalid_field。密钥只提交一次、永不回显。
 
 PATCH /nodes/{name} 接收 `{base_url?,api_key?}`，至少一项，不能改名。只改地址时保留原密文。更新停旧建新，两侧回到 pending 并重新全量 atomic。DELETE 删除管理关系并等待该节点协程退出，不联系节点、不清空远端规则；原规则保留，其他节点继续运行。
 

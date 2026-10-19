@@ -1,3 +1,4 @@
+import { conditionKeys } from '../src/rules'
 import { auditActions } from '../src/audit'
 import type { AuditEvent, RuleDTO, WriteError, WhitelistDTO, TemplateDTO, UserDTO, CredentialDTO, NodeTestDTO } from '../src/api/types'
 import type {
@@ -22,6 +23,20 @@ interface Response {
 }
 const netModule = 'node:net'
 const { isIP } = await import(netModule) as { isIP(value: string): number }
+const canonicalAddress = (raw: string) => isIP(raw) === 6 ? new URL('http://[' + raw + ']').hostname.slice(1, -1) : raw
+const mappedAddress = (raw: string) => /^::ffff:[0-9a-f]{1,4}:[0-9a-f]{1,4}$/i.test(canonicalAddress(raw))
+const ipv4 = (value: bigint) => [24n,16n,8n,0n].map(shift => Number(value >> shift & 255n)).join('.')
+function network(raw: string) {
+  const [ip = '', mask] = raw.split('/'), family = isIP(ip), width = family === 4 ? 32 : 128
+  if (!family || ip.includes('%') || mappedAddress(ip) || raw.split('/').length > 2 || (mask !== undefined && (!/^\d+$/.test(mask) || Number(mask) > width))) return
+  const bits = mask === undefined ? width : Number(mask), normalized = canonicalAddress(ip)
+  const [left = '', right] = normalized.split('::'), parts = left ? left.split(':') : [], tail = right ? right.split(':') : []
+  const value = family === 4 ? ip.split('.').reduce((n, part) => n * 256n + BigInt(part), 0n) :
+    [...parts, ...Array(right === undefined ? 0 : 8 - parts.length - tail.length).fill('0'), ...tail].reduce((n, part) => n * 65536n + BigInt('0x' + part), 0n)
+  return { width, bits, value: value >> BigInt(width - bits) << BigInt(width - bits) }
+}
+const contains = (outer: NonNullable<ReturnType<typeof network>>, inner: NonNullable<ReturnType<typeof network>>) =>
+  outer.width === inner.width && outer.bits <= inner.bits && outer.value === inner.value >> BigInt(outer.width - outer.bits) << BigInt(outer.width - outer.bits)
 // Positive build-scan control: XDROP_MOCK_ONLY /__mock/revoke
 export function mockPlugin(): Plugin {
   return {
@@ -49,9 +64,17 @@ export function mockPlugin(): Plugin {
       }))
       const validate = (b: Record<string, unknown>, prefix = ''): WriteError | undefined => {
         for (const key of ['src_port', 'dst_port', 'match_anomaly', 'rate_limit']) if (key in b && typeof b[key] !== 'number') return { code: 'bad_request', message: 'decode error', field: prefix + key }
-        for (const key of ['src_port', 'dst_port']) if (Number(b[key]) > 65535) return { code: 'invalid_rule', message: 'invalid port', field: key }
-        if (['icmp','icmpv6'].includes(String(b.protocol)) && (b.src_port || b.dst_port)) return { code: 'invalid_rule', message: 'protocol with port', field: 'protocol' }
-        if (['src_ip','dst_ip'].some(k => b[k] && !/^[0-9a-fA-F:.]+$/.test(String(b[k])))) return { code: 'invalid_rule', message: 'address', field: 'ip' }
+        for (const key of ['src_port', 'dst_port']) if (Number(b[key]) < 0 || Number(b[key]) > 65535) return { code: 'invalid_rule', message: 'port out of range', field: key }
+        if (['icmp','icmpv6','igmp','gre','esp'].includes(String(b.protocol)) && (b.src_port || b.dst_port)) return { code: 'invalid_rule', message: 'protocol does not support ports', field: 'protocol' }
+        for (const key of ['src_ip','dst_ip','src_cidr','dst_cidr']) {
+          const raw = String(b[key] ?? ''), [ip = '', mask] = raw.split('/')
+          if (raw && key.endsWith('_ip') && (!isIP(raw) || raw.includes('%'))) return { code: 'invalid_rule', message: 'invalid IP address', field: 'ip' }
+          if (isIP(ip) && !ip.includes('%') && mappedAddress(ip)) {
+            const words = canonicalAddress(ip).split(':').slice(-2), value = BigInt('0x' + words.map(v => v.padStart(4, '0')).join(''))
+            const prefix = key.endsWith('_cidr'), bits = Number(mask) - 96
+            return { code: 'mapped_ipv6', message: prefix ? 'IPv4-mapped IPv6 prefix is not supported' + (bits >= 0 && bits <= 32 ? '; use IPv4 ' + ipv4(value >> BigInt(32 - bits) << BigInt(32 - bits)) + '/' + bits : '') : 'IPv4-mapped IPv6 is not supported; use IPv4 ' + ipv4(value) }
+          }
+        }
         if (b.expires_in && !/^(?:[0-9]+[hms])+$/.test(String(b.expires_in))) return { code: 'invalid_expires_in', message: 'duration' }
         if (b.ttl === '1,2,3,4,5') return { code: 'condition_capacity', message: 'capacity', rule_ids: [rules[1]!.id, 'batch:0'] }
       }
@@ -63,8 +86,11 @@ export function mockPlugin(): Plugin {
         r.group_key = JSON.stringify([r.src_ip, r.dst_ip, r.src_cidr, r.dst_cidr, r.protocol, r.src_port, r.dst_port])
         return r
       }
-      const identical = (b: Record<string, unknown>) => rules.find(r => ['src_ip','dst_ip','src_cidr','dst_cidr','protocol','src_port','dst_port','ttl'].every(k => String(r[k as keyof RuleDTO] ?? '') === String(b[k] ?? (k === 'protocol' ? 'all' : k.endsWith('port') ? 0 : ''))))
-      const identity = (r: RuleDTO, b: Record<string, unknown>) => ['src_ip','dst_ip','src_cidr','dst_cidr','protocol','src_port','dst_port','ttl'].every(k => String(r[k as keyof RuleDTO] ?? '') === String(b[k] ?? (k === 'protocol' ? 'all' : k.endsWith('port') ? 0 : '')))
+      const identity = (r: RuleDTO, b: Record<string, unknown>) => ['src_ip','dst_ip','src_cidr','dst_cidr','protocol','src_port','dst_port',...conditionKeys].every(k => {
+        const fallback = k === 'protocol' ? 'all' : k.endsWith('port') || k === 'match_anomaly' ? 0 : ''
+        return String(r[k as keyof RuleDTO] ?? fallback) === String(b[k] ?? fallback)
+      })
+      const identical = (b: Record<string, unknown>) => rules.find(r => identity(r, b))
       const createRule = (item: Record<string, unknown>, pool: RuleDTO[], dry: boolean, refs = new Map<RuleDTO, number>(), index = 0) => {
         const error = validate(item, 'items.')
         if (error) return { error }
@@ -112,7 +138,7 @@ export function mockPlugin(): Plugin {
               }, stats_at: now, stats: {
                 system: {
                   cpu_percent: 24, mem_percent: 38
-                }
+                }, ipv6_deep_chain_dropped: 0
               }, rates: {
                 dropped_packets: 830400, passed_packets: 220000, dropped_bytes: 534600000, passed_bytes: 172500000
               }
@@ -124,7 +150,7 @@ export function mockPlugin(): Plugin {
               }, stats_at: now, stats: {
                 system: {
                   cpu_percent: 74, mem_percent: 63
-                }
+                }, ipv6_deep_chain_dropped: 1284
               }, rates: {
                 dropped_packets: 369600, passed_packets: 100000, dropped_bytes: 245400000, passed_bytes: 77500000
               }
@@ -358,7 +384,7 @@ export function mockPlugin(): Plugin {
         if (path === '/users' && req.method === 'POST') {
           if (!decode(['username','role','password'])) return
           const name = String(body.username ?? ''), role = String(body.role ?? ''), password = String(body.password ?? '')
-          if (!validName.test(name)) return invalid('username')
+          if ((!validName.test(name) || name === '.' || name === '..')) return invalid('username')
           if (!['admin','operator'].includes(role)) return invalid('role')
           if (bytes(password) < 10 || bytes(password) > 72) return invalid('password')
           if (users.some(row => row.username === name)) return accountError('user_exists')
@@ -387,7 +413,7 @@ export function mockPlugin(): Plugin {
         if (path === '/credentials' && req.method === 'GET') return reply(200, credentials.map(c => ({ ...c, active: active(c) })).sort((a,b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)))
         if (path === '/credentials' && req.method === 'POST') {
           if (!decode(['name'])) return
-          const name = String(body.name ?? ''); if (!validName.test(name)) return invalid('name')
+          const name = String(body.name ?? ''); if ((!validName.test(name) || name === '.' || name === '..')) return invalid('name')
           const at = now(), end = new Date(Date.now() + 86400000).toISOString().replace(/\.\d{3}Z$/, 'Z'), retired: { id: string; retire_at: string }[] = []
           for (const old of credentials) if (old.name === name && active(old) && (!old.retire_at || old.retire_at > end)) { old.retire_at = end; retired.push({ id: old.id, retire_at: end }) }
           const id = String(++serial).padStart(16, '0')
@@ -451,6 +477,7 @@ export function mockPlugin(): Plugin {
           if (req.method !== 'DELETE' && !decode(req.method === 'POST' ? ['name','base_url','api_key'] : ['base_url','api_key'])) return
           if (!name.trim()) return nodeError('name must not be empty')
           if (name.includes('/')) return nodeError("name must not contain '/'")
+          if (req.method === 'POST' && (!validName.test(name) || name === '.' || name === '..')) return nodeError("name must be 1..64 ASCII letters, digits, '.', '_' or '-', and not '.' or '..'")
           if (req.method !== 'DELETE' && (req.method === 'POST' && (body.base_url == null || body.api_key == null) || body.base_url == null && body.api_key == null)) return nodeError('node fields required')
           if (body.api_key != null && (bytes(String(body.api_key)) < 1 || bytes(String(body.api_key)) > 4096)) return nodeError('api_key must contain 1..4096 bytes')
           if (req.method === 'POST' && old) return reply(409, { code: 'rule_conflict', message: 'node already exists' })
@@ -500,14 +527,19 @@ export function mockPlugin(): Plugin {
         const changed = () => { ruleSeq++; for (const res of streams.keys()) frame(res) }
         if (path === '/rules' && req.method === 'GET') {
           const q = (url.searchParams.get('q') || '').trim(), state = url.searchParams.get('state')
-          if (q && !q.startsWith('rule_') && !/[.:]/.test(q)) return reply(400, { code: 'bad_request', field: 'q', message: 'query' })
-          const matched = rules.filter(r => !q || r.id === q || [r.src_ip,r.dst_ip,r.src_cidr,r.dst_cidr].some(a => a.includes(q)))
+          const byID = /^rule_[0-9a-f]{32}$/.test(q), target = network(q)
+          if (q && !byID && (!target || (!q.includes('/') && target.value === 0n))) return reply(400, { code: 'bad_request', field: 'q', message: 'invalid rule query' })
+          const matched = rules.filter(r => !q || (byID ? r.id === q : [r.src_ip,r.dst_ip,r.src_cidr,r.dst_cidr].some(raw => {
+            const candidate = network(raw)
+            return candidate && target && (q.includes('/') ? contains(target, candidate) : contains(candidate, target))
+          })))
           const counts = { all: matched.length, drop: matched.filter(r => r.enabled && r.action === 'drop').length, rate_limit: matched.filter(r => r.enabled && r.action === 'rate_limit').length, disabled: matched.filter(r => !r.enabled).length }
           const filtered = matched.filter(r => (!state || (state === 'disabled' ? !r.enabled : r.enabled && r.action === state)) && r.logical_id > Number(url.searchParams.get('after') || 0))
           const items = filtered.slice(0, Number(url.searchParams.get('limit') || 100))
           return reply(200, { items, next_after: filtered.length > items.length ? items.at(-1)!.logical_id : null, ...(url.searchParams.get('counts') === '1' ? { counts } : {}) })
         }
         if (url.pathname === '/__mock/fixtures') {
+          if (body.legacyNode) managedNodes.push({ ...seedSnapshot().nodes[2]!, name: 'edge 01#a', base_url: 'http://192.0.2.100', key_unreadable: false })
           emptyTemplates = Boolean(body.emptyTemplates); rejectBatch = Boolean(body.rejectBatch)
           auditCut = Boolean(body.auditCut); passwordThrottle = Boolean(body.passwordThrottle); auditEmpty = Boolean(body.auditEmpty); auditError = Boolean(body.auditError)
           nodeTestResult = body.nodeTest === 'incompatible' ? { reachable: true, compatible: false, key_accepted: true, message: '' } : body.nodeTest === 'unreachable' ? { reachable: false, compatible: false, key_accepted: false, message: 'node unreachable' } : { reachable: true, compatible: true, key_accepted: true, message: '' }
@@ -528,8 +560,8 @@ export function mockPlugin(): Plugin {
           }
           for (const key of ['src_ip','dst_ip'] as const) {
             if (b[key] && !isIP(b[key])) return bad('ip', 'invalid IP address')
-            if (isIP(b[key]) === 6) b[key] = new URL('http://[' + b[key] + ']').hostname.slice(1, -1)
-            if (/^::ffff:[0-9a-f]{1,4}:[0-9a-f]{1,4}$/i.test(b[key])) return reply(400, { code: 'mapped_ipv6', message: 'mapped' })
+            b[key] = canonicalAddress(b[key])
+            if (mappedAddress(b[key])) return reply(400, { code: 'mapped_ipv6', message: 'mapped' })
             if (['0.0.0.0','::'].includes(b[key])) b[key] = ''
           }
           if (b.src_ip && b.dst_ip && isIP(b.src_ip) !== isIP(b.dst_ip)) return reply(400, { code: 'address_family_mismatch', message: 'family' })
@@ -559,7 +591,7 @@ export function mockPlugin(): Plugin {
           return reply(200, { epoch: 'development', results })
         }
         if (path === '/rules' && req.method === 'POST') {
-          const error = validate(body); if (error) return reply(400, error)
+          const error = validate(body); if (error) return reply(error.code === 'condition_capacity' ? 409 : 400, error)
           const old = identical(body)
           const result = createRule(body, rules, false)
           if (result.error) return reply(409, result.error)
@@ -574,7 +606,7 @@ export function mockPlugin(): Plugin {
             rule.enabled = Boolean(body.enabled); changed(); return reply(200, { enabled: rule.enabled })
           }
           if (req.method === 'PATCH') {
-            const error = validate({ ...rule, ...body }); if (error) return reply(400, error)
+            const error = validate({ ...rule, ...body }); if (error) return reply(error.code === 'condition_capacity' ? 409 : 400, error)
             const old = identical({ ...rule, ...body })
             if (old && old.id !== rule.id) return reply(409, { code: 'rule_conflict', message: 'conflict', rule_id: old.id })
             apply(rule, body); changed()

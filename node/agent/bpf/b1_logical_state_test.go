@@ -147,12 +147,13 @@ func b1LogicalBucket(t *testing.T, c *ebpf.Collection, id uint32) b1Bucket {
 }
 func b1LogicalReset(t *testing.T, c *ebpf.Collection, cidr bool, slot, sel uint64) {
 	t.Helper()
-	if err := ClearDataMaps(c, []string{"blacklist", "blacklist_b", "cidr_blacklist", "cidr_blist_b", "cond_a", "cond_b", "cidr_cond_a", "cidr_cond_b"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"id_counts", "id_rl_states"} {
-		if _, err := ClearMapKeys(c.Maps[name]); err != nil {
-			t.Fatal(err)
+	for _, name := range []string{"blacklist", "blacklist_b", "cidr_blacklist", "cidr_blist_b", "cond_a", "cond_b", "cidr_cond_a", "cidr_cond_b", "id_counts", "id_rl_states"} {
+		m := c.Maps[name]
+		if m == nil {
+			t.Fatalf("reset %s: map missing", name)
+		}
+		if err := api.StrictClearAndRecount(m); err != nil {
+			t.Fatalf("reset %s: %v", name, err)
 		}
 	}
 	b1Config(t, c, cidr, slot, sel)

@@ -59,7 +59,7 @@ func TestAFDataPlane(t *testing.T) {
 	for _, c := range cells {
 		t.Run(c.name, func(t *testing.T) {
 			stats := main.Maps["stats"]
-			if stats.MaxEntries() != 9 && !(os.Getenv("AF_BASELINE_CONTROL") == "1" && stats.MaxEntries() == 5 && strings.HasPrefix(c.name, "D6/")) {
+			if stats.MaxEntries() != 10 && !(os.Getenv("TD149_BASELINE_CONTROL") == "1" && stats.MaxEntries() == 9) && !(os.Getenv("AF_BASELINE_CONTROL") == "1" && stats.MaxEntries() == 5 && strings.HasPrefix(c.name, "D6/")) {
 				t.Fatalf("AF stats schema=%d", stats.MaxEntries())
 			}
 			read := func() (out [6]uint64) {

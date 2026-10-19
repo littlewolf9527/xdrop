@@ -1,6 +1,6 @@
 --- a/node/agent/api/sync.go
 +++ b/node/agent/api/sync.go
-@@ -451,6 +451,9 @@
+@@ -459,6 +459,9 @@
  		}
  	}
  

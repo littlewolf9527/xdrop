@@ -30,6 +30,7 @@ func cut53MainEntryAborts(ip []byte) (bool, error) {
 		}
 		offset, proto = int(ip[0]&15)*4, ip[9]
 		nonfirst = binary.BigEndian.Uint16(ip[6:8])&8191 != 0
+		nonfirst = nonfirst || offset < 20
 		if offset > len(ip) {
 			return true, nil
 		}
@@ -160,7 +161,7 @@ func cut53IPv4Attributes(frame []byte) (eval.B1Packet, error) {
 	if len(ip) < total || len(ip)-total > max(0, 60-14-total) {
 		out.Anomaly |= 4
 	}
-	if !out.NonFirst && len(ip) >= hdr+4 && (out.Proto == 6 || out.Proto == 17) {
+	if hdr >= 20 && !out.NonFirst && len(ip) >= hdr+4 && (out.Proto == 6 || out.Proto == 17) {
 		out.Sport = binary.BigEndian.Uint16(ip[hdr : hdr+2])
 		out.Dport = binary.BigEndian.Uint16(ip[hdr+2 : hdr+4])
 		if out.Proto == 6 && len(ip) >= hdr+14 {
@@ -204,6 +205,13 @@ func TestCut53PendingFixtureInitialization(t *testing.T) {
 }
 
 func TestCut53MainEntryRawBounds(t *testing.T) {
+	t.Run("ihl4_tcp_short", func(t *testing.T) {
+		ip := make([]byte, 20)
+		ip[0], ip[9] = 0x44, 6
+		if got, err := cut53MainEntryAborts(ip); err != nil || got {
+			t.Fatalf("IHL=4 short TCP must have no L4: abort=%v err=%v", got, err)
+		}
+	})
 	for _, tc := range []struct {
 		name      string
 		proto     byte

@@ -86,6 +86,13 @@ func (h *Handlers) GetStats(c *gin.Context) {
 			}
 		}
 	}
+	var deepDropped uint64
+	var deepPerCPU []uint64
+	if err := h.stats.Lookup(uint32(9), &deepPerCPU); err == nil {
+		for _, v := range deepPerCPU {
+			deepDropped += v
+		}
+	}
 	c.JSON(http.StatusOK, Stats{
 		TotalBytes:         byteCounts[0],
 		DroppedBytes:       byteCounts[1],
@@ -96,6 +103,7 @@ func (h *Handlers) GetStats(c *gin.Context) {
 		WhitelistedPackets: current[3],
 		RateLimitedPackets: current[4],
 		MappedV6Dropped:    current[5],
+		IPv6DeepDropped:    deepDropped,
 		TailcallFail:       tailcallFail,
 		CondRowMissing:     condRowMissing,
 		RulesCount:         rulesCount,

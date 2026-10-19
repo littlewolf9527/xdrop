@@ -184,7 +184,7 @@ class WiringControls(unittest.TestCase):
         sup.expected = {'xdp_info': {'mode': 'traditional'}}
         first = dict(zip(COUNTERS, (6, 2, 4, 1, 1)))
         last = dict(zip(COUNTERS, (7, 2, 5, 1, 1)))
-        extras = dict(mapped_v6_dropped=0, cond_row_missing=0, tailcall_fail=0, rules_count=0,
+        extras = dict(ipv6_deep_chain_dropped=0, mapped_v6_dropped=0, cond_row_missing=0, tailcall_fail=0, rules_count=0,
                       whitelist_count=0, system={}, agent_state={})
         installed, whitelist = dict(count=0, rules=[]), dict(count=0, entries=[])
         sup.data, sup.expected_a = {'Scenes': []}, {}

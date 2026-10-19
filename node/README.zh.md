@@ -29,6 +29,7 @@ Linux 节点 agent 加载 `xdrop_main.elf`、`xdrop_gate.elf`，挂载 XDP 并�
 | `bpf.pinning` | auto（默认）、require 或 disable |
 | `bpf.xdp_mode` | auto（默认）、native 或 generic |
 | `bpf.rate_limit_divisor` | 启动时 CPU 除数，见下文 |
+| `bpf.ipv6_deep_chain_drop` | 布尔值，缺省 true；丢弃超过 6 层的 IPv6 扩展头链，改值需重启；即使关闭，启动写槽前仍按缺省丢弃。 |
 | `auth.node_api_key` | 必填 X-API-Key；空值（含全空白）或占位符拒绝启动 |
 | `fast_forward.enabled`, `fast_forward.pairs` | 可选 FF 模式，默认关闭；启用时必须恰有一对接口 |
 
@@ -69,4 +70,4 @@ SIGTERM 停止采样并关闭 BPF/link 描述符；已 pin 的 XDP link 可能�
 
 回滚保留配套 agent/ELF 组合；只替换一个 ELF 不是完整构建。替换文件前停止，重启后检查健康与下发结果。map 结构变化可能重建已 pin 的 map；pinning 不是策略备份。每台恢复确认后再升级下一台。
 
-`auth.node_api_key` 必填；空值（含全空白）或占位符拒绝启动，启动前须生成真实密钥。出处：[`config.Config.Validate`](agent/config/config.go)。
+配置里的未知键会拒绝启动并报出键名；已废弃的 `auth.controller_url` / `auth.controller_sync_key` 仍接受并告警。`auth.node_api_key` 必填；空值（含全空白）、首尾空白或占位符拒绝启动，启动前须生成真实密钥。出处：[`config.Config.Validate`](agent/config/config.go)。

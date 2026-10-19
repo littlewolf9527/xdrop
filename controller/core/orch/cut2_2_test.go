@@ -66,10 +66,6 @@ func reviewSuccessSecrets(t *testing.T) {
 				need(t, r.m.Status()[0].Stats["diagnostic-[redacted]"] != nil, "stats sample missing")
 			} else {
 				need(t, reconcileOnce(t, r, 0).Result == "equal", "stats altered comparison")
-				r.m.mu.Lock()
-				b, err := json.Marshal(r.m.nodes[0].ruleStats)
-				r.m.mu.Unlock()
-				need(t, err == nil && !strings.Contains(string(b), secret) && strings.Contains(string(b), "[redacted]"), "rule stats cache leaked")
 			}
 			for _, format := range []string{"%v", "%+v", "%#v"} {
 				need(t, !strings.Contains(fmt.Sprintf(format, r.m.Status()), secret), "successful response leaked through Status")

@@ -82,11 +82,13 @@ func ctlCut1Whitelist(t *testing.T, in WhitelistEntry) (accepted, ioReached bool
 		}
 	}()
 	h := newWLValidationHandlers()
+	h.quiescer = cut5ReceiptFunc(func() error { return nil })
 	err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "ctlcut1-wl", SrcIP: in.SrcIP, DstIP: in.DstIP, SrcPort: in.SrcPort, DstPort: in.DstPort, Protocol: in.Protocol}})
 	if _, bad := err.(*wlSyncValidationError); bad {
 		return false, false
 	}
-	return true, true
+	t.Fatalf("accepted whitelist did not reach table I/O panic: %v", err)
+	return false, false
 }
 func ctlCut1Observe(t *testing.T, c ctlCut1Case) ctlCut1Verdict {
 	t.Helper()

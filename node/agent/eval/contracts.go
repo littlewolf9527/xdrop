@@ -53,9 +53,9 @@ var historicalRoster = map[string]int{
 // with explicit root, real-path containment, and these same source identities.
 var contractHashes = map[Contract]map[string]string{
 	B1: {
-		"node/bpf/xdrop.h":       "e60b53bbc2257207d7baae7bc2099c35f789648eb4bb33af9cbd73aeaf29ad3b",
+		"node/bpf/xdrop.h":       "5ee6476f593669a317b8f06b6c5a39821779d718b2905ee18861ffa5dfbf5a4a",
 		"node/bpf/combo_masks.h": "b296d4d1798f7fdff7d0b42484e38bbab930e57ed499510a63f1fe5dc3470172",
-		"node/bpf/xdrop_gate.c":  "e262d577799ca3e0aa4e41b7b946d4f1e6052a2f156e69f7cad83350f6026501",
+		"node/bpf/xdrop_gate.c":  "4b5c4bad6354e8e918ea3055026e1eb5348f24712de584c5ff37b45ef6b4c605",
 	},
 	PreS2a: {
 		"node/bpf/xdrop.h":       "5beb7825c01f141f054981cbd810cb08b7ca9721765219e447583ecca1cb62cf",

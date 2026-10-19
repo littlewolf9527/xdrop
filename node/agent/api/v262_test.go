@@ -6,10 +6,6 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -157,26 +153,6 @@ func TestValidateNodeAnomalyFields_CompoundBitIPv6Rejected(t *testing.T) {
 // validateNodeAnomalyFields BEFORE any BPF interaction. Constructing a
 // Handlers stub with nil BPF maps is safe because rejection happens in the
 // validation phase before any map access.
-
-// runHandler invokes the handler in test mode and returns status + parsed body.
-func runHandler(handler gin.HandlerFunc, method, path string, body interface{}) (int, map[string]interface{}) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	var buf *bytes.Buffer
-	if body != nil {
-		b, _ := json.Marshal(body)
-		buf = bytes.NewBuffer(b)
-	} else {
-		buf = bytes.NewBuffer(nil)
-	}
-	req, _ := http.NewRequest(method, path, buf)
-	req.Header.Set("Content-Type", "application/json")
-	c.Request = req
-	handler(c)
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	return w.Code, resp
-}
 
 // TestBatchInputs_RejectedByAnomalyGuard verifies the per-item validation
 // helper rejects illegal anomaly inputs. The full AddRulesBatch handler

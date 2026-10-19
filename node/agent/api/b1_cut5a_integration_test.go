@@ -133,6 +133,7 @@ func TestB1Cut5AReceiptSequence(t *testing.T) {
 	h, _ := jiaHandler(t)
 	var trace []string
 	proof, flipped, released := false, false, false
+	wlStart := -1
 	fail := false
 	atomicStageTestHook = func(stage string, got *Handlers) {
 		if got != h {
@@ -166,11 +167,11 @@ func TestB1Cut5AReceiptSequence(t *testing.T) {
 			h.publishMu.Unlock()
 			t.Fatal("receipt released publishMu")
 		}
-		if flipped && !released {
+		if wlStart < 0 && flipped && !released {
 			t.Fatalf("R5c before 5b: %v", trace)
 		}
 		label := "R0"
-		if flipped {
+		if wlStart < 0 && flipped || wlStart >= 0 && h.activeSlot != wlStart {
 			label = "R5c"
 		}
 		trace = append(trace, label)
@@ -189,16 +190,19 @@ func TestB1Cut5AReceiptSequence(t *testing.T) {
 		}
 	}
 	plain := Rule{LogicalID: 544001, ID: "pure", SrcIP: "203.0.113.1", Action: "drop"}
-	if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "10.7.0.1"}}); err != nil {
+	wlStart = h.activeSlot
+	if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "192.0.2.1"}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(trace) != 0 || h.quiescenceConfirmed {
-		t.Fatal("pure increment invoked receipt or failed to mark pending")
+	wlStart = -1
+	if strings.Join(trace, ",") != "R0,R5c" || !h.quiescenceConfirmed {
+		t.Fatalf("whitelist receipt sequence=%v", trace)
 	}
+	trace = nil
 	a := Rule{ID: "a", SrcCIDR: "192.0.2.0/24", Action: "drop", LogicalID: 3}
 	b := Rule{ID: "b", SrcCIDR: "198.51.100.0/24", Action: "drop", LogicalID: 7}
 	run([]Rule{a}, false)
-	if strings.Join(trace, ",") != "R0,1,3a,flip,5b,R5c,6" {
+	if strings.Join(trace, ",") != "1,3a,flip,5b,R5c,6" {
 		t.Fatalf("first operation sequence=%v", trace)
 	}
 	// A/B reuse twice; each opposite config reuse has a successful receipt
@@ -213,29 +217,32 @@ func TestB1Cut5AReceiptSequence(t *testing.T) {
 	for _, increment := range []string{"whitelist"} {
 		t.Run(increment, func(t *testing.T) {
 			trace = nil
-			if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "10.7.0.3"}}); err != nil {
+			wlStart = h.activeSlot
+			if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "192.0.2.3"}}); err != nil {
 				t.Fatal(err)
 			}
-			if len(trace) != 0 || h.quiescenceConfirmed {
-				t.Fatal("increment receipt or missing pending marker")
+			wlStart = -1
+			if strings.Join(trace, ",") != "R5c" || !h.quiescenceConfirmed {
+				t.Fatalf("confirmed whitelist receipt sequence=%v", trace)
 			}
-			proof = false
+			trace = nil
 			run([]Rule{b}, false)
-			if trace[0] != "R0" {
-				t.Fatalf("increment flip missing R0: %v", trace)
+			if strings.Join(trace, ",") != "1,3a,flip,5b,R5c,6" {
+				t.Fatalf("rule sync after confirmed whitelist=%v", trace)
 			}
 		})
 	}
 	// A whitelist publication, failed atomic flip, then another full sync.
-	if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "10.7.0.4"}}); err != nil {
+	wlStart = h.activeSlot
+	if err := h.DoWhitelistAtomicSync([]SyncWhitelistEntry{{ID: "w", SrcIP: "192.0.2.4"}}); err != nil {
 		t.Fatal(err)
 	}
-	proof = false
+	wlStart = -1
 	trace = nil
 	restore := dingFreezeFlip(t, h)
 	run([]Rule{a}, true)
 	restore()
-	if strings.Join(trace, ",") != "R0,1,3a" {
+	if strings.Join(trace, ",") != "1,3a" {
 		t.Fatalf("failed flip sequence=%v", trace)
 	}
 	trace = nil
@@ -279,7 +286,7 @@ func TestB1Cut5AReceiptSequence(t *testing.T) {
 	if strings.Join(trace, ",") != "R0,1,3a,flip,5b,R5c,6" {
 		t.Fatalf("deferred R0 repayment=%v", trace)
 	}
-	t.Log("B1_CUT5A_SEQUENCE whitelist_flip=2 reuse=2 flip_failure=1 shadow_failure=1 R5c_failure=1 recovered=1")
+	t.Log("B1_CUT5A_SEQUENCE whitelist_flip=3 reuse=2 flip_failure=1 shadow_failure=1 R5c_failure=1 recovered=1")
 }
 
 func TestB1Cut5AR0FailureNoWrites(t *testing.T) {

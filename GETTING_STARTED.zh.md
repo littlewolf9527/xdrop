@@ -71,17 +71,31 @@ curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n
 会话 cookie 始终带 `Secure`，浏览器用纯 HTTP 无法保持登录。在回环监听前放一个 HTTPS 反向代理：
 
 - 代理运行在控制器主机上。控制器只信任来自回环地址的 `X-Forwarded-For`，因此只有代理从 `127.0.0.1` 或 `::1` 连入时，审计记录才会显示真实的客户端地址。
+- 在代理上限制登录频率。控制器对同一用户名的连续失败逐次延迟、从不锁号，但不按客户端限制尝试次数，用不存在的用户名尝试也不限。下面的 nginx 示例对每个客户端地址每分钟放行 10 次登录请求，突发 5 次。
 - 转发 `/` 下的全部路径：控制台、`/api/v1/` 和事件流 `/api/v1/events`。控制器会为事件流关闭代理缓冲（`X-Accel-Buffering: no`），并每 15 秒发送一次保活，代理用默认超时即可。
 
 nginx（替换域名和证书路径；上游为第 3 节的 `CTL_LISTEN` 地址）：
 
 ```nginx
+# limit_req_zone 只能写在 http 上下文；/etc/nginx/conf.d/ 下的文件本来就在其中。
+limit_req_zone $binary_remote_addr zone=xdrop_login:10m rate=10r/m;
+
 server {
     listen 443 ssl;
     server_name xdrop.example.com;
 
     ssl_certificate     /etc/ssl/xdrop/fullchain.pem;
     ssl_certificate_key /etc/ssl/xdrop/privkey.pem;
+
+    location = /api/v1/auth/login {
+        limit_req zone=xdrop_login burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -93,7 +107,7 @@ server {
 }
 ```
 
-Caddy（域名解析到本机且 80/443 端口可达时，自动申请并续期证书；否则在块内加一行 `tls <cert-file> <key-file>`）：
+Caddy（域名解析到本机且 80/443 端口可达时，自动申请并续期证书；否则在块内加一行 `tls <cert-file> <key-file>`）。Caddy 标准版没有请求限速，需用限速模块或防火墙规则限制 `POST /api/v1/auth/login`，或改用 nginx：
 
 ```
 xdrop.example.com {

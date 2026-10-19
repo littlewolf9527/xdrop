@@ -78,7 +78,7 @@ Rule 包含规范化匹配字段及 `id,logical_id,kind,group_key,cond_key,enabl
 
 条件 `ttl,dscp,icmp_type,icmp_code,pkt_len` 使用逗号分隔的无符号十进制值或闭区间，可加前缀 `!`。取值域依次为 0..255、0..63、0..255、0..255、0..65535。fragment 表达式使用 nofrag、first、middle、last、frag、nonfirst，并要求 IPv4 锚点。ICMP 字段要求 ICMP/ICMPv6。条件组最多容纳四个物理候选，表达式展开可能占用多个候选。
 
-match_anomaly 是任意位命中掩码：1 异常分片、2 无效报文、4 长度不一致、8 IPv4 TCP 分片偏移为一。仅接受这四个位；位 1 和 8 不支持 IPv6，并要求有界目标。
+match_anomaly 是任意位命中掩码：1 异常分片、2 无效报文、4 长度不一致、8 IPv4 TCP 分片偏移为一。仅接受这四个位；位 1 和 8 不支持 IPv6，并要求有界目标。 IPv6 上 bit 2（invalid）只检查紧跟 IPv6 固定头的 TCP（数据偏移 < 5）；扩展头之后的 TCP 不检查。IPv6 包在 6 个扩展头内到不了传输层、扩展头读不全、或为非首分片时，视为没有传输层：端口与 TCP 标志条件不命中，地址 / 网段 / 包长 / 异常规则照常生效。
 
 规则与白名单分页返回 `{items,next_after}`。limit 默认 100、范围 1..1000。规则使用非负 logical_id 游标并按 logical_id 递增；白名单使用字符串 ID 游标。结束时 next_after 为 null。规则还接受 q（ID、IP 或前缀）、state=drop/rate_limit/disabled、counts=1；counts 忽略 state/分页但遵守 q。
 
@@ -86,7 +86,7 @@ match_anomaly 是任意位命中掩码：1 异常分片、2 无效报文、4 长
 
 ## 节点与运维数据
 
-节点创建要求名称唯一、非空且不含 `/`；base_url 为带主机的 http/https URL，不能含用户信息、查询或 fragment；api_key 为 1..4096 字节。PATCH 至少包含 URL 或密钥，名称不可变。密钥只写。更新会替换运行客户端并安排完整同步；删除停止该节点工作任务但不清除远端策略。未保存及已存节点测试返回可达性、协议兼容性、密钥接受情况和已脱敏消息，不跟随重定向。
+节点创建要求名称唯一，且遵守下方用户名规则；base_url 为带主机的 http/https URL，不能含用户信息、查询或 fragment；api_key 为 1..4096 字节。PATCH 至少包含 URL 或密钥，名称不可变；更新与删除不复核名称规则。密钥只写。更新会替换运行客户端并安排完整同步；删除停止该节点工作任务但不清除远端策略。未保存及已存节点测试返回可达性、协议兼容性、密钥接受情况和已脱敏消息，不跟随重定向。
 
 节点列表项包含 `name,base_url,key_unreadable,online,incompatible,rules,whitelist,health,health_at,stats,stats_at,rates,overload`。每侧报告 `state,reason,since,confirmed_gen,confirmable,rejected`。通过 `/capacity` 查看准入维度/上限，通过 `/system` 查看控制器指标、节点计数与对账结果。
 
@@ -94,7 +94,7 @@ match_anomaly 是任意位命中掩码：1 异常分片、2 无效报文、4 长
 
 ## 用户、凭证、设置与模板
 
-用户/凭证名称使用 1..64 个 ASCII 字母、数字、点、下划线或连字符；密码为 10..72 字节。角色为 admin/operator。禁止删除或降级最后一名管理员。用户响应包含 username、role、created_at、created_by、password_changed_at。
+用户/凭证/节点名称使用 1..64 个 ASCII 字母、数字、点、下划线或连字符，且不能是 `.` 或 `..`（只在创建时校验）；密码为 10..72 字节。角色为 admin/operator。禁止删除或降级最后一名管理员。用户响应包含 username、role、created_at、created_by、password_changed_at。
 
 新签发机器密钥仅显示一次。同名重新签发会创建新密钥，并使此前有效密钥最迟在 24 小时后退休；认领身份仍使用名称。撤销凭证不删除认领。列表仅含元数据，不含密钥明文。
 
@@ -120,7 +120,7 @@ Events 使用 text/event-stream，包含 rules、nodes、traffic 三类事件。
 
 ## 错误
 
-错误格式为 `{"code":"invalid_rule","message":"...","field":"dst_port"}`。可选上下文字段为 field、rule_id、rule_ids、table；批量项错误采用相同格式。内部失败仅返回 `internal error`，登录限流包含 Retry-After。
+错误格式为 `{"code":"invalid_rule","message":"...","field":"dst_port"}`。可选上下文字段为 field、rule_id、rule_ids、table；批量项错误采用相同格式。内部失败仅返回 `internal error`，登录限流包含 Retry-After。rule_conflict 也用于 POST /nodes 的节点重名，以及 POST /templates、PUT /templates/{id} 的模板重名。
 
 | code | HTTP |
 |---|---|
@@ -136,6 +136,7 @@ Events 使用 text/event-stream，包含 rules、nodes、traffic 三类事件。
 | invalid_rule | 400 |
 | empty_value | 400 |
 | invalid_expires_in | 400 |
+| mapped_ipv6 | 400 |
 | address_family_mismatch | 400 |
 | bad_request | 400 |
 | batch_too_large | 400 |

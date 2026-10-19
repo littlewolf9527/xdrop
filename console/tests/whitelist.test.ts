@@ -1,3 +1,4 @@
+import { protocolOptions } from '../src/rules'
 import { it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { ElDropdown, ElDropdownItem } from 'element-plus'
@@ -81,4 +82,22 @@ it('r1 V27 whitelist comment and creator remain literal text without markup elem
   const w=await mountPage(),cells=w.get('[data-whitelist-id="markup"]').findAll('td')
   expect(cells[4]!.element.textContent).toBe(comment);expect(cells[5]!.element.textContent).toBe(creator)
   expect(w.get('table').element.querySelector('img')).toBeNull();expect(w.get('table').element.querySelector('b')).toBeNull()
+})
+
+it('FE G1 whitelist drawer uses the shared protocol object', async () => {
+  expect(((await mountDrawer()).vm.$ as any).setupState.protocolOptions).toBe(protocolOptions)
+})
+it('FE G2 collects all 60 pages until null', async () => {
+  let page = 0
+  hooks.request.mockImplementation(async () => { page++; return { items: [make(String(page))], next_after: page === 60 ? null : String(page) } })
+  const w = await mountPage()
+  expect(w.findAll('[data-whitelist-id]').map(row => row.attributes('data-whitelist-id'))).toEqual(Array.from({ length: 60 }, (_, i) => String(i + 1)))
+  expect(hooks.request).toHaveBeenCalledTimes(60); expect(w.find('[role=alert]').exists()).toBe(false)
+})
+it('FE G2 repeated cursor stops within two requests and shows an error', async () => {
+  let calls = 0
+  hooks.request.mockImplementation(async () => ({ items: [make(String(++calls))], next_after: calls >= 4 ? null : 'same' }))
+  const w = await mountPage()
+  expect.soft(hooks.request.mock.calls.length).toBeLessThanOrEqual(2)
+  expect(w.get('[role=alert]').text()).toBe(i18n.global.t('operationFailed')); expect(w.findAll('[data-whitelist-id]')).toHaveLength(0)
 })

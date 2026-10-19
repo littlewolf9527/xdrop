@@ -419,30 +419,6 @@ func listRules(q Queryer, suffix string, args ...any) ([]Rule, error) {
 	return out, rows.Err()
 }
 
-type Prefix struct{ ID, CIDR string }
-
-// EnabledPrefixes reads only one direction, excluding the candidate's old row.
-func EnabledPrefixes(q Queryer, source bool, except string) ([]Prefix, error) {
-	column := "dst_cidr"
-	if source {
-		column = "src_cidr"
-	}
-	rows, err := q.Query("SELECT id,"+column+" FROM rules WHERE enabled=1 AND id<>? AND "+column+"<>'' ORDER BY id", except)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Prefix{}
-	for rows.Next() {
-		var p Prefix
-		if err := rows.Scan(&p.ID, &p.CIDR); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
-}
-
 var ErrLogicalFull = errors.New("logical ID space exhausted")
 
 func NextLogicalID(q Queryer) (int64, error) {

@@ -12,7 +12,7 @@ type RuleStats struct {
 
 // Rule is the API representation of a rule
 type Rule struct {
-	LogicalID uint32  `json:"logical_id,omitempty"`
+	LogicalID uint32  `json:"logical_id"`
 	TTL       *string `json:"ttl,omitempty"`
 	DSCP      *string `json:"dscp,omitempty"`
 	ICMPType  *string `json:"icmp_type,omitempty"`
@@ -27,7 +27,7 @@ type Rule struct {
 	DstCIDR      string     `json:"dst_cidr,omitempty"`
 	SrcPort      uint16     `json:"src_port,omitempty"`
 	DstPort      uint16     `json:"dst_port,omitempty"`
-	Protocol     string     `json:"protocol,omitempty"`
+	Protocol     string     `json:"protocol"`
 	Action       string     `json:"action"`
 	RateLimit    uint32     `json:"rate_limit,omitempty"`
 	PktLenMin    uint16     `json:"pkt_len_min,omitempty"`
@@ -73,6 +73,7 @@ type Stats struct {
 	WhitelistedPackets uint64       `json:"whitelisted_packets"`
 	RateLimitedPackets uint64       `json:"rate_limited_packets"`
 	MappedV6Dropped    uint64       `json:"mapped_v6_dropped"`
+	IPv6DeepDropped    uint64       `json:"ipv6_deep_chain_dropped"`
 	CondRowMissing     uint64       `json:"cond_row_missing"`
 	TailcallFail       uint64       `json:"tailcall_fail"` // Phase 8: gate→main tail-call failures (non-zero = BL chain bypassed)
 	RulesCount         int          `json:"rules_count"`

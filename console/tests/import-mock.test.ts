@@ -69,3 +69,61 @@ it('r2 V32 accepts canonical non-mapped IPv6 with an ffff segment',async()=>{
   const result=await api('/api/v1/whitelist',{src_ip:'0:0:0:0:ffff:0:c000:201'})
   expect(result.status).toBe(201);expect(result.data.src_ip).toBe('::ffff:0:c000:201')
 })
+
+it.each(['icmp','icmpv6','igmp','gre','esp'])('FE G4 protocol %s rejects ports', async protocol => {
+  expect(await api('/api/v1/rules', { dst_ip: '192.0.2.250', protocol, dst_port: 53 })).toEqual({ status: 400, data: { code: 'invalid_rule', field: 'protocol', message: 'protocol does not support ports' } })
+})
+it.each(['bad::ip','2001:db8:::1','2001:db8::1%eth0'])('FE G4 invalid IP has the backend envelope %s', async dst_ip => {
+  expect(await api('/api/v1/rules', { dst_ip })).toEqual({ status: 400, data: { code: 'invalid_rule', field: 'ip', message: 'invalid IP address' } })
+})
+it.each(['::ffff:192.0.2.1','0:0:0:0:0:ffff:c000:201'])('FE G4 mapped IPv6 rejects %s', async dst_ip => {
+  expect(await api('/api/v1/rules', { dst_ip })).toEqual({ status: 400, data: { code: 'mapped_ipv6', message: 'IPv4-mapped IPv6 is not supported; use IPv4 192.0.2.1' } })
+})
+it('FE G4 mapped IPv6 prefix uses the backend message', async () => {
+  expect(await api('/api/v1/rules', { dst_cidr: '::ffff:192.0.2.1/120' })).toEqual({ status: 400, data: { code: 'mapped_ipv6', message: 'IPv4-mapped IPv6 prefix is not supported; use IPv4 192.0.2.0/24' } })
+})
+it.each([['src_port',-1],['dst_port',65536]])('FE G4 port range %s is exact', async (field, value) => {
+  expect(await api('/api/v1/rules', { dst_ip: '192.0.2.250', [field]: value })).toEqual({ status: 400, data: { code: 'invalid_rule', field, message: 'port out of range' } })
+})
+it.each([['ttl','64'],['dscp','1'],['pkt_len','64'],['icmp_type','1'],['icmp_code','1'],['fragment','first'],['tcp_flags','SYN'],['match_anomaly',2]])('FE G4 condition identity includes %s', async (field, value) => {
+  const item = { dst_ip: '203.0.113.201', protocol: String(field).startsWith('icmp_') ? 'icmp' : 'tcp' }
+  const first = await api('/api/v1/rules', item), second = await api('/api/v1/rules', { ...item, [field]: value })
+  expect(first.status).toBe(201); expect(second.status).toBe(201); expect(second.data.id).not.toBe(first.data.id)
+  const dry = await api('/api/v1/rules/batch?validate=1', { items: [item, { ...item, [field]: value }] })
+  expect(dry.data.results.map((r:any) => r.rule.id)).toEqual([first.data.id, second.data.id])
+})
+it('FE G4 omitted match_anomaly and explicit zero share identity', async () => {
+  const item = { dst_ip: '203.0.113.201', protocol: 'tcp' }, first = await api('/api/v1/rules', item)
+  expect(await api('/api/v1/rules', { ...item, match_anomaly: 0 })).toMatchObject({ status: 200, data: { id: first.data.id, existing: true } })
+  const dry = await api('/api/v1/rules/batch?validate=1', { items: [item, { ...item, match_anomaly: 0 }] })
+  expect(dry.data.results.map((r:any) => r.rule.id)).toEqual([first.data.id, first.data.id])
+})
+async function queryFixture() {
+  const items = [{ dst_ip: '203.0.113.201' }, { src_ip: '203.0.113.202' }, { dst_cidr: '203.0.113.192/28' }, { src_cidr: '203.0.113.192/27' }, { dst_cidr: '203.0.113.0/24' }, { dst_ip: '203.0.113.231' }]
+  const ids: string[] = []
+  for (const item of items) { const r = await api('/api/v1/rules', item); expect(r.status).toBe(201); ids.push(r.data.id) }
+  return ids
+}
+const query = async (q: string) => api('/api/v1/rules?limit=1000&q=' + encodeURIComponent(q))
+it('FE G4 ID query is exact', async () => {
+  const ids = await queryFixture()
+  expect((await query(ids[0]!)).data.items.map((r:any) => r.id)).toEqual([ids[0]])
+  expect(await query(ids[0]!.slice(0,-1))).toEqual({ status: 400, data: { code: 'bad_request', field: 'q', message: 'invalid rule query' } })
+  expect(await query('2001:db8::1%eth0')).toEqual({ status: 400, data: { code: 'bad_request', field: 'q', message: 'invalid rule query' } })
+})
+it('FE G4 IP query includes its covering networks', async () => {
+  const ids = await queryFixture()
+  expect((await query('203.0.113.201')).data.items.map((r:any) => r.id)).toEqual([ids[0],ids[2],ids[3],ids[4]])
+})
+it('FE G4 network query includes addresses and equal or narrower networks', async () => {
+  const ids = await queryFixture()
+  expect((await query('203.0.113.199/27')).data.items.map((r:any) => r.id)).toEqual(ids.slice(0,4))
+})
+it('FE G4 IPv6 query canonicalizes compressed addresses and network boundaries', async () => {
+  const host = await api('/api/v1/rules', { dst_ip: '2001:db8:1::1' }), prefix = await api('/api/v1/rules', { src_cidr: '2001:db8:1::/64' })
+  await api('/api/v1/rules', { dst_ip: '2001:db8:2::1' })
+  for (const q of ['2001:0db8:1:0:0:0:0:1','2001:db8:1::/64']) expect((await query(q)).data.items.map((r:any) => r.id)).toEqual([host.data.id,prefix.data.id])
+})
+it('FE G4 synthetic condition capacity fixture maps to 409', async () => {
+  expect(await api('/api/v1/rules', { dst_ip: '192.0.2.250', ttl: '1,2,3,4,5' })).toMatchObject({ status: 409, data: { code: 'condition_capacity' } })
+})

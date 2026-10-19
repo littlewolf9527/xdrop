@@ -1,6 +1,6 @@
 --- a/node/agent/main.go
 +++ b/node/agent/main.go
-@@ -667,7 +667,7 @@
+@@ -693,7 +693,7 @@
  	filterOn := pair.GetFilterOn()
  	switch filterOn {
  	case "inbound":

@@ -3,7 +3,9 @@ import { ApiError } from './api/client'
 export type RuleQuery = { q: string; state: '' | 'drop' | 'rate_limit' | 'disabled' }
 export type FetchRules = (path: string) => Promise<RulePage>
 export const conditionKeys = ['ttl', 'dscp', 'pkt_len', 'icmp_type', 'icmp_code', 'fragment', 'tcp_flags', 'match_anomaly'] as const
-const numeric = ['src_port', 'dst_port', 'match_anomaly', 'rate_limit']
+export const protocolOptions = ['all','tcp','udp','icmp','icmpv6','igmp','gre','esp'] as const
+export const conditionRanges: Record<string, string> = { ttl: '0–255', dscp: '0–63', pkt_len: '0–65535', icmp_type: '0–255', icmp_code: '0–255', match_anomaly: '1–15' }
+export const numeric = ['src_port', 'dst_port', 'match_anomaly', 'rate_limit']
 const fields = ['protocol', 'src_port', 'dst_port', ...conditionKeys, 'action', 'rate_limit', 'comment']
 export function rulePath(query: RuleQuery, limit: number, after = 0, counts = false) {
   const p = new URLSearchParams({ limit: String(limit) })

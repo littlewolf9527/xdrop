@@ -1,31 +1,5 @@
 package api
 
-import "fmt"
-
-// Condition fields are opaque metadata until knife five. Reject presence, not
-// truthiness: an empty expression is still explicitly provided.
-func rejectConditionFields(ttl, dscp, icmpType, icmpCode, fragment, pktLen *string) error {
-	for _, field := range []struct {
-		name  string
-		value *string
-	}{
-		{"ttl", ttl}, {"dscp", dscp}, {"icmp_type", icmpType},
-		{"icmp_code", icmpCode}, {"fragment", fragment}, {"pkt_len", pktLen},
-	} {
-		if field.value != nil {
-			return fmt.Errorf("condition field %s is not supported yet", field.name)
-		}
-	}
-	return nil
-}
-
-func (r Rule) rejectConditions() error {
-	return rejectConditionFields(r.TTL, r.DSCP, r.ICMPType, r.ICMPCode, r.Fragment, r.PktLen)
-}
-func (r SyncRule) rejectConditions() error {
-	return rejectConditionFields(r.TTL, r.DSCP, r.ICMPType, r.ICMPCode, r.Fragment, r.PktLen)
-}
-
 func ruleToStored(key RuleKey, r Rule) StoredRule {
 	return StoredRule{
 		Key:          key,
