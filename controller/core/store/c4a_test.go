@@ -24,21 +24,35 @@ func TestC4AStore(t *testing.T) {
 				_, err = raw.Exec(schemaV1 + `CREATE TABLE schema_version(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL); INSERT INTO schema_version VALUES(1,1);`)
 				check(err)
 				check(InsertRule(raw, Rule{ID: "rule_test", LogicalID: 1, Match: Match{DstIP: "192.0.2.1", Action: "drop"}, Kind: "exact", GroupKey: "test-group", CondKey: "test-condition", CreatedAt: "2026-10-12T00:00:00Z", UpdatedAt: "2026-10-12T00:00:00Z", CreatedBy: "ui", UpdatedBy: "ui"}))
-				check(Claim(raw, "rule_test", "ui", "", "2026-10-12T00:00:00Z"))
+				_, err = raw.Exec("INSERT INTO claims(rule_id,claimant,claim_ref,created_at) VALUES(?,?,?,?)", "rule_test", "ui", "", "2026-10-12T00:00:00Z")
+				check(err)
 				check(InsertWhitelist(raw, Whitelist{ID: "wl_test", DstIP: "192.0.2.2", Key: "test-wl", CreatedBy: "ui", CreatedAt: "2026-10-12T00:00:00Z"}))
 				before = c4aRows(t, raw, []string{"rules", "claims", "whitelist", "logical_id_hw"})
 				check(raw.Close())
 			}
 			db, err := Open(path)
 			check(err)
-			if v1 && !reflect.DeepEqual(before, c4aRows(t, db, []string{"rules", "claims", "whitelist", "logical_id_hw"})) {
-				t.Fatal("v1 data changed")
+			if v1 {
+				after := c4aRows(t, db, []string{"rules", "claims", "whitelist", "logical_id_hw"})
+				for i, row := range after {
+					if row[0] == "claims" {
+						after[i] = row[:5]
+					}
+				}
+				if !reflect.DeepEqual(before, after) {
+					t.Fatal("v1 data changed")
+				}
+				var mismatched int
+				check(db.QueryRow("SELECT COUNT(*) FROM claims c JOIN rules r ON r.id=c.rule_id WHERE c.expires_at IS NOT r.expires_at").Scan(&mismatched))
+				if mismatched != 0 {
+					t.Fatal("claim expiry backfill", mismatched)
+				}
 			}
 			var version, tables, hours int
 			check(db.QueryRow("SELECT version FROM schema_version").Scan(&version))
 			check(db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','credentials','settings','audit','user_prefs','templates','nodes','traffic_1m','traffic_1h')").Scan(&tables))
 			check(db.QueryRow("SELECT value FROM settings WHERE key='session_hours'").Scan(&hours))
-			if version != 6 || tables != 10 || hours != 24 {
+			if version != 7 || tables != 10 || hours != 24 {
 				t.Fatalf("version=%d tables=%d hours=%d", version, tables, hours)
 			}
 			var retention int
@@ -53,7 +67,7 @@ func TestC4AStore(t *testing.T) {
 			if !reflect.DeepEqual(snapshot, c4aRows(t, db, all)) {
 				t.Fatal("migration not idempotent")
 			}
-			_, err = db.Exec("UPDATE schema_version SET version=7")
+			_, err = db.Exec("UPDATE schema_version SET version=8")
 			check(err)
 			check(db.Close())
 			future, err := Open(path)
@@ -61,7 +75,7 @@ func TestC4AStore(t *testing.T) {
 				future.Close()
 			}
 			if err == nil {
-				t.Fatal("version 7 accepted")
+				t.Fatal("version 8 accepted")
 			}
 		}
 	})

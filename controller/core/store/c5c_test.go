@@ -37,7 +37,7 @@ func c5cSeed(t *testing.T, db *DB, table string, n int, ts int64) {
 func TestC5CStore(t *testing.T) {
 	t.Run("migration", func(t *testing.T) {
 		db := c5cDB(t)
-		_, e := db.Exec("DROP TABLE traffic_1m; DROP TABLE traffic_1h; DELETE FROM settings WHERE key='history_retention_days'; UPDATE schema_version SET version=5")
+		_, e := db.Exec("ALTER TABLE claims DROP COLUMN expires_at; DROP TABLE traffic_1m; DROP TABLE traffic_1h; DELETE FROM settings WHERE key='history_retention_days'; UPDATE schema_version SET version=5")
 		c5cMust(t, e)
 		c5cMust(t, db.Migrate())
 		c5cMust(t, db.Migrate())
@@ -45,13 +45,13 @@ func TestC5CStore(t *testing.T) {
 		c5cMust(t, db.QueryRow("SELECT version FROM schema_version").Scan(&version))
 		c5cMust(t, db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('traffic_1m','traffic_1h') AND type='table'").Scan(&tables))
 		c5cMust(t, db.QueryRow("SELECT value FROM settings WHERE key='history_retention_days'").Scan(&setting))
-		if version != 6 || tables != 2 || setting != 30 {
+		if version != 7 || tables != 2 || setting != 30 {
 			t.Fatal(version, tables, setting)
 		}
-		_, e = db.Exec("UPDATE schema_version SET version=7")
+		_, e = db.Exec("UPDATE schema_version SET version=8")
 		c5cMust(t, e)
 		if db.Migrate() == nil {
-			t.Fatal("v7 accepted")
+			t.Fatal("v8 accepted")
 		}
 		t.Log("v5_to_v6=1 idempotent=1 tables=2 retention_default=30 v7_rejected=1")
 	})

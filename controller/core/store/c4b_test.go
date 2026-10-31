@@ -37,7 +37,8 @@ func TestC4BStore(t *testing.T) {
 					}
 					must(InsertCredential(raw, Credential{ID: "test-key-id", Name: "seed", SecretHash: "TEST_ONLY_SECRET_HASH", CreatedAt: u.CreatedAt, CreatedBy: "cli"}))
 					must(InsertRule(raw, Rule{ID: "rule_seed", LogicalID: 1, Match: Match{DstIP: "192.0.2.1", Action: "drop"}, Kind: "exact", GroupKey: "seed", CondKey: "seed", CreatedAt: u.CreatedAt, UpdatedAt: u.CreatedAt, CreatedBy: "ui", UpdatedBy: "ui"}))
-					must(Claim(raw, "rule_seed", "ui", "", u.CreatedAt))
+					_, err = raw.Exec("INSERT INTO claims(rule_id,claimant,claim_ref,created_at) VALUES(?,?,?,?)", "rule_seed", "ui", "", u.CreatedAt)
+					must(err)
 					must(InsertWhitelist(raw, Whitelist{ID: "wl_seed", DstIP: "192.0.2.2", Key: "seed", CreatedAt: u.CreatedAt, CreatedBy: "ui"}))
 					before = c4aRows(t, raw, oldTables)
 					must(raw.Close())
@@ -49,6 +50,9 @@ func TestC4BStore(t *testing.T) {
 					after := c4aRows(t, db, oldTables)
 					filtered := [][]string{}
 					for _, row := range after {
+						if row[0] == "claims" {
+							row = row[:5]
+						}
 						if row[0] == "users" {
 							if row[len(row)-1] != "value:admin" {
 								t.Fatal("migrated role")
@@ -62,6 +66,11 @@ func TestC4BStore(t *testing.T) {
 					if !reflect.DeepEqual(before, filtered) {
 						t.Fatal("v2 data changed", before, filtered)
 					}
+					var mismatched int
+					must(db.QueryRow("SELECT COUNT(*) FROM claims c JOIN rules r ON r.id=c.rule_id WHERE c.expires_at IS NOT r.expires_at").Scan(&mismatched))
+					if mismatched != 0 {
+						t.Fatal("claim expiry backfill", mismatched)
+					}
 				}
 				var v, tables, indexes, settings, sequence int
 				must(db.QueryRow("SELECT version FROM schema_version").Scan(&v))
@@ -71,7 +80,7 @@ func TestC4BStore(t *testing.T) {
 				must(db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&settings))
 				s, err := ReadSettings(db)
 				must(err)
-				if v != 6 || tables != 1 || indexes != 1 || sequence != 0 || settings != 5 || s.SessionHours != 24 || s.AuditRetentionDays != 180 || s.ReconcileIntervalMinutes != 15 || s.DefaultLanguage != 3 || s.HistoryRetentionDays != 30 {
+				if v != 7 || tables != 1 || indexes != 1 || sequence != 0 || settings != 5 || s.SessionHours != 24 || s.AuditRetentionDays != 180 || s.ReconcileIntervalMinutes != 15 || s.DefaultLanguage != 3 || s.HistoryRetentionDays != 30 {
 					t.Fatal("schema v4", v, tables, indexes, sequence, settings, s)
 				}
 				all := append(append([]string{}, oldTables...), "audit", "schema_version", "traffic_1m", "traffic_1h")
@@ -81,14 +90,14 @@ func TestC4BStore(t *testing.T) {
 				if !reflect.DeepEqual(snapshot, c4aRows(t, db, all)) {
 					t.Fatal("not idempotent")
 				}
-				_, err = db.Exec("UPDATE schema_version SET version=7")
+				_, err = db.Exec("UPDATE schema_version SET version=8")
 				must(err)
 				future, err := Open(path)
 				if future != nil {
 					future.Close()
 				}
 				if err == nil {
-					t.Fatal("version 7 accepted")
+					t.Fatal("version 8 accepted")
 				}
 			})
 		}

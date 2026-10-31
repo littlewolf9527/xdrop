@@ -70,7 +70,7 @@ A Rule contains the canonical match fields plus `id,logical_id,kind,group_key,co
 
 Create returns 201 for a new row, 200 with existing=true for identical identity/action/rate. Renewal extends expiry but does not enable a disabled rule or overwrite its comment. A conflicting action/rate returns rule_conflict. Writes acknowledge committed storage before delivery.
 
-Machines own claims by credential name and claim_ref; machine DELETE releases only that claim, with final release deleting the rule. UI DELETE removes the rule and all claims. Batch takes 1..500 items with independent transactions; inspect each result. `validate=1` simulates admission without persistence; simulated new IDs are empty and gen is omitted.
+Machines own claims by credential name and claim_ref; machine DELETE releases only that claim, with final release deleting the rule. Releasing a claim that is not the last one recomputes the rule expiry as the latest expiry among the remaining claims; a permanent remaining claim keeps the rule permanent. UI DELETE removes the rule and all claims. Batch takes 1..500 items with independent transactions; inspect each result. `validate=1` simulates admission without persistence; simulated new IDs are empty and gen is omitted.
 
 Delivery requires gen and the process epoch returned by create. States are `pending,confirmed,disabled,offline,incompatible,overloaded,rejected`. A process restart changes epoch and returns gen_epoch_mismatch for an old value; obtain current node/creation state before retrying. Confirmation concerns the configured rule generation, not measured matching packets.
 

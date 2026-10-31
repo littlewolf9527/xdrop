@@ -70,7 +70,7 @@ Rule 包含规范化匹配字段及 `id,logical_id,kind,group_key,cond_key,enabl
 
 新建返回 201；相同身份/动作/速率返回 200 且 existing=true。续期延长有效期，但不会启用已禁用规则或覆盖注释。动作/速率冲突返回 rule_conflict。写入确认数据库提交后才异步下发。
 
-机器按凭证名称与 claim_ref 认领；机器 DELETE 仅释放该认领，最后一份释放才删除规则。UI DELETE 删除规则及全部认领。批量接受 1..500 项，每项独立事务，必须逐项检查结果。`validate=1` 模拟准入但不持久化；模拟新增 ID 为空且不含 gen。
+机器按凭证名称与 claim_ref 认领；机器 DELETE 仅释放该认领，最后一份释放才删除规则。释放非最后一份认领时，规则期限重算为剩余认领中最晚的期限；剩余认领里有永久的，规则保持永久。UI DELETE 删除规则及全部认领。批量接受 1..500 项，每项独立事务，必须逐项检查结果。`validate=1` 模拟准入但不持久化；模拟新增 ID 为空且不含 gen。
 
 下发查询要求创建返回的 gen 与进程 epoch。状态为 `pending,confirmed,disabled,offline,incompatible,overloaded,rejected`。进程重启会改变 epoch，旧值返回 gen_epoch_mismatch；重试前读取当前节点/创建状态。确认针对规则配置代次，不表示已测得匹配报文。
 

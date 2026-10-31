@@ -27,6 +27,7 @@
     "dev": "vite",
     "dev:real": "vite --mode real",
     "build": "vue-tsc --noEmit && vite build",
+    "build:demo": "vue-tsc --noEmit && vite build --config vite.demo.config.ts",
     "test": "vitest run"
   }
 }

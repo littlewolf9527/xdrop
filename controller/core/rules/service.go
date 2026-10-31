@@ -217,13 +217,23 @@ func claimRefFor(a Actor, ref string) string {
 	}
 	return ref
 }
+func later(a, b *string) *string {
+	if a == nil {
+		return a
+	}
+	if b == nil {
+		return b
+	}
+	if *b > *a {
+		return b
+	}
+	return a
+}
 func existingResult(r, proposed store.Rule) (Result, *Error) {
 	if r.Action != proposed.Action || r.RateLimit != proposed.RateLimit {
 		return Result{}, conflict(r.ID)
 	}
-	if r.ExpiresAt != nil && (proposed.ExpiresAt == nil || *proposed.ExpiresAt > *r.ExpiresAt) {
-		r.ExpiresAt = proposed.ExpiresAt
-	}
+	r.ExpiresAt = later(r.ExpiresAt, proposed.ExpiresAt)
 	return Result{Rule: r, Existing: true}, nil
 }
 func (s *Service) existing(a Actor, ref string, r, proposed store.Rule) (Result, *Error) {
@@ -244,9 +254,25 @@ func (s *Service) existing(a Actor, ref string, r, proposed store.Rule) (Result,
 			}
 		}
 		at := s.now().UTC().Format(timeFormat)
-		added, err := store.AddClaim(tx, r.ID, a.String(), claimRefFor(a, ref), at)
-		if err != nil || !added {
+		n, err := store.ClaimCount(tx, r.ID)
+		if err != nil {
 			return err
+		}
+		expiresAt := proposed.ExpiresAt
+		if n == 0 {
+			expiresAt = result.Rule.ExpiresAt
+		}
+		claimRef := claimRefFor(a, ref)
+		added, err := store.AddClaim(tx, r.ID, a.String(), claimRef, at, expiresAt)
+		if err != nil {
+			return err
+		}
+		if !added {
+			oldExpiry, err := store.ClaimExpiry(tx, r.ID, a.String(), claimRef)
+			if err != nil {
+				return err
+			}
+			return store.SetClaimExpiry(tx, r.ID, a.String(), claimRef, later(oldExpiry, proposed.ExpiresAt))
 		}
 		return recordRule(tx, a, "rule.claim", r.ID, at, before)
 	})
@@ -315,7 +341,7 @@ func (s *Service) create(a Actor, ref string, p RulePatch, change *Change, candi
 		if err = store.InsertRule(tx, r); err != nil {
 			return err
 		}
-		if err := store.Claim(tx, r.ID, a.String(), claimRefFor(a, ref), r.CreatedAt); err != nil {
+		if err := store.Claim(tx, r.ID, a.String(), claimRefFor(a, ref), r.CreatedAt, r.ExpiresAt); err != nil {
 			return err
 		}
 		return recordRule(tx, a, "rule.create", r.ID, r.CreatedAt, nil)
@@ -484,7 +510,15 @@ func (s *Service) Update(a Actor, id string, p RulePatch) (result store.Rule, e 
 		r.UpdatedAt = s.now().UTC().Format(timeFormat)
 		r.UpdatedBy = a.Who()
 		if err = s.transaction(func(tx *sql.Tx) error {
-			return ruleChange(tx, a, "rule.update", r.ID, r.UpdatedAt, func() error { return store.UpdateRule(tx, r) })
+			return ruleChange(tx, a, "rule.update", r.ID, r.UpdatedAt, func() error {
+				if err := store.UpdateRule(tx, r); err != nil {
+					return err
+				}
+				if p.ExpiresIn != nil {
+					return store.SetClaimsExpiry(tx, r.ID, r.ExpiresAt)
+				}
+				return nil
+			})
 		}); err != nil {
 			if store.Unique(err) {
 				if other, e := store.Identity(s.db, r.GroupKey, r.CondKey); e == nil {
@@ -547,7 +581,7 @@ func (s *Service) ReleaseClaim(a Actor, id, ref string) *Error {
 		if err != nil {
 			return internal(err)
 		}
-		deleted := false
+		deleted, renewed := false, false
 		err = s.transaction(func(tx *sql.Tx) error {
 			before, err := ruleView(tx, id)
 			if err != nil {
@@ -566,6 +600,18 @@ func (s *Service) ReleaseClaim(a Actor, id, ref string) *Error {
 				if err := store.DeleteRule(tx, id); err != nil {
 					return err
 				}
+			} else {
+				expiresAt, err := store.LatestClaimExpiry(tx, id)
+				if err != nil {
+					return err
+				}
+				renewed = (r.ExpiresAt == nil) != (expiresAt == nil) || (r.ExpiresAt != nil && expiresAt != nil && *r.ExpiresAt != *expiresAt)
+				if renewed {
+					r.ExpiresAt = expiresAt
+					if err := store.UpdateRule(tx, r); err != nil {
+						return err
+					}
+				}
 			}
 			return recordRule(tx, a, "rule.release", id, s.now().UTC().Format(timeFormat), before)
 		})
@@ -576,6 +622,7 @@ func (s *Service) ReleaseClaim(a Actor, id, ref string) *Error {
 			s.ledger.change(r, -1)
 			c.RuleKeys = append(c.RuleKeys, r.GroupKey)
 		}
+		s.renewed = s.renewed || renewed
 		return nil
 	})
 }

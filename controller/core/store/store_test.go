@@ -18,7 +18,7 @@ func TestCtlCut1Store(t *testing.T) {
 				t.Fatalf("%s=%d want=%d err=%v", name, got, want, e)
 			}
 		}
-		if e := Claim(db, "missing", "ui", "", "2026-10-10T00:00:00Z"); e == nil {
+		if e := Claim(db, "missing", "ui", "", "2026-10-10T00:00:00Z", nil); e == nil {
 			t.Fatal("foreign key did not reject orphan claim")
 		}
 		if _, e := db.Exec("INSERT INTO schema_version VALUES(2,1)"); e == nil {

@@ -66,7 +66,7 @@
 | nodes | `{epoch,nodes,reconcile}` |
 | traffic | `{overview:{dropped_pps,passed_pps,dropped_bytes_ps,passed_bytes_ps,nodes_online,nodes_total},top}` |
 
-seq 为进程内成功改动规则 / 白名单行的提交计数，含仅续期；批次部分成功只加一次。失败、零行、纯审计、只改认领不增加；释放最后认领并删规则会增加。gen 保持节点同步语义，续期不增加。
+seq 为进程内成功改动规则 / 白名单行的提交计数，包括期限续期，以及释放认领引起的期限变化；批次部分成功只加一次。失败、零行、纯审计、只改认领不增加；释放最后认领并删规则会增加。gen 保持节点同步语义，续期不增加。
 epoch / nodes 与 GET /nodes 完整回包同形。reconcile 按节点名给出 `{rules,whitelist}`，取同一 Status 快照，投影与 /system 的 `{last_at,result}` 相同。overview 速率为该快照各节点 Rates 求和，缺失按零；节点总数 / 在线数按合并后的节点列表计算，含库有 orch 无的行。top 与 GET /traffic/top?n=5 同形、共用缓存。Top 占比分母为规则 Hits 速率之和，overview dropped 为节点 Stats 合计；两者口径与缓存采样不同。
 
 每次连接前三条依次为 rules、nodes、traffic 全量快照。热缓存是 hub 最近一拍的值，至多落后一拍；冷连接等下一拍现取。订阅者归零清空三类缓存；重连重新收全量，无重放缓冲、事件 ID 或 Last-Event-ID 续传。每订阅者每类只保留一个最新待发值；已取出正在写的值属于在途发送。
@@ -146,7 +146,7 @@ POST /rules/batch?validate=1 复用提交的解码、500 上限、规范化、�
 只校验有两类 ID 合同例外：新建成功及命中批内新项的 existing 均回 rule.id=""（空串表示尚未分配）并省略 gen；库内 existing 保留真实 ID，也省略 gen。错误的 rule_id/rule_ids 指向本批项时回 `batch:<原始零基 index>`，指向库内规则仍是真实 ID；任何临时内部 ID 都不外露。
 真提交遇 condition_capacity/cidr_overlap 时，单条新建的 rule_ids 去掉被拒候选自身；批量真提交以 `batch:<原始零基 index>` 代替该候选，同批此前已提交项保留真实 ID。更新与启停错误保留已入库候选的 ID。
 
-UI 建规则带 (ui, 空认领号)；机器带 (cred:name, claim_ref)，未带认领号为空串。同一三元组幂等，不同名字/认领号加一份（G4）。机器 DELETE 的 claim_ref 放 query，只撤自己的份额，最后一份撤掉才删；UI DELETE 强删全部。不存在或已撤同样返回 204（G5）。启停、删除与白名单删除不回 gen，可看 /nodes；机器撤认领没有逐条下发查询。
+UI 建规则带 (ui, 空认领号)；机器带 (cred:name, claim_ref)，未带认领号为空串。同一三元组幂等，不同名字/认领号加一份（G4）。机器 DELETE 的 claim_ref 放 query，只撤自己的份额，最后一份撤掉才删；UI DELETE 强删全部。释放非最后一份认领时，规则期限重算为剩余认领中最晚的期限；剩余认领里有永久的，规则保持永久。不存在或已撤同样返回 204（G5）。启停、删除与白名单删除不回 gen，可看 /nodes；机器撤认领没有逐条下发查询。
 
 ## 分页与白名单
 

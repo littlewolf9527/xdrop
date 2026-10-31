@@ -62,13 +62,13 @@ UPDATE settings SET value=48 WHERE key='session_hours';UPDATE settings SET value
 		}
 		var version int
 		must(db.QueryRow("SELECT version FROM schema_version").Scan(&version))
-		if version != 6 {
+		if version != 7 {
 			t.Fatal("schema version")
 		}
-		_, err = db.Exec("UPDATE schema_version SET version=7")
+		_, err = db.Exec("UPDATE schema_version SET version=8")
 		must(err)
 		if db.Migrate() == nil {
-			t.Fatal("v7 accepted")
+			t.Fatal("v8 accepted")
 		}
 		t.Log("migrated_users=2 preserved_sessions=1 preserved_audit=1 old_settings=2")
 	})

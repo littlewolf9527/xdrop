@@ -87,7 +87,7 @@ func TestC5ALab(t *testing.T) {
 		raw, err := sql.Open("sqlite3", dbpath)
 		require(t, err == nil, "upgraded database")
 		var version int
-		require(t, raw.QueryRow("SELECT version FROM schema_version").Scan(&version) == nil && version == 6, "binary v3 upgrade")
+		require(t, raw.QueryRow("SELECT version FROM schema_version").Scan(&version) == nil && version == 7, "binary v3 upgrade")
 		require(t, raw.Close() == nil, "close inspection")
 		operatorPassword := c4aSecret(t)
 		s.record(t, "password", operatorPassword)

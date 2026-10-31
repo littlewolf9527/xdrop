@@ -127,7 +127,7 @@ func TestCtlCut1(t *testing.T) {
 			}
 			var version int
 			e = db.QueryRow("SELECT version FROM schema_version").Scan(&version)
-			check(t, e == nil && version == 6, "schema", version, e)
+			check(t, e == nil && version == 7, "schema", version, e)
 			var mode string
 			e = db.QueryRow("PRAGMA journal_mode").Scan(&mode)
 			check(t, e == nil && mode == "wal", "journal", mode, e)

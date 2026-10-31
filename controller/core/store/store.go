@@ -101,6 +101,10 @@ CREATE TABLE claims (
  PRIMARY KEY(rule_id, claimant, claim_ref)
 );`
 
+const schemaV7 = `
+ALTER TABLE claims ADD COLUMN expires_at TEXT;
+UPDATE claims SET expires_at=(SELECT expires_at FROM rules WHERE rules.id=claims.rule_id);`
+
 func Open(path string) (*DB, error) {
 	p, err := filepath.Abs(path)
 	if err != nil {
@@ -178,7 +182,7 @@ func (db *DB) Migrate() error {
 	if err = tx.QueryRow("SELECT COUNT(*), COALESCE(MAX(version),0) FROM schema_version").Scan(&count, &version); err != nil {
 		return err
 	}
-	if count > 1 || version < 0 || version > 6 {
+	if count > 1 || version < 0 || version > 7 {
 		return fmt.Errorf("unsupported schema version %d (%d rows)", version, count)
 	}
 	if count == 0 {
@@ -236,6 +240,15 @@ func (db *DB) Migrate() error {
 			return err
 		}
 		if _, err = tx.Exec("UPDATE schema_version SET version=6"); err != nil {
+			return err
+		}
+		version = 6
+	}
+	if version == 6 {
+		if _, err = tx.Exec(schemaV7); err != nil {
+			return err
+		}
+		if _, err = tx.Exec("UPDATE schema_version SET version=7"); err != nil {
 			return err
 		}
 	}
@@ -438,9 +451,29 @@ func NextLogicalID(q Queryer) (int64, error) {
 	return id, err
 }
 
-func Claim(q Queryer, id, claimant, ref, now string) error {
-	_, err := q.Exec("INSERT OR IGNORE INTO claims(rule_id,claimant,claim_ref,created_at) VALUES(?,?,?,?)", id, claimant, ref, now)
+func Claim(q Queryer, id, claimant, ref, now string, expiresAt *string) error {
+	_, err := q.Exec("INSERT OR IGNORE INTO claims(rule_id,claimant,claim_ref,created_at,expires_at) VALUES(?,?,?,?,?)", id, claimant, ref, now, expiresAt)
 	return err
+}
+func ClaimExpiry(q Queryer, id, claimant, ref string) (*string, error) {
+	var expiresAt *string
+	err := q.QueryRow("SELECT expires_at FROM claims WHERE rule_id=? AND claimant=? AND claim_ref=?", id, claimant, ref).Scan(&expiresAt)
+	return expiresAt, err
+}
+func SetClaimExpiry(q Queryer, id, claimant, ref string, expiresAt *string) error {
+	_, err := q.Exec("UPDATE claims SET expires_at=? WHERE rule_id=? AND claimant=? AND claim_ref=?", expiresAt, id, claimant, ref)
+	return err
+}
+func SetClaimsExpiry(q Queryer, id string, expiresAt *string) error {
+	_, err := q.Exec("UPDATE claims SET expires_at=? WHERE rule_id=?", expiresAt, id)
+	return err
+}
+
+// LatestClaimExpiry treats a permanent claim as later than every finite expiry.
+func LatestClaimExpiry(q Queryer, id string) (*string, error) {
+	var expiresAt *string
+	err := q.QueryRow("SELECT CASE WHEN COUNT(*)=COUNT(expires_at) THEN MAX(expires_at) END FROM claims WHERE rule_id=?", id).Scan(&expiresAt)
+	return expiresAt, err
 }
 func Release(q Queryer, id, claimant, ref string) (bool, error) {
 	return changed(q.Exec("DELETE FROM claims WHERE rule_id=? AND claimant=? AND claim_ref=?", id, claimant, ref))

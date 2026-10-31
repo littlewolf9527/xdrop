@@ -95,4 +95,5 @@ docs/
 __pycache__/
 *.pyc
 /console/node_modules/
+/console/demo-dist/
 /controller/core/webui/build/

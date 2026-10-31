@@ -21,8 +21,7 @@ interface Response {
   writeHead(status: number, headers: Record<string, string>): void;
 
 }
-const netModule = 'node:net'
-const { isIP } = await import(netModule) as { isIP(value: string): number }
+import { isIP } from './ip'
 const canonicalAddress = (raw: string) => isIP(raw) === 6 ? new URL('http://[' + raw + ']').hostname.slice(1, -1) : raw
 const mappedAddress = (raw: string) => /^::ffff:[0-9a-f]{1,4}:[0-9a-f]{1,4}$/i.test(canonicalAddress(raw))
 const ipv4 = (value: bigint) => [24n,16n,8n,0n].map(shift => Number(value >> shift & 255n)).join('.')
@@ -38,7 +37,8 @@ function network(raw: string) {
 const contains = (outer: NonNullable<ReturnType<typeof network>>, inner: NonNullable<ReturnType<typeof network>>) =>
   outer.width === inner.width && outer.bits <= inner.bits && outer.value === inner.value >> BigInt(outer.width - outer.bits) << BigInt(outer.width - outer.bits)
 // Positive build-scan control: XDROP_MOCK_ONLY /__mock/revoke
-export function mockPlugin(): Plugin {
+export function mockPlugin(options?: { profile?: 'fixture' | 'demo' }): Plugin {
+  const profile = options?.profile ?? 'fixture'
   return {
     name: 'xdrop-development-mock', configureServer(server) {
       const prefs: Record<string, unknown> = {
@@ -76,7 +76,7 @@ export function mockPlugin(): Plugin {
           }
         }
         if (b.expires_in && !/^(?:[0-9]+[hms])+$/.test(String(b.expires_in))) return { code: 'invalid_expires_in', message: 'duration' }
-        if (b.ttl === '1,2,3,4,5') return { code: 'condition_capacity', message: 'capacity', rule_ids: [rules[1]!.id, 'batch:0'] }
+        if (profile !== 'demo' && b.ttl === '1,2,3,4,5') return { code: 'condition_capacity', message: 'capacity', rule_ids: [rules[1]!.id, 'batch:0'] }
       }
       const apply = (r: RuleDTO, b: Record<string, unknown>) => {
         const patch = { ...b }; delete patch.expires_in
@@ -201,7 +201,7 @@ export function mockPlugin(): Plugin {
           }, candidates: {
             limit: 4, full_keys: 0, near_keys: 0
           }, rules: {
-            enabled: 1284, total: 1300
+            enabled: profile === 'demo' ? rules.filter(r => r.enabled === true).length : 1284, total: profile === 'demo' ? rules.length : 1300
           }, overloaded_nodes: []
         }
 
@@ -248,6 +248,7 @@ export function mockPlugin(): Plugin {
           res.setHeader('Content-Type', 'application/json');
           res.end(value === undefined ? '' : JSON.stringify(value))
         }
+        if (profile === 'demo' && url.pathname.startsWith('/__mock/')) return reply(404, { code: 'not_found', message: 'not found' })
         const token = req.headers.cookie?.split(';').map(s => s.trim()).find(s => s.startsWith('xdrop_session='))?.split('=')[1] ?? ''
         const user = sessions.get(token)
         const currentUser = users.find(row => row.username === user)
@@ -270,20 +271,20 @@ export function mockPlugin(): Plugin {
           }
         }
         if (path === '/auth/login') {
-          const name = String(body.username), attempts = failures.get(name) || 0
-          if (attempts >= 3) {
+          const requested = String(body.username ?? ''), name = profile === 'demo' ? (users.find(row => row.username === requested) || [...users].filter(row => row.role === 'admin').sort((a,b) => a.username < b.username ? -1 : a.username > b.username ? 1 : 0)[0])!.username : String(body.username), attempts = failures.get(name) || 0
+          if (profile !== 'demo' && attempts >= 3) {
             res.setHeader('Retry-After', '60');
             return reply(429, {
               code: 'login_throttled', message: 'login failed'
             })
           }
-          if (!passwords.has(name) || body.password !== passwords.get(name)) {
-            failures.set(name, attempts + 1);
+          if (profile === 'demo' ? !requested || !String(body.password ?? '') : !passwords.has(name) || body.password !== passwords.get(name)) {
+            if (profile !== 'demo') failures.set(name, attempts + 1);
             return reply(401, {
               code: 'invalid_credentials', message: 'invalid credentials'
             })
           }
-          failures.delete(name);
+          if (profile !== 'demo') failures.delete(name);
           const id = 'development-' + ++serial;
           sessions.set(id, name)
           res.setHeader('Set-Cookie', `xdrop_session=${id}; Path=/api/v1; HttpOnly; SameSite=Strict`)
@@ -317,12 +318,12 @@ export function mockPlugin(): Plugin {
           if (Object.keys(body).some(k => !['current_password','password'].includes(k)) || ['current_password','password'].some(k => k in body && typeof body[k] !== 'string')) return reply(400, { code: 'bad_request', message: 'bad request' })
           const size = new TextEncoder().encode(String(body.password || '')).length
           if (size < 10 || size > 72) return reply(400, { code: 'invalid_field', field: 'password', message: 'invalid field' })
-          if (passwordThrottle || (failures.get(user) || 0) >= 3) return reply(429, { code: 'login_throttled', message: 'login failed' })
-          if (body.current_password !== 'example-password-1') {
-            failures.set(user, (failures.get(user) || 0) + 1)
+          if (profile !== 'demo' && (passwordThrottle || (failures.get(user) || 0) >= 3)) return reply(429, { code: 'login_throttled', message: 'login failed' })
+          if (profile === 'demo' ? !body.current_password : body.current_password !== 'example-password-1') {
+            if (profile !== 'demo') failures.set(user, (failures.get(user) || 0) + 1)
             return reply(401, { code: 'invalid_credentials', message: 'invalid credentials' })
           }
-          failures.delete(user)
+          if (profile !== 'demo') failures.delete(user)
           for (const [id, name] of sessions) if (name === user) {
             sessions.delete(id)
             for (const [stream, session] of streams) if (session === id) { stream.end(); streams.delete(stream) }
@@ -495,7 +496,7 @@ export function mockPlugin(): Plugin {
         if (path === '/nodes') return reply(200, snapshot())
         if (path === '/capacity') return reply(200, capacity())
         if (path === '/traffic/top' && url.searchParams.get('n') === 'all') return reply(200, {
-          ...top(), updated_at: topReads++ === 0 ? null : new Date().toISOString(), incomplete: false,
+          ...top(), updated_at: profile !== 'demo' && topReads++ === 0 ? null : new Date().toISOString(), incomplete: false,
           rules: rules.filter((r, i) => r.enabled && i % 8 === 1).map(r => ({ rule_id: r.id, target: r.dst_ip, dropped_pps: 1250, dropped_bytes_ps: 80000, share: .1, nodes: 1 })),
         })
         if (path === '/traffic/top') return reply(200, top())
@@ -602,7 +603,7 @@ export function mockPlugin(): Plugin {
           if (req.method === 'DELETE') { if (i >= 0) rules.splice(i, 1); changed(); return reply(204) }
           if (!rule) return reply(404, { code: 'not_found', message: 'not found' })
           if (req.method === 'PUT') {
-            if (rule.logical_id === 1) return reply(409, { code: 'condition_capacity', message: 'capacity', rule_ids: [rules[1]!.id] })
+            if (profile !== 'demo' && rule.logical_id === 1) return reply(409, { code: 'condition_capacity', message: 'capacity', rule_ids: [rules[1]!.id] })
             rule.enabled = Boolean(body.enabled); changed(); return reply(200, { enabled: rule.enabled })
           }
           if (req.method === 'PATCH') {
@@ -626,8 +627,8 @@ export function mockPlugin(): Plugin {
         }
         if (path === '/system') return reply(200, {
           controller: {
-            started_at: new Date().toISOString(), uptime_seconds: 120, db_bytes: 4096, rules_enabled: 1284, rules_total: 1300, whitelist:
-              37, go_mem: {
+            started_at: new Date().toISOString(), uptime_seconds: 120, db_bytes: 4096, rules_enabled: profile === 'demo' ? rules.filter(r => r.enabled === true).length : 1284, rules_total: profile === 'demo' ? rules.length : 1300, whitelist:
+              profile === 'demo' ? whitelist.length : 37, go_mem: {
               alloc_bytes: 4096, sys_bytes: 8192
             }
           }, nodes: []

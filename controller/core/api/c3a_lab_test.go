@@ -83,7 +83,7 @@ func labSeed(t *testing.T, path string) {
 		id, err := store.NextLogicalID(tx)
 		require(t, err == nil, err)
 		r := store.Rule{ID: fmt.Sprintf("rule_%032x", id), LogicalID: id, Match: c.RuleInput, Kind: c.Kind, GroupKey: c.GroupKey, CondKey: c.CondKey, Enabled: true, CreatedAt: "2026-10-11T00:00:00Z", UpdatedAt: "2026-10-11T00:00:00Z", CreatedBy: "ui", UpdatedBy: "ui"}
-		require(t, store.InsertRule(tx, r) == nil && store.Claim(tx, r.ID, "ui", "", r.CreatedAt) == nil, "seed persistence")
+		require(t, store.InsertRule(tx, r) == nil && store.Claim(tx, r.ID, "ui", "", r.CreatedAt, r.ExpiresAt) == nil, "seed persistence")
 	}
 	require(t, tx.Commit() == nil, "seed commit")
 	report, e := rules.Prepare(db)

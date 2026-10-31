@@ -118,8 +118,8 @@ func changed(r interface{ RowsAffected() (int64, error) }, err error) (bool, err
 	n, err := r.RowsAffected()
 	return n == 1, err
 }
-func AddClaim(q Queryer, id, claimant, ref, now string) (bool, error) {
-	return changed(q.Exec("INSERT OR IGNORE INTO claims(rule_id,claimant,claim_ref,created_at) VALUES(?,?,?,?)", id, claimant, ref, now))
+func AddClaim(q Queryer, id, claimant, ref, now string, expiresAt *string) (bool, error) {
+	return changed(q.Exec("INSERT OR IGNORE INTO claims(rule_id,claimant,claim_ref,created_at,expires_at) VALUES(?,?,?,?,?)", id, claimant, ref, now, expiresAt))
 }
 func GetWhitelist(q Queryer, id string) (w Whitelist, err error) {
 	err = q.QueryRow("SELECT id,src_ip,dst_ip,src_port,dst_port,protocol,wl_key,comment,created_at,created_by FROM whitelist WHERE id=?", id).Scan(&w.ID, &w.SrcIP, &w.DstIP, &w.SrcPort, &w.DstPort, &w.Protocol, &w.Key, &w.Comment, &w.CreatedAt, &w.CreatedBy)

@@ -487,7 +487,7 @@ func (h *labHarness) seed(n int) {
 		need(h.t, e == nil, e)
 		row := store.Rule{ID: fmt.Sprintf("rule_%032x", id), LogicalID: id, Match: c.RuleInput, Kind: c.Kind, GroupKey: c.GroupKey, CondKey: c.CondKey, Enabled: true, CreatedAt: "2026-10-11T00:00:00Z", UpdatedAt: "2026-10-11T00:00:00Z", CreatedBy: "ui", UpdatedBy: "ui"}
 		need(h.t, store.InsertRule(tx, row) == nil, "seed insert")
-		need(h.t, store.Claim(tx, row.ID, "ui", "", row.CreatedAt) == nil, "seed claim")
+		need(h.t, store.Claim(tx, row.ID, "ui", "", row.CreatedAt, row.ExpiresAt) == nil, "seed claim")
 	}
 	need(h.t, tx.Commit() == nil, "seed commit")
 	report, e := rules.Prepare(h.db)

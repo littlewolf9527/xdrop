@@ -10,6 +10,7 @@
   [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
   [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-orange?logo=anthropic)](https://claude.com/product/claude-code)
 
+  [在线演示（示例数据）](https://littlewolf9527.github.io/xdrop/)
   [English](README.md)
 </div>
 

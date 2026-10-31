@@ -23,7 +23,7 @@ func TestC4BCLI(t *testing.T) {
 		c4aAssert(t, e == nil, "database")
 		defer db.Close()
 		c4aAssert(t, store.InsertRule(db, store.Rule{ID: "rule_seed", LogicalID: 1, Match: store.Match{DstIP: "192.0.2.2", Action: "drop"}, GroupKey: "test", CondKey: "test", CreatedAt: "2026-10-12T00:00:00Z", UpdatedAt: "2026-10-12T00:00:00Z", CreatedBy: "ui", UpdatedBy: "ui"}) == nil, "rule fixture")
-		c4aAssert(t, store.Claim(db, "rule_seed", "ui", "", "2026-10-12T00:00:00Z") == nil, "claim fixture")
+		c4aAssert(t, store.Claim(db, "rule_seed", "ui", "", "2026-10-12T00:00:00Z", nil) == nil, "claim fixture")
 		before, e := store.Claims(db.Reader(), "rule_seed")
 		c4aAssert(t, e == nil && len(before) == 1, "claims before")
 		for _, operation := range []string{"add", "passwd"} {
